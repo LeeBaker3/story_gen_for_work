@@ -30,6 +30,8 @@ class Story(Base):
     num_pages = Column(Integer, nullable=False, default=0)
     tone = Column(String, nullable=True)
     setting = Column(String, nullable=True)
+    # FR14: Added image_style column
+    image_style = Column(String, nullable=True, default="Default")
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",

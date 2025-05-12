@@ -12,11 +12,14 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Log in / Sign up.
 	•	Browse previously created stories.
 	•	Story Creation Form:
-	•	Select story genre (Children’s, Sci-Fi, Drama, Horror, Action).
+	•	Select story genre (Children’s, Sci-Fi, Drama, Horror, Action). Dropdowns (e.g., genre) support alphabetical/numerical sorting.
 	•	Enter:
 	•	Story outline.
 	•	Main characters (name, personality, background).
+	•	Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide DALL·E for consistent character depiction throughout the story.
 	•	Number of pages.
+	•	Option to adjust word-to-picture ratio (e.g., one image every X words/paragraphs, or one image per page as default).
+	•	Option to select an image style for story illustrations (e.g., cartoon, watercolor, photorealistic).
 	•	Additional optional fields (tone, setting, etc.).
 	•	Story Preview Page:
 	•	Displays generated story per page, with accompanying image.
@@ -26,6 +29,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Authentication:
 	•	Secure login and session management.
 	•	User dashboard showing saved stories.
+	•	Forgot Password functionality.
 
 3. Technical Requirements
 
@@ -38,11 +42,19 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Accepts user inputs and sends prompts to ChatGPT.
 	•	Parses and stores story and image metadata in a SQLite database.
 	•	Generates PDF combining story text and locally stored images.
+	•	Provides an endpoint to retrieve a list of stories for the authenticated user.
+	•	Generates and stores character reference images based on detailed user input, to be used in subsequent DALL·E prompts for consistency.
+	•	Supports different selectable image styles for DALL·E generation.
+	•	Manages adjustable word-to-picture ratios for story layout.
+	•	Implements a secure 'Forgot Password' mechanism (e.g., token-based).
 
 3.2 Frontend
 	•	Technologies: HTML, CSS (site-wide), JavaScript
 	•	Modern responsive design using CSS for theming.
 	•	Form validation and dynamic content updates.
+	•	Interface for detailed character attribute input.
+	•	Controls for selecting image style and word-to-picture ratio.
+	•	User flow and forms for 'Forgot Password' process.
 
 3.3 Database
 	•	Database Type: SQLite
@@ -77,6 +89,11 @@ The Story Generator Web App is a web-based application that allows users to gene
     FR8	Logging captures all key system and user activities.
     FR9	The app must run locally with a fully functioning backend and frontend.
     FR10	Generate unit test cases for backend logic and critical workflows.
+    FR11 Users can sort selectable options in forms (e.g., genres) alphabetically/numerically.
+    FR12 Users can define detailed character attributes for consistent image generation, including upfront reference images.
+    FR13 Users can adjust the ratio of words to pictures per page.
+    FR14 Users can select a visual style for the story's illustrations.
+    FR15 Users can reset their password if forgotten.
 
 5. Example Prompt (for ChatGPT API)
     Please generate a story that meets the following requirements. The story will be of a specific length in pages. Each page of the story will need an image description that is appropriate for use as a prompt to generate an AI-created image. The image description should be relevant to the story content on that page and consistent in visual style.
@@ -119,3 +136,59 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	SQLite DB
 	•	HTML/CSS/JS frontend
 	•	Local file system for storing images and logs
+
+9. Development Progress
+
+This section tracks the major milestones and completed work items.
+
+9.1 Core Functionality Debugging & Enhancements (Completed Q2 2025)
+    •   Resolved critical frontend JavaScript error ("null is not an object") in `frontend/script.js` affecting character input fields, enabling proper form reset and interaction.
+    •   Addressed and resolved multiple backend Python errors, including:
+        •   Initial 401 Unauthorized issues during login (enhanced logging in `auth.py`, `main.py` to diagnose).
+        •   OpenAI API `APIRemovedInV1` errors (resolved by clearing `__pycache__`).
+        •   `bcrypt` version conflict (`AttributeError: module 'bcrypt' has no attribute '__about__'`) (resolved by `pip uninstall/install` of specific versions and updating `requirements.txt`).
+        •   Python `ImportError` due to incorrect Uvicorn execution command (corrected command provided).
+        •   `ValueError: OPENAI_API_KEY not found` due to misplaced `.env` file (moved `.env` to project root).
+    •   Improved backend logging in `ai_services.py` by replacing `print()` statements with structured logging for better traceability of API calls and errors.
+    •   Confirmed core application functionality: Server starts successfully, story text generation, image generation, and PDF export are operational.
+
+9.2 Frontend Enhancements (Completed Q2 2025)
+    •   Implemented clearer session timeout handling in `frontend/script.js`: On 401 errors, the application now displays a "session timed out" message and redirects the user to the login page, clearing any stale session data.
+
+9.3 Project Setup & Maintenance (Completed Q2 2025)
+    •   Cleaned the project workspace by removing extraneous and incorrectly placed folders.
+    •   Initialized a Git repository for the project to enable version control.
+    •   Configured a remote origin and performed an initial push of the project to GitHub (`https://github.com/LeeBaker3/story_gen_for_work.git`).
+
+9.4 Documentation (Ongoing)
+    •   Updated `product_requirements_document.md` to include a backend requirement for listing user stories.
+    •   Continuously updating this document to reflect new features, completed work, and pending tasks.
+
+9.5 Backend Enhancements (Completed Q2 2025)
+    •   Fixed "Method Not Allowed" error for "My Stories" by adding a `GET /stories/` endpoint in `backend/main.py`.
+    •   Added a `GET /genres/` endpoint in `backend/main.py` to provide a sorted list of `StoryGenre` enum values.
+    •   Updated `backend/schemas.py` with a `StoryGenre` enum and modifications to `CharacterDetail`.
+
+9.6 New Feature Implementation (In Progress / Pending)
+    9.6.1 Detailed Character Creation (FR12)
+        *   UI for inputting detailed character attributes (age, gender, physical appearance, clothing style, key traits) - **Completed Q2 2025**
+        *   Backend processing of detailed character attributes for story generation prompts - **Completed Q2 2025**
+        *   Generation of upfront character reference images to guide DALL·E for consistent character depiction - *Partially Completed Q2 2025 (basic generation working, consistency needs improvement)*
+    9.6.2 Adjustable Word-to-Picture Ratio (FR13) - *Pending*
+    9.6.3 Selectable Image Styles (FR14) - *Completed Q2 2025*
+    9.6.4 "Forgot Password" Functionality (FR15) - *Pending*
+
+9.7 Testing & Quality Assurance
+    •   Unit Tests for Backend (FR10) - *Pending*
+    •   Thorough testing of all new and existing features - *Ongoing*
+
+9.8 Previously Pending High-Priority Tasks (Now Addressed or Re-categorized)
+    •   Diagnose and Fix "Method Not Allowed" Error: Addressed (see 9.5).
+    •   Implement New Features:
+        •   Alphabetical/numerical sorting for dropdowns: Addressed (see 9.2.2).
+        •   Detailed character creation UI/backend with upfront reference images: Progress tracked in 9.6.1.
+        •   Adjustable word-to-picture ratio: Tracked in 9.6.2.
+        •   Selectable image styles: Tracked in 9.6.3.
+    •   Implement "Forgot Password" functionality: Tracked in 9.6.4.
+    •   Continue with 8-Step Development Plan (e.g., unit tests for backend - FR10): Tracked in 9.7.
+    •   Thorough testing of all existing and new features: Tracked in 9.7.

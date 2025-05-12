@@ -46,6 +46,8 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         num_pages=story_data.num_pages,
         tone=story_data.tone,
         setting=story_data.setting,
+        # Added image_style
+        image_style=story_data.image_style.value if story_data.image_style else "Default",
         owner_id=user_id
     )
     db.add(db_story)

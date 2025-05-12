@@ -35,6 +35,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let characterCount = 1;
 
+    // Function to initialize a character details toggle
+    function initializeCharacterDetailsToggle(toggleButton) {
+        toggleButton.addEventListener('click', () => {
+            const targetId = toggleButton.dataset.target;
+            const targetContent = document.getElementById(targetId);
+            if (targetContent) {
+                const isHidden = targetContent.style.display === 'none';
+                targetContent.style.display = isHidden ? 'block' : 'none';
+                toggleButton.textContent = isHidden ? 'Hide Details' : 'Show Details';
+            }
+        });
+    }
+
+    // Initialize toggle for the first character
+    const firstCharToggle = document.querySelector('.character-details-toggle');
+    if (firstCharToggle) {
+        initializeCharacterDetailsToggle(firstCharToggle);
+    }
+
     // --- UTILITY FUNCTIONS ---
     function formatDate(dateString) {
         if (!dateString) return 'N/A';
@@ -143,6 +162,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- POPULATE DYNAMIC FORM ELEMENTS ---
+    async function populateGenreDropdown() {
+        const genreSelect = storyCreationForm.genre;
+        if (!genreSelect) {
+            console.error('Genre select element not found.');
+            return;
+        }
+
+        try {
+            const genres = await apiRequest('/genres/'); // No token needed for public genres
+            genreSelect.innerHTML = ''; // Clear existing options
+            if (genres && genres.length > 0) {
+                genres.forEach(genre => {
+                    const option = document.createElement('option');
+                    option.value = genre;
+                    option.textContent = genre;
+                    genreSelect.appendChild(option);
+                });
+            } else {
+                displayMessage('Could not load story genres.', true);
+            }
+        } catch (error) {
+            displayMessage('Failed to load story genres. Please try refreshing.', true);
+            // Keep existing or default options in the dropdown as a fallback
+        }
+    }
+
     // --- AUTHENTICATION --- 
     signupForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -212,16 +258,40 @@ document.addEventListener('DOMContentLoaded', () => {
         newEntry.classList.add('character-entry');
         newEntry.innerHTML = `
             <hr>
-            <label for="char-name-${characterCount}">Name:</label>
-            <input type="text" id="char-name-${characterCount}" name="char_name_${characterCount}" class="char-name" required>
-            <label for="char-desc-${characterCount}">Description:</label>
-            <input type="text" id="char-desc-${characterCount}" name="char_desc_${characterCount}" class="char-desc" required>
-            <label for="char-personality-${characterCount}">Personality (optional):</label>
-            <input type="text" id="char-personality-${characterCount}" name="char_personality_${characterCount}" class="char-personality">
-            <label for="char-background-${characterCount}">Background (optional):</label>
-            <input type="text" id="char-background-${characterCount}" name="char_background_${characterCount}" class="char-background">
+            <div>
+                <label for="char-name-${characterCount}">Name:</label>
+                <input type="text" id="char-name-${characterCount}" name="char_name_${characterCount}" class="char-name" required>
+            </div>
+            <button type="button" class="character-details-toggle" data-target="char-details-${characterCount}">Show Details</button>
+            <div id="char-details-${characterCount}" class="character-details-content" style="display:none;">
+                <div>
+                    <label for="char-age-${characterCount}">Age (optional):</label>
+                    <input type="number" id="char-age-${characterCount}" name="char_age_${characterCount}" class="char-age" placeholder="e.g., 30">
+                </div>
+                <div>
+                    <label for="char-gender-${characterCount}">Gender (optional):</label>
+                    <input type="text" id="char-gender-${characterCount}" name="char_gender_${characterCount}" class="char-gender" placeholder="e.g., female, male, non-binary">
+                </div>
+                <div>
+                    <label for="char-physical-appearance-${characterCount}">Physical Appearance (optional):</label>
+                    <textarea id="char-physical-appearance-${characterCount}" name="char_physical_appearance_${characterCount}" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
+                </div>
+                <div>
+                    <label for="char-clothing-style-${characterCount}">Clothing Style (optional):</label>
+                    <input type="text" id="char-clothing-style-${characterCount}" name="char_clothing_style_${characterCount}" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
+                </div>
+                <div>
+                    <label for="char-key-traits-${characterCount}">Key Personality Traits (optional):</label>
+                    <textarea id="char-key-traits-${characterCount}" name="char_key_traits_${characterCount}" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
+                </div>
+            </div>
         `;
         fieldset.appendChild(newEntry);
+        // Initialize toggle for the new character entry
+        const newToggle = newEntry.querySelector('.character-details-toggle');
+        if (newToggle) {
+            initializeCharacterDetailsToggle(newToggle);
+        }
     });
 
     storyCreationForm.addEventListener('submit', async (e) => {
@@ -235,21 +305,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const characterEntries = document.querySelectorAll('.character-entry');
         characterEntries.forEach((entry, index) => {
             const name = entry.querySelector(`.char-name`).value;
-            const description = entry.querySelector(`.char-desc`).value;
-            const personality = entry.querySelector(`.char-personality`).value;
-            const background = entry.querySelector(`.char-background`).value;
-            if (name && description) {
+            // New detailed fields
+            const ageInput = entry.querySelector(`.char-age`);
+            const age = ageInput && ageInput.value ? parseInt(ageInput.value) : null;
+            const genderInput = entry.querySelector(`.char-gender`);
+            const gender = genderInput ? genderInput.value : null;
+            const physicalAppearanceInput = entry.querySelector(`.char-physical-appearance`);
+            const physical_appearance = physicalAppearanceInput ? physicalAppearanceInput.value : null;
+            const clothingStyleInput = entry.querySelector(`.char-clothing-style`);
+            const clothing_style = clothingStyleInput ? clothingStyleInput.value : null;
+            const keyTraitsInput = entry.querySelector(`.char-key-traits`);
+            const key_traits = keyTraitsInput ? keyTraitsInput.value : null;
+
+            if (name) { // Only name is strictly required on the frontend for a character entry
                 mainCharacters.push({
                     name,
-                    description,
-                    personality: personality || null,
-                    background: background || null
+                    age,
+                    gender: gender || null,
+                    physical_appearance: physical_appearance || null,
+                    clothing_style: clothing_style || null,
+                    key_traits: key_traits || null
                 });
             }
         });
 
         if (mainCharacters.length === 0) {
-            displayMessage('Please add at least one character.', true);
+            displayMessage('Please add at least one character with a name.', true);
             return;
         }
 
@@ -260,6 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
             num_pages: parseInt(storyCreationForm.num_pages.value),
             tone: storyCreationForm.tone.value || null,
             setting: storyCreationForm.setting.value || null,
+            image_style: storyCreationForm.image_style.value // Added image_style
         };
 
         displayMessage('Generating story... This may take a moment.', false);
@@ -270,17 +352,28 @@ document.addEventListener('DOMContentLoaded', () => {
             currentStoryId = generatedStory.id;
             exportPdfButton.style.display = 'block';
             showSection(storyPreviewSection);
-            storyCreationForm.reset(); // This clears all form fields, including the first character's.
 
-            // Remove dynamically added character entries, keeping the first one.
+            // Reset form fields, including dynamic character entries and their details
+            storyCreationForm.reset();
+
             const fieldset = document.getElementById('main-characters-fieldset');
-            const characterEntries = fieldset.querySelectorAll('.character-entry');
-            // Start from the second entry (index 1) and remove them.
-            // Iterate backwards to avoid issues if characterEntries were a live list (though querySelectorAll returns a static one).
-            for (let i = characterEntries.length - 1; i > 0; i--) {
-                characterEntries[i].remove();
+            const allCharacterEntries = fieldset.querySelectorAll('.character-entry');
+
+            // Remove dynamically added character entries (all except the first one)
+            for (let i = allCharacterEntries.length - 1; i > 0; i--) {
+                allCharacterEntries[i].remove();
             }
             characterCount = 1; // Reset counter
+
+            // Reset the first character's details section
+            const firstCharDetails = document.getElementById('char-details-1');
+            const firstCharToggleButton = document.querySelector('.character-details-toggle[data-target="char-details-1"]');
+            if (firstCharDetails) {
+                firstCharDetails.style.display = 'none'; // Hide details
+            }
+            if (firstCharToggleButton) {
+                firstCharToggleButton.textContent = 'Show Details'; // Reset button text
+            }
 
         } catch (error) {
             // Error displayed by apiRequest or specific message if needed
@@ -460,4 +553,5 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         updateNav(false);
     }
+    populateGenreDropdown(); // Populate genres on page load
 });

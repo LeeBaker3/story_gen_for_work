@@ -74,17 +74,30 @@
                             <label for="char-name-1">Name:</label>
                             <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
                         </div>
-                        <div>
-                            <label for="char-desc-1">Description:</label>
-                            <input type="text" id="char-desc-1" name="char_desc_1" class="char-desc" required placeholder="e.g., age 53, 2-year-old daughter">
-                        </div>
-                        <div>
-                            <label for="char-personality-1">Personality (optional):</label>
-                            <input type="text" id="char-personality-1" name="char_personality_1" class="char-personality">
-                        </div>
-                        <div>
-                            <label for="char-background-1">Background (optional):</label>
-                            <input type="text" id="char-background-1" name="char_background_1" class="char-background">
+
+                        <!-- Collapsible section for character details -->
+                        <button type="button" class="character-details-toggle" data-target="char-details-1">Show Details</button>
+                        <div id="char-details-1" class="character-details-content" style="display:none;">
+                            <div>
+                                <label for="char-age-1">Age (optional):</label>
+                                <input type="number" id="char-age-1" name="char_age_1" class="char-age" placeholder="e.g., 30">
+                            </div>
+                            <div>
+                                <label for="char-gender-1">Gender (optional):</label>
+                                <input type="text" id="char-gender-1" name="char_gender_1" class="char-gender" placeholder="e.g., female, male, non-binary">
+                            </div>
+                            <div>
+                                <label for="char-physical-appearance-1">Physical Appearance (optional):</label>
+                                <textarea id="char-physical-appearance-1" name="char_physical_appearance_1" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
+                            </div>
+                            <div>
+                                <label for="char-clothing-style-1">Clothing Style (optional):</label>
+                                <input type="text" id="char-clothing-style-1" name="char_clothing_style_1" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
+                            </div>
+                            <div>
+                                <label for="char-key-traits-1">Key Personality Traits (optional):</label>
+                                <textarea id="char-key-traits-1" name="char_key_traits_1" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
+                            </div>
                         </div>
                     </div>
                 </fieldset>
@@ -97,12 +110,28 @@
 
                 <div>
                     <label for="story-tone">Tone (optional):</label>
-                    <input type="text" id="story-tone" name="tone">
+                    <input type="text" id="story-tone" name="tone" placeholder="e.g., humorous, serious, whimsical, dark">
                 </div>
 
                 <div>
                     <label for="story-setting">Setting (optional):</label>
-                    <input type="text" id="story-setting" name="setting">
+                    <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
+                </div>
+
+                <div>
+                    <label for="story-image-style">Image Style:</label>
+                    <select id="story-image-style" name="image_style" required>
+                        <option value="Default">Default</option>
+                        <option value="Cartoon">Cartoon</option>
+                        <option value="Watercolor">Watercolor</option>
+                        <option value="Photorealistic">Photorealistic</option>
+                        <option value="Pixel Art">Pixel Art</option>
+                        <option value="Fantasy Art">Fantasy Art</option>
+                        <option value="Sci-Fi Concept Art">Sci-Fi Concept Art</option>
+                        <option value="Anime">Anime</option>
+                        <option value="Vintage Comic Book Art">Vintage Comic Book Art</option>
+                        <option value="Minimalist">Minimalist</option>
+                    </select>
                 </div>
 
                 <button type="submit">Generate Story</button>

@@ -1,14 +1,57 @@
 from pydantic import BaseModel
 from typing import List, Optional
+from enum import Enum  # Added for StoryGenre
+
+# Story Genre Enum (New)
+
+
+class StoryGenre(str, Enum):
+    CHILDRENS = "Children's"
+    SCI_FI = "Sci-Fi"
+    DRAMA = "Drama"
+    HORROR = "Horror"
+    ACTION = "Action"
+    FANTASY = "Fantasy"  # Added new genre
+    MYSTERY = "Mystery"  # Added new genre
+    ROMANCE = "Romance"  # Added new genre
+    THRILLER = "Thriller"  # Added new genre
+    COMEDY = "Comedy"  # Added new genre
+
+# Image Style Enum (FR14)
+
+
+class ImageStyle(str, Enum):
+    DEFAULT = "Default"  # General, vibrant, clear illustration
+    CARTOON = "Cartoon"
+    WATERCOLOR = "Watercolor"
+    PHOTOREALISTIC = "Photorealistic"
+    PIXEL_ART = "Pixel Art"
+    FANTASY_ART = "Fantasy Art"
+    SCI_FI_CONCEPT = "Sci-Fi Concept Art"
+    ANIME = "Anime"
+    VINTAGE_COMIC = "Vintage Comic Book Art"
+    MINIMALIST = "Minimalist"
 
 # Character Detail Schema (New)
 
 
 class CharacterDetail(BaseModel):
     name: str
-    description: str  # e.g., "age 53", "2-year-old daughter with long blonde curly hair"
+    # Made optional as frontend now uses more specific fields
+    description: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    # E.g., "tall, with long blonde curly hair and blue eyes, often wears a red cloak"
+    physical_appearance: Optional[str] = None
+    # E.g., "medieval armor", "modern casual", "futuristic jumpsuit"
+    clothing_style: Optional[str] = None
+    # Broader personality traits, still optional
     personality: Optional[str] = None
-    background: Optional[str] = None
+    # Specific distinguishing traits or habits, e.g., "always carries a locket", "has a noticeable limp"
+    key_traits: Optional[str] = None
+    background: Optional[str] = None  # Still optional
+    # Path to the generated character reference image
+    reference_image_path: Optional[str] = None
 
 # Page Schemas
 
@@ -43,6 +86,8 @@ class StoryBase(BaseModel):
     num_pages: int
     tone: Optional[str] = None
     setting: Optional[str] = None
+    # FR14: Added image_style
+    image_style: Optional[ImageStyle] = ImageStyle.DEFAULT
     # Add other metadata fields from PRD if necessary
 
 

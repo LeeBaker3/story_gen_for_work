@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any
 # Import loggers
 from .logging_config import api_logger, error_logger
+from .schemas import CharacterDetail  # Added for type hinting
 
 load_dotenv()
 
@@ -31,15 +32,48 @@ EXPECTED_PAGE_KEYS = ["Page_number", "Text", "Image_description"]
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
     """
     Generates a story using OpenAI's ChatGPT API based on user inputs.
-    story_input should contain: genre, story_outline, main_characters, num_pages, tone, setting.
+    story_input should contain: genre, story_outline, main_characters, num_pages, tone, setting, image_style.
     """
     # Construct the prompt based on PRD section 5
-    characters_description = "\n".join([
-        f"- {char['name']}: {char['description']}. Personality: {char.get('personality', 'N/A')}. Background: {char.get('background', 'N/A')}."
-        for char in story_input['main_characters']
-    ])
+    # Updated character description formatting to include new detailed fields
+    character_lines = []
+    for char_data in story_input['main_characters']:
+        details = []
+        # Prioritize new, specific fields
+        if char_data.get('age'):
+            details.append(f"Age: {char_data['age']}")
+        if char_data.get('gender'):
+            details.append(f"Gender: {char_data['gender']}")
+        if char_data.get('physical_appearance'):
+            details.append(
+                f"Physical Appearance: {char_data['physical_appearance']}")
+        if char_data.get('clothing_style'):
+            details.append(f"Clothing Style: {char_data['clothing_style']}")
+        if char_data.get('key_traits'):
+            details.append(f"Key Traits: {char_data['key_traits']}")
 
-    prompt = f"""Please generate a story that meets the following requirements. The story will be of a specific length in pages. Each page of the story will need an image description that is appropriate for use as a prompt to generate an AI-created image. The image description should be relevant to the story content on that page and consistent in visual style.
+        # Include older/general fields if they are still provided and relevant
+        # 'description' is the old general description, now optional.
+        # Avoid redundancy if physical_appearance is detailed
+        if char_data.get('description') and not char_data.get('physical_appearance'):
+            details.append(f"Basic Description: {char_data['description']}")
+        if char_data.get('personality'):
+            details.append(f"Personality: {char_data['personality']}")
+        if char_data.get('background'):
+            details.append(f"Background: {char_data['background']}")
+
+        # filter(None, ...) removes empty strings if a field was empty
+        details_str = ". ".join(filter(None, details))
+        character_lines.append(
+            f"- {char_data['name']}: {details_str if details_str else 'No specific details provided.'}")
+    characters_description = "\n".join(character_lines)
+
+    image_style_description = story_input.get('image_style', 'Default')
+    # Ensure a user-friendly string if it's an enum value
+    if hasattr(image_style_description, 'value'):
+        image_style_description = image_style_description.value
+
+    prompt = f"""Please generate a story that meets the following requirements. The story will be of a specific length in pages. Each page of the story will need an image description that is appropriate for use as a prompt to generate an AI-created image. The image description should be relevant to the story content on that page.
 
 Instructions:
 - The story genre is: {story_input['genre']}.
@@ -47,28 +81,16 @@ Instructions:
 - Main characters:
 {characters_description}
 - The story must be {story_input['num_pages']} pages long.
+- The desired visual style for all images is: '{image_style_description}'. All "Image_description" fields must reflect this style (e.g., by appending ', {image_style_description} style' or similar phrasing to the description).
 - Optional tone: {story_input.get('tone', 'N/A')}.
 - Optional setting: {story_input.get('setting', 'N/A')}.
 
 Requirements:
 - The story should start with a title.
-- For each page, provide the page number, the story text for that page, and a detailed image prompt (Image_description).
-- For each "Image_description", ensure it vividly describes the scene based on the "Text" of the page.
-- Crucially, if main characters (as defined in the 'Main characters' section above) are present or implied in the scene for a page, their "Image_description" MUST include their key visual details (e.g., 'a young girl with bright red pigtails and freckles') to ensure visual consistency across all story images. Reiterate these character details in each relevant image description. For example, if a character 'ZARA' is described as 'a young girl with bright red pigtails and freckles', and she is in a scene, the Image_description should include this (e.g., 'ZARA, the young girl with bright red pigtails and freckles, looks at the mysterious map.').
-- Each page's content (page number, text, image description) should be structured.
-- Return the entire response as a single valid JSON object.
-- The JSON object must have a top-level key "Title" for the story title.
-- The JSON object must have a top-level key "Pages" which is a list of page objects.
-- Each page object in the "Pages" list must have the keys: "Page_number" (integer), "Text" (string), and "Image_description" (string for DALL-E prompt).
-
-Example of a page object within the "Pages" list:
-{{
-  "Page_number": 1,
-  "Text": "Once upon a time, in a land far away...",
-  "Image_description": "A mystical forest with glowing mushrooms and a hidden path, fantasy art style."
-}}
-
-Ensure the JSON is well-formed and complete.
+- For each page, provide the page number, the story text for that page, and a detailed image prompt (Image_description). It is absolutely crucial that every page has a non-empty "Image_description".
+- For each "Image_description", ensure it vividly describes the scene based on the "Text" of the page AND incorporates the specified visual style: '{image_style_description}'.
+- Crucially, if main characters (as defined in the 'Main characters' section above, using details like physical appearance, clothing, age, gender, and key traits) are present or implied in the scene for a page, their "Image_description" MUST include their key visual details to ensure visual consistency across all story images. Reiterate these character details in each relevant image description, also maintaining the '{image_style_description}' style.
+- The final output MUST be a single JSON object. This JSON object must have a top-level key 'Title' (string) and a top-level key 'Pages' (a list of page objects as described above). Do not include any text or explanations outside of this JSON object.
 """
     api_logger.debug(
         # Log a snippet
@@ -174,6 +196,68 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> str:
     except Exception as e:
         error_logger.error(
             f"An unexpected error occurred while generating image: {e}", exc_info=True)
+        raise
+
+
+def generate_character_reference_image(character: CharacterDetail, base_image_path: str) -> str:
+    """
+    Generates a character reference image using DALL·E 3 and saves it.
+
+    Args:
+        character: A CharacterDetail object containing character attributes.
+        base_image_path: The base directory path to save the image (e.g., data/images/story_id/).
+
+    Returns:
+        The path to the saved character reference image.
+    """
+    api_logger.info(
+        f"Generating reference image for character: {character.name}")
+
+    # Construct a detailed prompt for character reference image
+    prompt_parts = [
+        f"Character concept art reference sheet: {character.name}.",
+        "Full body portrait, clear view of the character.",
+        "Neutral background, studio lighting, concept art style.",
+    ]
+    if character.physical_appearance:
+        prompt_parts.append(
+            f"Physical appearance: {character.physical_appearance}.")
+    if character.clothing_style:
+        prompt_parts.append(f"Typical clothing: {character.clothing_style}.")
+    if character.age:
+        prompt_parts.append(f"Age: {character.age}.")
+    if character.gender:
+        prompt_parts.append(f"Gender: {character.gender}.")
+    if character.key_traits:
+        prompt_parts.append(
+            f"Key traits to visualize: {character.key_traits}.")
+
+    prompt = " ".join(prompt_parts)
+    api_logger.debug(f"Prompt for {character.name} reference image: {prompt}")
+
+    # Sanitize character name for filename
+    safe_character_name = "".join(
+        c if c.isalnum() else '_' for c in character.name)
+    image_filename = f"character_{safe_character_name}_reference.png"
+
+    # Ensure the base_image_path ends with a slash if it's a directory
+    # and then join with character-specific subfolder and filename
+    # Example: data/images/STORY_ID/characters/CHARACTER_NAME_reference.png
+    character_image_dir = os.path.join(base_image_path, "characters")
+    # Ensure character-specific directory exists
+    os.makedirs(character_image_dir, exist_ok=True)
+    full_image_path = os.path.join(character_image_dir, image_filename)
+
+    try:
+        saved_image_path = generate_image_from_dalle(prompt, full_image_path)
+        api_logger.info(
+            f"Successfully generated and saved reference image for {character.name} at {saved_image_path}")
+        return saved_image_path
+    except Exception as e:
+        error_logger.error(
+            f"Failed to generate reference image for character {character.name}: {e}", exc_info=True)
+        # Depending on desired error handling, could return None or re-raise
+        # For now, re-raising to make it visible during development
         raise
 
 
