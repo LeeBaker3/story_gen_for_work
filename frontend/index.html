@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Story Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Story Generator</h1>
+        <nav>
+            <div class="nav-buttons">
+                <button id="nav-login-signup">Login / Sign Up</button>
+                <button id="nav-create-story" style="display:none;">Create New Story</button>
+                <button id="nav-browse-stories" style="display:none;">My Stories</button>
+                <button id="nav-logout" style="display:none;">Logout</button>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section id="auth-section">
+            <h2>Login / Sign Up</h2>
+            <div id="auth-form-container">
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form"> <!-- Initially visible -->
+                    <h3>Login</h3>
+                    <label for="login-username">Username:</label>
+                    <input type="text" id="login-username" name="username" required>
+                    <label for="login-password">Password:</label>
+                    <input type="password" id="login-password" name="password" required>
+                    <button type="submit">Login</button>
+                    <p class="auth-switch-message">Don't have an account? <a href="#" id="show-signup-link">Sign up</a></p>
+                </form>
+                <!-- Signup Form -->
+                <form id="signup-form" class="auth-form" style="display:none;"> <!-- Initially hidden -->
+                    <h3>Sign Up</h3>
+                    <label for="signup-username">Username:</label>
+                    <input type="text" id="signup-username" name="username" required>
+                    <label for="signup-email">Email:</label> <!-- Assuming email is still required for signup -->
+                    <input type="email" id="signup-email" name="email" required>
+                    <label for="signup-password">Password:</label>
+                    <input type="password" id="signup-password" name="password" required>
+                    <button type="submit">Sign Up</button>
+                    <p class="auth-switch-message">Already have an account? <a href="#" id="show-login-link">Login</a></p>
+                </form>
+            </div>
+        </section>
+
+        <section id="story-creation-section" style="display:none;">
+            <h2>Create a New Story</h2>
+            <form id="story-creation-form" class="modern-form">
+                <div>
+                    <label for="story-genre">Genre:</label>
+                    <select id="story-genre" name="genre" required>
+                        <option value="Children’s">Children’s</option>
+                        <option value="Sci-Fi">Sci-Fi</option>
+                        <option value="Drama">Drama</option>
+                        <option value="Horror">Horror</option>
+                        <option value="Action">Action</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="story-outline">Story Outline:</label>
+                    <textarea id="story-outline" name="story_outline" rows="4" required></textarea>
+                </div>
+
+                <fieldset id="main-characters-fieldset" class="modern-fieldset">
+                    <legend>Main Characters (at least 1)</legend>
+                    <div class="character-entry">
+                        <div>
+                            <label for="char-name-1">Name:</label>
+                            <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
+                        </div>
+                        <div>
+                            <label for="char-desc-1">Description:</label>
+                            <input type="text" id="char-desc-1" name="char_desc_1" class="char-desc" required placeholder="e.g., age 53, 2-year-old daughter">
+                        </div>
+                        <div>
+                            <label for="char-personality-1">Personality (optional):</label>
+                            <input type="text" id="char-personality-1" name="char_personality_1" class="char-personality">
+                        </div>
+                        <div>
+                            <label for="char-background-1">Background (optional):</label>
+                            <input type="text" id="char-background-1" name="char_background_1" class="char-background">
+                        </div>
+                    </div>
+                </fieldset>
+                <button type="button" id="add-character-button">Add Another Character</button>
+
+                <div>
+                    <label for="story-num-pages">Number of Pages:</label>
+                    <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required>
+                </div>
+
+                <div>
+                    <label for="story-tone">Tone (optional):</label>
+                    <input type="text" id="story-tone" name="tone">
+                </div>
+
+                <div>
+                    <label for="story-setting">Setting (optional):</label>
+                    <input type="text" id="story-setting" name="setting">
+                </div>
+
+                <button type="submit">Generate Story</button>
+            </form>
+        </section>
+
+        <section id="story-preview-section" style="display:none;">
+            <h2>Story Preview</h2>
+            <div id="story-preview-content">
+                <!-- Generated story pages will be displayed here -->
+            </div>
+            <button id="export-pdf-button" style="display:none;">Export as PDF</button>
+        </section>
+
+        <section id="browse-stories-section" style="display:none;">
+            <h2>My Stories</h2>
+            <div id="user-stories-list">
+                <!-- List of user's stories will be displayed here -->
+            </div>
+        </section>
+        
+        <section id="message-area">
+            <p id="api-message"></p>
+        </section>
+
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Story Generator</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

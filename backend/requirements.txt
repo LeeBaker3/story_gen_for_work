@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy
+requests
+python-dotenv
+openai
+passlib
+bcrypt==3.2.0
+python-jose[cryptography]
+# For PDF generation, e.g., reportlab or fpdf2
+reportlab
