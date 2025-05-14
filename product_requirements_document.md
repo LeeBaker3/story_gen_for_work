@@ -27,9 +27,13 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Export options (PDF).
 	•	Option to edit story and regenerate pages/images.
 	•	Authentication:
-	•	Secure login and session management.
+	•	Secure login and session management for regular and admin users. Admin users have distinct privileges.
 	•	User dashboard showing saved stories.
 	•	Forgot Password functionality.
+	•	Admin Panel (New Section for FR16, FR17, FR18):
+	•	Accessible only to users with admin privileges.
+	•	Interface for managing application-wide settings and dynamic content.
+	•	Functionality to manage dropdown list items (e.g., genres, image styles).
 
 3. Technical Requirements
 
@@ -44,9 +48,11 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Generates PDF combining story text and locally stored images.
 	•	Provides an endpoint to retrieve a list of stories for the authenticated user.
 	•	Generates and stores character reference images based on detailed user input, to be used in subsequent DALL·E prompts for consistency.
-	•	Supports different selectable image styles for DALL·E generation.
+	•	Supports different selectable image styles for DALL·E generation, with styles potentially managed dynamically.
 	•	Manages adjustable word-to-picture ratios for story layout.
 	•	Implements a secure 'Forgot Password' mechanism (e.g., token-based).
+	•	Implements role-based access control (RBAC) to differentiate between regular users and admins.
+	•	Provides CRUD endpoints for managing dynamic list content (e.g., genres, image styles) accessible only by admins.
 
 3.2 Frontend
 	•	Technologies: HTML, CSS (site-wide), JavaScript
@@ -59,9 +65,11 @@ The Story Generator Web App is a web-based application that allows users to gene
 3.3 Database
 	•	Database Type: SQLite
 	•	Entities:
-	•	Users (username, password hash, session token)
+	•	Users (username, password hash, email, role (e.g., 'user', 'admin'))
 	•	Stories (title, outline, genre, metadata)
 	•	Pages (story_id, page_number, text, image_description, image_path)
+	•	DynamicList (list_name (e.g., 'genres', 'image_styles')) (New for FR18, FR19)
+	•	DynamicListItem (list_id, item_value, item_label, is_active) (New for FR18, FR19)
 	•	Features:
 	•	Stories are searchable by title.
 	•	Users can edit and re-export stories.
@@ -94,6 +102,10 @@ The Story Generator Web App is a web-based application that allows users to gene
     FR13 Users can adjust the ratio of words to pictures per page.
     FR14 Users can select a visual style for the story's illustrations.
     FR15 Users can reset their password if forgotten.
+    FR16 System supports an admin user role with elevated privileges. (New)
+    FR17 Admins can log in and access a dedicated admin panel/functions. (New)
+    FR18 Admins can manage content for dynamic UI elements (e.g., image styles, genres) through the admin panel. (New)
+    FR19 Dropdown content for story creation (e.g., image styles, genres) is populated from the database and manageable by admins. (New)
 
 5. Example Prompt (for ChatGPT API)
     Please generate a story that meets the following requirements. The story will be of a specific length in pages. Each page of the story will need an image description that is appropriate for use as a prompt to generate an AI-created image. The image description should be relevant to the story content on that page and consistent in visual style.
@@ -177,6 +189,8 @@ This section tracks the major milestones and completed work items.
     9.6.2 Adjustable Word-to-Picture Ratio (FR13) - *Pending*
     9.6.3 Selectable Image Styles (FR14) - *Completed Q2 2025*
     9.6.4 "Forgot Password" Functionality (FR15) - *Pending*
+    9.6.5 Admin User Role & Panel (FR16, FR17) - *Pending* (New)
+    9.6.6 Database-Managed Dropdowns (FR18, FR19) - *Pending* (New)
 
 9.7 Testing & Quality Assurance
     •   Unit Tests for Backend (FR10) - *Pending*
@@ -189,6 +203,8 @@ This section tracks the major milestones and completed work items.
         •   Detailed character creation UI/backend with upfront reference images: Progress tracked in 9.6.1.
         •   Adjustable word-to-picture ratio: Tracked in 9.6.2.
         •   Selectable image styles: Tracked in 9.6.3.
+        •   Admin User Role & Panel: Tracked in 9.6.5.
+        •   Database-Managed Dropdowns: Tracked in 9.6.6.
     •   Implement "Forgot Password" functionality: Tracked in 9.6.4.
     •   Continue with 8-Step Development Plan (e.g., unit tests for backend - FR10): Tracked in 9.7.
     •   Thorough testing of all existing and new features: Tracked in 9.7.

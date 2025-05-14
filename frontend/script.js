@@ -341,7 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
             num_pages: parseInt(storyCreationForm.num_pages.value),
             tone: storyCreationForm.tone.value || null,
             setting: storyCreationForm.setting.value || null,
-            image_style: storyCreationForm.image_style.value // Added image_style
+            image_style: storyCreationForm.image_style.value, // Existing field
+            word_to_picture_ratio: storyCreationForm.word_to_picture_ratio.value, // FR13: Added word_to_picture_ratio
+            text_density: storyCreationForm.text_density.value // New Req: Added text_density
         };
 
         displayMessage('Generating story... This may take a moment.', false);

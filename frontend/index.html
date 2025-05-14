@@ -134,6 +134,24 @@
                     </select>
                 </div>
 
+                <div>
+                    <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
+                    <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
+                        <option value="PER_PAGE">One image per page</option>
+                        <option value="PER_TWO_PAGES">One image per two pages</option>
+                        <option value="PER_PARAGRAPH">One image per paragraph</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="story-text-density">Text Density:</label>
+                    <select id="story-text-density" name="text_density" required>
+                        <option value="CONCISE">Concise (~3-4 lines per page)</option>
+                        <option value="STANDARD">Standard (~5-7 lines per page)</option>
+                        <option value="DETAILED">Detailed (~8-10+ lines per page)</option>
+                    </select>
+                </div>
+
                 <button type="submit">Generate Story</button>
             </form>
         </section>

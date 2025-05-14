@@ -32,6 +32,22 @@ class ImageStyle(str, Enum):
     VINTAGE_COMIC = "Vintage Comic Book Art"
     MINIMALIST = "Minimalist"
 
+# Word-to-Picture Ratio Enum (FR13)
+
+
+class WordToPictureRatio(str, Enum):
+    PER_PAGE = "One image per page"
+    PER_TWO_PAGES = "One image per two pages"
+    PER_PARAGRAPH = "One image per paragraph"
+
+# Text Density Enum (New Req)
+
+
+class TextDensity(str, Enum):
+    CONCISE = "Concise"  # ~3-4 lines per page
+    STANDARD = "Standard"  # ~5-7 lines per page
+    DETAILED = "Detailed"  # ~8-10+ lines per page
+
 # Character Detail Schema (New)
 
 
@@ -88,6 +104,10 @@ class StoryBase(BaseModel):
     setting: Optional[str] = None
     # FR14: Added image_style
     image_style: Optional[ImageStyle] = ImageStyle.DEFAULT
+    # FR13: Added word_to_picture_ratio
+    word_to_picture_ratio: Optional[WordToPictureRatio] = WordToPictureRatio.PER_PAGE
+    # New Req: Added text_density
+    text_density: Optional[TextDensity] = TextDensity.CONCISE
     # Add other metadata fields from PRD if necessary
 
 

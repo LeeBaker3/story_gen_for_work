@@ -36,6 +36,16 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
     Creates the story entry in the database.
     The main story content (pages) will be added separately after AI generation.
     """
+    # Determine the string value for word_to_picture_ratio
+    # The schema has a default, so story_data.word_to_picture_ratio should exist.
+    word_to_picture_ratio_value = story_data.word_to_picture_ratio.value \
+        if story_data.word_to_picture_ratio else schemas.WordToPictureRatio.PER_PAGE.value
+
+    # Determine the string value for text_density (New Req)
+    # The schema has a default, so story_data.text_density should exist.
+    text_density_value = story_data.text_density.value \
+        if story_data.text_density else schemas.TextDensity.CONCISE.value
+
     db_story = Story(
         title=title,  # Title is now passed explicitly
         genre=story_data.genre,
@@ -48,6 +58,10 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         setting=story_data.setting,
         # Added image_style
         image_style=story_data.image_style.value if story_data.image_style else "Default",
+        # FR13: Added word_to_picture_ratio
+        word_to_picture_ratio=word_to_picture_ratio_value,
+        # New Req: Added text_density
+        text_density=text_density_value,
         owner_id=user_id
     )
     db.add(db_story)

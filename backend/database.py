@@ -32,6 +32,12 @@ class Story(Base):
     setting = Column(String, nullable=True)
     # FR14: Added image_style column
     image_style = Column(String, nullable=True, default="Default")
+    # FR13: Added word_to_picture_ratio column
+    word_to_picture_ratio = Column(
+        String, nullable=True, default="One image per page")
+    # New Req: Added text_density column
+    text_density = Column(String, nullable=True,
+                          default="Concise")  # Default to Concise
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",
