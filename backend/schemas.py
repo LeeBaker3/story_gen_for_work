@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict  # Added ConfigDict
 from typing import List, Optional
 from enum import Enum  # Added for StoryGenre
 
@@ -94,8 +94,7 @@ class Page(PageBase):
     story_id: int
     image_path: Optional[str] = None  # Path to locally stored image
 
-    class Config:
-        from_attributes = True  # Corrected from orm_mode
+    model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
 # Story Schemas
 
@@ -130,8 +129,7 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
     owner_id: int
     pages: List[Page] = []
 
-    class Config:
-        from_attributes = True  # Corrected from orm_mode
+    model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
 # User Schemas
 
@@ -151,8 +149,7 @@ class User(UserBase):
     # email is inherited from UserBase
     stories: List[Story] = []
 
-    class Config:
-        from_attributes = True  # Corrected from orm_mode
+    model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
 # Token Schemas for Authentication
 

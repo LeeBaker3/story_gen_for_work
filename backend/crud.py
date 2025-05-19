@@ -20,7 +20,8 @@ def get_user_by_username(db: Session, username: str):
 
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = pwd_context.hash(user.password)
-    db_user = User(username=user.username, hashed_password=hashed_password)
+    db_user = User(username=user.username, email=user.email,
+                   hashed_password=hashed_password)  # Added user.email
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -77,7 +78,7 @@ def update_story_with_pages(db: Session, story_id: int, pages_data: List[schemas
     for i, page_data in enumerate(pages_data):
         image_path = image_paths[i] if i < len(image_paths) else None
         db_page = Page(
-            **page_data.dict(),
+            **page_data.model_dump(),  # Changed from .dict()
             story_id=story_id,
             image_path=image_path
         )
@@ -109,11 +110,12 @@ def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[S
 
 
 def create_story_page(db: Session, page: schemas.PageCreate, story_id: int, image_path: Optional[str] = None):
-    db_page = Page(**page.dict(), story_id=story_id, image_path=image_path)
+    db_page = Page(**page.model_dump(), story_id=story_id, image_path=image_path) # Changed from .dict()
     db.add(db_page)
     db.commit()
     db.refresh(db_page)
     return db_page
+
 
 def delete_story_db_entry(db: Session, story_id: int) -> bool:
     """
@@ -123,11 +125,13 @@ def delete_story_db_entry(db: Session, story_id: int) -> bool:
     db_story = db.query(Story).filter(Story.id == story_id).first()
     if db_story:
         # Delete associated pages first to maintain foreign key integrity
-        db.query(Page).filter(Page.story_id == story_id).delete(synchronize_session=False)
+        db.query(Page).filter(Page.story_id == story_id).delete(
+            synchronize_session=False)
         db.delete(db_story)
         db.commit()
         return True
     return False
+
 
 def update_page_image_path(db: Session, page_id: int, image_path: str) -> Optional[Page]:
     """

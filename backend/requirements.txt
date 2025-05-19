@@ -10,3 +10,4 @@ bcrypt==3.2.0
 python-jose[cryptography]
 # For PDF generation, e.g., reportlab or fpdf2
 reportlab
+pytest # For running unit tests
