@@ -121,6 +121,10 @@ class StoryCreate(StoryBase):  # This schema is for user input to generate a sto
     pass
 
 
+class StoryTitleUpdate(BaseModel):  # New Schema for updating title
+    title: str
+
+
 class Story(StoryBase):  # This schema is for representing a story, including AI generated title
     id: int
     owner_id: int

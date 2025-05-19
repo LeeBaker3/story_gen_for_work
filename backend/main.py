@@ -141,6 +141,43 @@ async def read_story(
     return db_story
 
 
+@app.put("/stories/{story_id}/title", response_model=schemas.Story)
+async def update_story_title_endpoint(
+    story_id: int,
+    title_update: schemas.StoryTitleUpdate,  # This schema will need to be created
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    app_logger.info(
+        f"User {current_user.username} attempting to update title for story ID: {story_id} to '{title_update.title}'")
+    db_story = crud.get_story(db, story_id=story_id)
+
+    if not db_story:
+        error_logger.warning(
+            f"Story with ID {story_id} not found for title update attempt by user {current_user.username}.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    if db_story.owner_id != current_user.id:
+        error_logger.warning(
+            f"User {current_user.username} attempted to update title for unauthorized story {story_id}.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to update this story's title")
+
+    updated_story = crud.update_story_title(
+        db=db, story_id=story_id, new_title=title_update.title)
+    if not updated_story:
+        # This case should ideally not be reached if the above checks pass and crud.update_story_title is robust
+        error_logger.error(
+            f"Failed to update title for story {story_id} for user {current_user.username}, though initial checks passed.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Could not update story title")
+
+    app_logger.info(
+        f"Story ID {story_id} title successfully updated to '{updated_story.title}' by user {current_user.username}.")
+    return updated_story
+
+
 @app.post("/stories/", response_model=schemas.Story)
 async def create_new_story(
     story_input: schemas.StoryCreate,

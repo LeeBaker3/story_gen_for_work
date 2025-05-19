@@ -151,15 +151,83 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         console.log('[renderStoryPreview] Story object received:', JSON.parse(JSON.stringify(story)));
-        console.log('[renderStoryPreview] exportPdfButton element reference:', exportPdfButton);
+        currentStoryId = story.id; // Store current story ID for reuse
 
         storyPreviewContent.innerHTML = ''; // Clear previous content
 
-        // Display the main story title once at the top
-        const mainStoryTitleElement = document.createElement('h2'); // Main title, perhaps larger
+        // --- Main Story Title with Edit Functionality ---
+        const titleContainer = document.createElement('div');
+        titleContainer.classList.add('story-main-title-container');
+
+        const mainStoryTitleElement = document.createElement('h2');
         mainStoryTitleElement.textContent = story.title || 'Untitled Story';
-        mainStoryTitleElement.classList.add('story-main-title'); // For potential styling
-        storyPreviewContent.appendChild(mainStoryTitleElement);
+        mainStoryTitleElement.classList.add('story-main-title');
+        mainStoryTitleElement.id = `story-title-text-${story.id}`; // ID for easy access
+        mainStoryTitleElement.style.display = 'inline'; // Ensure it's inline from the start
+
+        const editTitleIcon = document.createElement('span');
+        editTitleIcon.textContent = ' ✏️'; // Pencil emoji for edit
+        editTitleIcon.classList.add('edit-title-icon');
+        editTitleIcon.style.cursor = 'pointer';
+        editTitleIcon.title = 'Edit title';
+        editTitleIcon.id = `edit-title-icon-${story.id}`;
+
+        const titleEditForm = document.createElement('div');
+        titleEditForm.classList.add('title-edit-form');
+        titleEditForm.style.display = 'none'; // Hidden by default
+        titleEditForm.id = `title-edit-form-${story.id}`;
+
+        const titleInput = document.createElement('input');
+        titleInput.type = 'text';
+        titleInput.classList.add('title-edit-input');
+        titleInput.value = story.title || 'Untitled Story';
+
+        const saveTitleButton = document.createElement('button');
+        saveTitleButton.textContent = 'Save';
+        saveTitleButton.classList.add('save-title-button');
+
+        const cancelTitleButton = document.createElement('button');
+        cancelTitleButton.textContent = 'Cancel';
+        cancelTitleButton.classList.add('cancel-title-button');
+
+        titleEditForm.appendChild(titleInput);
+        titleEditForm.appendChild(saveTitleButton);
+        titleEditForm.appendChild(cancelTitleButton);
+
+        titleContainer.appendChild(mainStoryTitleElement);
+        titleContainer.appendChild(editTitleIcon);
+        titleContainer.appendChild(titleEditForm);
+        storyPreviewContent.appendChild(titleContainer);
+
+        editTitleIcon.addEventListener('click', () => {
+            mainStoryTitleElement.style.display = 'none';
+            editTitleIcon.style.display = 'none';
+            titleEditForm.style.display = 'inline-block'; // Or 'flex' if using flexbox for layout
+            titleInput.value = mainStoryTitleElement.textContent; // Ensure current value
+            titleInput.focus();
+        });
+
+        saveTitleButton.addEventListener('click', async () => {
+            const newTitle = titleInput.value.trim();
+            if (newTitle && newTitle !== mainStoryTitleElement.textContent) {
+                await updateStoryTitle(story.id, newTitle, mainStoryTitleElement, editTitleIcon, titleEditForm);
+            } else if (!newTitle) {
+                displayMessage('Title cannot be empty.', 'warning');
+            } else { // No change
+                mainStoryTitleElement.style.display = 'inline';
+                editTitleIcon.style.display = 'inline';
+                titleEditForm.style.display = 'none';
+            }
+        });
+
+        cancelTitleButton.addEventListener('click', () => {
+            mainStoryTitleElement.style.display = 'inline'; // Or 'block' or 'initial' based on original display
+            editTitleIcon.style.display = 'inline';
+            titleEditForm.style.display = 'none';
+            // Optionally reset input value if needed: titleInput.value = mainStoryTitleElement.textContent;
+        });
+        // --- End Main Story Title with Edit Functionality ---
+
 
         if (story.pages && story.pages.length > 0) {
             console.log('[renderStoryPreview] story.pages.length:', story.pages.length);
@@ -463,6 +531,37 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error;
         }
     }
+
+    // New function to update story title
+    async function updateStoryTitle(storyId, newTitle, titleTextElement, editIconElement, editFormElement) {
+        showSpinner();
+        try {
+            const updatedStory = await apiRequest(`/stories/${storyId}/title`, 'PUT', { title: newTitle });
+            if (updatedStory && updatedStory.title) {
+                titleTextElement.textContent = updatedStory.title;
+                displayMessage('Story title updated successfully!', 'success');
+                // Also update the title on the title page if it's rendered
+                const titlePageTitleElem = storyPreviewContent.querySelector('.title-page-story-title');
+                if (titlePageTitleElem && parseInt(titlePageTitleElem.closest('.story-title-page-preview').dataset.pageNumber, 10) === 0) {
+                    titlePageTitleElem.textContent = updatedStory.title;
+                }
+
+            } else {
+                displayMessage('Failed to update title: No updated story data returned.', 'error');
+            }
+        } catch (error) {
+            console.error('Failed to update story title:', error);
+            // Error message is already displayed by apiRequest
+            // displayMessage(`Error updating title: ${error.message || 'Unknown error'}`, 'error');
+        } finally {
+            hideSpinner();
+            // Reset UI
+            titleTextElement.style.display = 'inline'; // Or 'block' or 'initial'
+            editIconElement.style.display = 'inline';
+            editFormElement.style.display = 'none';
+        }
+    }
+
 
     // --- POPULATE DYNAMIC FORM ELEMENTS ---
     async function populateGenreDropdown() {
