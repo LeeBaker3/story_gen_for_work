@@ -52,6 +52,10 @@
             <h2>Create a New Story</h2>
             <form id="story-creation-form" class="modern-form">
                 <div>
+                    <label for="story-title">Story Title (Optional):</label>
+                    <input type="text" id="story-title" name="title" placeholder="Enter your story title or leave blank for AI to generate">
+                </div>
+                <div>
                     <label for="story-genre">Genre:</label>
                     <select id="story-genre" name="genre" required>
                         <option value="Children’s">Children’s</option>
@@ -137,18 +141,18 @@
                 <div>
                     <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
                     <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
-                        <option value="PER_PAGE">One image per page</option>
-                        <option value="PER_TWO_PAGES">One image per two pages</option>
-                        <option value="PER_PARAGRAPH">One image per paragraph</option>
+                        <option value="One image per page">One image per page</option>
+                        <option value="One image per two pages">One image per two pages</option>
+                        <option value="One image per paragraph">One image per paragraph</option>
                     </select>
                 </div>
 
                 <div>
                     <label for="story-text-density">Text Density:</label>
                     <select id="story-text-density" name="text_density" required>
-                        <option value="CONCISE">Concise (~3-4 lines per page)</option>
-                        <option value="STANDARD">Standard (~5-7 lines per page)</option>
-                        <option value="DETAILED">Detailed (~8-10+ lines per page)</option>
+                        <option value="Concise (~30-50 words)">Concise (~30-50 words)</option>
+                        <option value="Standard (~60-90 words)">Standard (~60-90 words)</option>
+                        <option value="Detailed (~100-150 words)">Detailed (~100-150 words)</option>
                     </select>
                 </div>
 
@@ -173,6 +177,7 @@
         
         <section id="message-area">
             <p id="api-message"></p>
+            <div id="loading-spinner" style="display:none;">Loading...</div> <!-- Spinner element -->
         </section>
 
     </main>

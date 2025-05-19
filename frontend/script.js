@@ -1,5 +1,9 @@
+console.log("script.js file loaded and parsed by the browser.");
+
 document.addEventListener('DOMContentLoaded', () => {
-    const API_BASE_URL = 'http://localhost:8000'; // Assuming backend runs on port 8000
+    console.log("DOMContentLoaded event fired. Initializing script...");
+    const API_BASE_URL = window.location.origin; // Updated to use window.location.origin
+    // TODO: Consider if API_BASE_URL should be configurable
     let authToken = null;
     let currentStoryId = null;
 
@@ -28,12 +32,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Buttons
     const addCharacterButton = document.getElementById('add-character-button');
     const exportPdfButton = document.getElementById('export-pdf-button');
+    console.log("Attempting to find 'add-character-button':", addCharacterButton); // Log the button element itself
 
     // Content Areas
     const storyPreviewContent = document.getElementById('story-preview-content');
     const userStoriesList = document.getElementById('user-stories-list');
 
     let characterCount = 1;
+
+    // Spinner Elements
+    const loadingSpinner = document.getElementById('loading-spinner');
+
+    function showSpinner() {
+        if (loadingSpinner) {
+            loadingSpinner.style.display = 'block';
+        }
+    }
+
+    function hideSpinner() {
+        if (loadingSpinner) {
+            loadingSpinner.style.display = 'none';
+        }
+    }
 
     // Function to initialize a character details toggle
     function initializeCharacterDetailsToggle(toggleButton) {
@@ -54,210 +74,20 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeCharacterDetailsToggle(firstCharToggle);
     }
 
-    // --- UTILITY FUNCTIONS ---
-    function formatDate(dateString) {
-        if (!dateString) return 'N/A';
-        const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-        return new Date(dateString).toLocaleDateString(undefined, options);
-    }
-
-    function showSection(sectionToShow) {
-        // Clear message area when changing sections
-        if (messageArea) {
-            messageArea.textContent = '';
-            messageArea.style.backgroundColor = 'transparent'; // Reset background
-            messageArea.style.border = 'none'; // Reset border
-        }
-        [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection].forEach(section => {
-            section.style.display = 'none';
-        });
-        if (sectionToShow) {
-            sectionToShow.style.display = 'block';
-            // If showing auth section, ensure login form is visible and signup is hidden by default
-            if (sectionToShow === authSection) {
-                loginForm.style.display = 'block';
-                signupForm.style.display = 'none';
-                const authSectionHeading = authSection.querySelector('h2');
-                if (authSectionHeading) {
-                    authSectionHeading.textContent = 'Login';
-                }
-            }
-        }
-    }
-
-    function displayMessage(message, isError = false) {
-        messageArea.textContent = message;
-        messageArea.style.color = isError ? '#FF6B6B' : '#6BFF6B'; // Brighter error/success colors for dark theme
-        // Add background and border for visibility on dark theme
-        if (isError) {
-            messageArea.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
-            messageArea.style.border = '1px solid rgba(255, 107, 107, 0.3)';
-        } else {
-            messageArea.style.backgroundColor = 'rgba(107, 255, 107, 0.1)';
-            messageArea.style.border = '1px solid rgba(107, 255, 107, 0.3)';
-        }
-        messageArea.style.padding = '0.8rem';
-        messageArea.style.borderRadius = '4px';
-    }
-
-    function updateNav(isLoggedIn) {
-        if (isLoggedIn) {
-            navLoginSignup.style.display = 'none';
-            navCreateStory.style.display = 'inline-block';
-            navBrowseStories.style.display = 'inline-block';
-            navLogout.style.display = 'inline-block';
-        } else {
-            navLoginSignup.style.display = 'inline-block';
-            navCreateStory.style.display = 'none';
-            navBrowseStories.style.display = 'none';
-            navLogout.style.display = 'none';
-            showSection(authSection);
-        }
-    }
-
-    // --- API CALLS ---
-    async function apiRequest(endpoint, method = 'GET', body = null, token = null) {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const config = {
-            method: method,
-            headers: headers
-        };
-
-        if (body && (method === 'POST' || method === 'PUT')) {
-            config.body = JSON.stringify(body);
-        }
-
-        try {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-            if (!response.ok) {
-                if (response.status === 401 && token) { // Check for 401 and if a token was used
-                    authToken = null;
-                    localStorage.removeItem('authToken');
-                    updateNav(false); // This will show the auth section (login form)
-                    // The error thrown here will be caught by the catch block below
-                    // and its message will be displayed by displayMessage.
-                    throw new Error('Your session has timed out. Please log in again.');
-                }
-                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-            }
-            if (response.status === 204) { // No Content
-                return null;
-            }
-            // For PDF, response might not be JSON
-            if (response.headers.get("content-type") && response.headers.get("content-type").includes("application/pdf")) {
-                return response.blob();
-            }
-            return response.json();
-        } catch (error) {
-            console.error('API Request Error:', error);
-            displayMessage(error.message || 'An unexpected error occurred.', true);
-            throw error;
-        }
-    }
-
-    // --- POPULATE DYNAMIC FORM ELEMENTS ---
-    async function populateGenreDropdown() {
-        const genreSelect = storyCreationForm.genre;
-        if (!genreSelect) {
-            console.error('Genre select element not found.');
-            return;
-        }
-
-        try {
-            const genres = await apiRequest('/genres/'); // No token needed for public genres
-            genreSelect.innerHTML = ''; // Clear existing options
-            if (genres && genres.length > 0) {
-                genres.forEach(genre => {
-                    const option = document.createElement('option');
-                    option.value = genre;
-                    option.textContent = genre;
-                    genreSelect.appendChild(option);
-                });
-            } else {
-                displayMessage('Could not load story genres.', true);
-            }
-        } catch (error) {
-            displayMessage('Failed to load story genres. Please try refreshing.', true);
-            // Keep existing or default options in the dropdown as a fallback
-        }
-    }
-
-    // --- AUTHENTICATION --- 
-    signupForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = signupForm.username.value;
-        const email = signupForm.email.value; // Get email value
-        const password = signupForm.password.value;
-        try {
-            await apiRequest('/users/', 'POST', { username, email, password }); // Add email to payload
-            displayMessage('Signup successful! Please login.', false);
-            signupForm.reset();
-            // Switch to login form
-            loginForm.style.display = 'block';
-            signupForm.style.display = 'none';
-        } catch (error) {
-            // Error displayed by apiRequest
-        }
-    });
-
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = loginForm.username.value;
-        const password = loginForm.password.value;
-
-        const formData = new URLSearchParams();
-        formData.append('username', username);
-        formData.append('password', password);
-
-        try {
-            // Login uses form data, not JSON
-            const response = await fetch(`${API_BASE_URL}/token`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: formData
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            authToken = data.access_token;
-            localStorage.setItem('authToken', authToken); // Persist token
-            displayMessage('Login successful!', false);
-            updateNav(true);
-            showSection(storyCreationSection); // Or browse stories
-            loginForm.reset();
-        } catch (error) {
-            displayMessage(error.message || 'Login failed.', true);
-        }
-    });
-
-    navLogout.addEventListener('click', () => {
-        authToken = null;
-        localStorage.removeItem('authToken');
-        updateNav(false);
-        displayMessage('Logged out.', false);
-        currentStoryId = null;
-        exportPdfButton.style.display = 'none';
-    });
-
-    // --- STORY CREATION ---
-    addCharacterButton.addEventListener('click', () => {
+    // Function to add a new character entry to the form
+    function addCharacterEntry() {
+        console.log("'Add Character' button clicked. addCharacterEntry function started.");
         characterCount++;
         const fieldset = document.getElementById('main-characters-fieldset');
-        const newEntry = document.createElement('div');
-        newEntry.classList.add('character-entry');
-        newEntry.innerHTML = `
-            <hr>
+        if (!fieldset) {
+            console.error('CRITICAL ERROR: Main characters fieldset (id: main-characters-fieldset) not found! Cannot add new character entry.');
+            return;
+        }
+        console.log("Main characters fieldset found. Proceeding to add new character entry.");
+
+        const newCharacterEntry = document.createElement('div');
+        newCharacterEntry.classList.add('character-entry');
+        newCharacterEntry.innerHTML = `
             <div>
                 <label for="char-name-${characterCount}">Name:</label>
                 <input type="text" id="char-name-${characterCount}" name="char_name_${characterCount}" class="char-name" required>
@@ -286,274 +116,634 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
-        fieldset.appendChild(newEntry);
-        // Initialize toggle for the new character entry
-        const newToggle = newEntry.querySelector('.character-details-toggle');
+        // Corrected line: Append the new character entry directly to the fieldset
+        fieldset.appendChild(newCharacterEntry);
+
+        // Initialize the toggle for the new character entry
+        const newToggle = newCharacterEntry.querySelector('.character-details-toggle');
         if (newToggle) {
             initializeCharacterDetailsToggle(newToggle);
         }
-    });
+    }
 
-    storyCreationForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!authToken) {
-            displayMessage('Please login to create a story.', true);
-            return;
-        }
+    // Event listener for the "Add Another Character" button
+    if (addCharacterButton) {
+        addCharacterButton.addEventListener('click', addCharacterEntry);
+        console.log("Event listener for 'Add Character' button (add-character-button) attached successfully.");
+    } else {
+        console.error("CRITICAL ERROR: 'Add Character' button (id: add-character-button) not found in the DOM. This feature will not work.");
+    }
 
-        const mainCharacters = [];
-        const characterEntries = document.querySelectorAll('.character-entry');
-        characterEntries.forEach((entry, index) => {
-            const name = entry.querySelector(`.char-name`).value;
-            // New detailed fields
-            const ageInput = entry.querySelector(`.char-age`);
-            const age = ageInput && ageInput.value ? parseInt(ageInput.value) : null;
-            const genderInput = entry.querySelector(`.char-gender`);
-            const gender = genderInput ? genderInput.value : null;
-            const physicalAppearanceInput = entry.querySelector(`.char-physical-appearance`);
-            const physical_appearance = physicalAppearanceInput ? physicalAppearanceInput.value : null;
-            const clothingStyleInput = entry.querySelector(`.char-clothing-style`);
-            const clothing_style = clothingStyleInput ? clothingStyleInput.value : null;
-            const keyTraitsInput = entry.querySelector(`.char-key-traits`);
-            const key_traits = keyTraitsInput ? keyTraitsInput.value : null;
+    // --- UTILITY FUNCTIONS ---
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+        return new Date(dateString).toLocaleDateString(undefined, options);
+    }
 
-            if (name) { // Only name is strictly required on the frontend for a character entry
-                mainCharacters.push({
-                    name,
-                    age,
-                    gender: gender || null,
-                    physical_appearance: physical_appearance || null,
-                    clothing_style: clothing_style || null,
-                    key_traits: key_traits || null
-                });
-            }
-        });
-
-        if (mainCharacters.length === 0) {
-            displayMessage('Please add at least one character with a name.', true);
-            return;
-        }
-
-        const storyData = {
-            genre: storyCreationForm.genre.value,
-            story_outline: storyCreationForm.story_outline.value,
-            main_characters: mainCharacters,
-            num_pages: parseInt(storyCreationForm.num_pages.value),
-            tone: storyCreationForm.tone.value || null,
-            setting: storyCreationForm.setting.value || null,
-            image_style: storyCreationForm.image_style.value, // Existing field
-            word_to_picture_ratio: storyCreationForm.word_to_picture_ratio.value, // FR13: Added word_to_picture_ratio
-            text_density: storyCreationForm.text_density.value // New Req: Added text_density
-        };
-
-        displayMessage('Generating story... This may take a moment.', false);
-        try {
-            const generatedStory = await apiRequest('/stories/', 'POST', storyData, authToken);
-            displayMessage('Story generated successfully!', false);
-            renderStoryPreview(generatedStory);
-            currentStoryId = generatedStory.id;
-            exportPdfButton.style.display = 'block';
-            showSection(storyPreviewSection);
-
-            // Reset form fields, including dynamic character entries and their details
-            storyCreationForm.reset();
-
-            const fieldset = document.getElementById('main-characters-fieldset');
-            const allCharacterEntries = fieldset.querySelectorAll('.character-entry');
-
-            // Remove dynamically added character entries (all except the first one)
-            for (let i = allCharacterEntries.length - 1; i > 0; i--) {
-                allCharacterEntries[i].remove();
-            }
-            characterCount = 1; // Reset counter
-
-            // Reset the first character's details section
-            const firstCharDetails = document.getElementById('char-details-1');
-            const firstCharToggleButton = document.querySelector('.character-details-toggle[data-target="char-details-1"]');
-            if (firstCharDetails) {
-                firstCharDetails.style.display = 'none'; // Hide details
-            }
-            if (firstCharToggleButton) {
-                firstCharToggleButton.textContent = 'Show Details'; // Reset button text
-            }
-
-        } catch (error) {
-            // Error displayed by apiRequest or specific message if needed
-            displayMessage(error.message || 'Failed to generate story.', true);
-        }
-    });
-
+    // Function to render the story preview
     function renderStoryPreview(story) {
-        storyPreviewContent.innerHTML = ''; // Clear previous preview
+        if (!storyPreviewContent || !story) {
+            console.error('[renderStoryPreview] Story preview content area or story data is missing.');
+            displayMessage('Could not display story preview.', 'error');
+            if (exportPdfButton) exportPdfButton.style.display = 'none';
+            return;
+        }
+
+        console.log('[renderStoryPreview] Story object received:', JSON.parse(JSON.stringify(story))); // Log a deep copy for inspection
+        console.log('[renderStoryPreview] exportPdfButton element reference:', exportPdfButton); // Added log
+
+        storyPreviewContent.innerHTML = ''; // Clear previous content
+
         const titleElement = document.createElement('h3');
-        titleElement.textContent = story.title;
+        titleElement.textContent = story.title || 'Untitled Story';
         storyPreviewContent.appendChild(titleElement);
 
-        story.pages.forEach(page => {
-            const pageDiv = document.createElement('div');
-            pageDiv.classList.add('story-page-preview');
+        if (story.pages && story.pages.length > 0) {
+            console.log('[renderStoryPreview] story.pages.length:', story.pages.length);
+            story.pages.forEach((page, index) => {
+                console.log(`[renderStoryPreview] Page ${index + 1} data:`, JSON.parse(JSON.stringify(page)));
+                console.log(`[renderStoryPreview] Page ${index + 1} image_path:`, page.image_path);
+                const pageContainer = document.createElement('div');
+                pageContainer.classList.add('story-page-preview');
 
-            const pageNumElement = document.createElement('h4');
-            pageNumElement.textContent = `Page ${page.page_number}`;
-            pageDiv.appendChild(pageNumElement);
+                const pageNumberElement = document.createElement('h4');
+                pageNumberElement.textContent = `Page ${page.page_number}`;
+                pageContainer.appendChild(pageNumberElement);
 
-            const textElement = document.createElement('p');
-            textElement.textContent = page.text;
-            pageDiv.appendChild(textElement);
+                if (page.text) {
+                    const textElement = document.createElement('p');
+                    textElement.textContent = page.text;
+                    pageContainer.appendChild(textElement);
+                }
 
-            if (page.image_path) {
-                const imageElement = document.createElement('img');
-                imageElement.src = `${API_BASE_URL}/static_content/${page.image_path.replace(/^data\//, '')}`;
-                imageElement.alt = page.image_description || `Image for page ${page.page_number}`;
-                imageElement.style.maxWidth = '300px'; // Simple styling
-                pageDiv.appendChild(imageElement);
-            } else {
-                const noImageElement = document.createElement('p');
-                noImageElement.textContent = '[No image generated for this page]';
-                noImageElement.style.fontStyle = 'italic';
-                pageDiv.appendChild(noImageElement);
-            }
-            storyPreviewContent.appendChild(pageDiv);
-            storyPreviewContent.appendChild(document.createElement('hr'));
-        });
-    }
-
-    // --- PDF EXPORT ---
-    exportPdfButton.addEventListener('click', async () => {
-        if (!authToken || !currentStoryId) {
-            displayMessage('No story selected or not logged in.', true);
-            return;
-        }
-        displayMessage('Generating PDF...', false);
-        try {
-            const pdfBlob = await apiRequest(`/stories/${currentStoryId}/pdf`, 'GET', null, authToken);
-            const url = window.URL.createObjectURL(pdfBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            const storyTitle = storyPreviewContent.querySelector('h3')?.textContent || 'story';
-            const safeTitle = storyTitle.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-            a.download = `${safeTitle}_${currentStoryId}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-            displayMessage('PDF downloaded.', false);
-        } catch (error) {
-            displayMessage(error.message || 'Failed to download PDF.', true);
-        }
-    });
-
-    // --- NAVIGATION HANDLERS ---
-    navLoginSignup.addEventListener('click', () => {
-        showSection(authSection);
-        // Ensure login form is visible and signup is hidden when navigating to auth section
-        loginForm.style.display = 'block';
-        signupForm.style.display = 'none';
-    });
-    navCreateStory.addEventListener('click', () => showSection(storyCreationSection));
-    navBrowseStories.addEventListener('click', () => {
-        showSection(browseStoriesSection);
-        fetchAndDisplayUserStories();
-    });
-
-    // --- STORY BROWSING ---
-    async function fetchAndDisplayUserStories() {
-        if (!authToken) {
-            displayMessage('Please login to view your stories.', true);
-            userStoriesList.innerHTML = '<p>Please login to view your stories.</p>';
-            return;
-        }
-
-        displayMessage('Loading your stories...', false);
-        userStoriesList.innerHTML = '<p>Loading...</p>'; // Placeholder while fetching
-
-        try {
-            const stories = await apiRequest('/stories/', 'GET', null, authToken);
-            if (stories && stories.length > 0) {
-                userStoriesList.innerHTML = ''; // Clear loading message
-                const ul = document.createElement('ul');
-                ul.className = 'story-items-list'; // Added class for styling
-                stories.forEach(story => {
-                    const li = document.createElement('li');
-                    li.className = 'story-item'; // Added class for styling
-                    li.setAttribute('data-story-id', story.id);
-
-                    const titleElement = document.createElement('h3');
-                    titleElement.textContent = story.title || 'Untitled Story';
-
-                    const dateElement = document.createElement('p');
-                    dateElement.className = 'story-date';
-                    dateElement.textContent = `Created: ${formatDate(story.created_at)}`;
-
-                    // Add a snippet of the first page if available
-                    const snippetElement = document.createElement('p');
-                    snippetElement.className = 'story-snippet';
-                    if (story.pages && story.pages.length > 0 && story.pages[0].text) {
-                        snippetElement.textContent = story.pages[0].text.substring(0, 100) + (story.pages[0].text.length > 100 ? '...' : '');
+                if (page.image_path) { // Changed from page.image_url
+                    const imageElement = document.createElement('img');
+                    // page.image_path is expected to be like "data/images/user_X/story_Y/image.png"
+                    if (page.image_path.startsWith('data/')) {
+                        imageElement.src = '/static_content/' + page.image_path.substring('data/'.length);
                     } else {
-                        snippetElement.textContent = 'No content preview available.';
+                        // Fallback if the path is already correct or different structure (e.g. already has /static_content/)
+                        imageElement.src = page.image_path; // Changed from page.image_url
                     }
+                    imageElement.alt = `Image for page ${page.page_number}`;
+                    imageElement.style.maxWidth = '300px'; // Basic styling for preview
+                    imageElement.style.maxHeight = '300px';
+                    imageElement.style.display = 'block';
+                    imageElement.style.marginTop = '10px';
+                    imageElement.style.marginBottom = '10px';
+                    pageContainer.appendChild(imageElement);
+                } else if (page.image_description) {
+                    const descElement = document.createElement('p');
+                    descElement.style.fontStyle = 'italic';
+                    descElement.textContent = `Image Description: ${page.image_description}`;
+                    pageContainer.appendChild(descElement);
+                }
+                storyPreviewContent.appendChild(pageContainer);
+                if (index < story.pages.length - 1) { // Add a separator if not the last page
+                    storyPreviewContent.appendChild(document.createElement('hr'));
+                }
+            });
+        } else {
+            const noPagesElement = document.createElement('p');
+            noPagesElement.textContent = 'This story has no pages or page data is missing.';
+            storyPreviewContent.appendChild(noPagesElement);
+        }
 
-                    li.appendChild(titleElement);
-                    li.appendChild(dateElement);
-                    li.appendChild(snippetElement);
-
-                    li.addEventListener('click', () => {
-                        currentStoryId = story.id;
-                        renderStoryPreview(story); // story object from /stories/ includes pages
-                        showSection(storyPreviewSection);
-                        exportPdfButton.style.display = 'block'; // Show PDF button, though functionality is limited
-                    });
-                    ul.appendChild(li);
-                });
-                userStoriesList.appendChild(ul);
-                displayMessage('Stories loaded.', false);
-            } else {
-                userStoriesList.innerHTML = '<p>You haven\'t created any stories yet.</p>';
-                displayMessage('No stories found.', false);
-            }
-        } catch (error) {
-            userStoriesList.innerHTML = '<p>Could not load stories. Please try again later.</p>';
-            // Error is displayed by apiRequest, but we can add a specific one if needed
-            displayMessage(error.message || 'Failed to load stories.', true);
+        if (exportPdfButton) {
+            const shouldShowButton = story.pages && story.pages.length > 0;
+            console.log('[renderStoryPreview] Condition (story.pages && story.pages.length > 0):', shouldShowButton); // Added log
+            exportPdfButton.style.display = shouldShowButton ? 'block' : 'none';
+            console.log('[renderStoryPreview] exportPdfButton display set to:', exportPdfButton.style.display);
+        } else {
+            console.error('[renderStoryPreview] exportPdfButton element is NULL or undefined!'); // Added log
         }
     }
 
-    // --- AUTH FORM TOGGLING ---
+    function showSection(sectionToShow) {
+        // Clear message area when changing sections
+        if (messageArea) {
+            messageArea.textContent = '';
+            messageArea.style.backgroundColor = 'transparent'; // Reset background
+            messageArea.style.border = 'none'; // Reset border
+        }
+        [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection].forEach(section => {
+            section.style.display = 'none';
+        });
+        if (sectionToShow) {
+            sectionToShow.style.display = 'block';
+            // If showing auth section, ensure login form is visible and signup is hidden by default
+            if (sectionToShow === authSection) {
+                loginForm.style.display = 'block';
+                signupForm.style.display = 'none';
+                const authSectionHeading = authSection.querySelector('h2');
+                if (authSectionHeading) {
+                    authSectionHeading.textContent = 'Login';
+                }
+            }
+            // When navigating TO storyPreviewSection directly (e.g. from browse),
+            // we don't know if a story is loaded yet, so PDF button should be hidden.
+            // renderStoryPreview will manage its visibility based on actual content.
+            if (sectionToShow === storyPreviewSection) {
+                if (exportPdfButton) exportPdfButton.style.display = 'none';
+            }
+        }
+    }
+
+    function displayMessage(message, type = 'info') { // type can be 'info', 'success', 'warning', 'error'
+        messageArea.textContent = String(message); // Ensure message is always a string
+
+        switch (type) {
+            case 'error':
+                messageArea.style.color = '#FF6B6B'; // Red
+                messageArea.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+                messageArea.style.border = '1px solid rgba(255, 107, 107, 0.3)';
+                break;
+            case 'warning':
+                messageArea.style.color = '#FFA500'; // Orange
+                messageArea.style.backgroundColor = 'rgba(255, 165, 0, 0.1)';
+                messageArea.style.border = '1px solid rgba(255, 165, 0, 0.3)';
+                break;
+            case 'success':
+                messageArea.style.color = '#6BFF6B'; // Green
+                messageArea.style.backgroundColor = 'rgba(107, 255, 107, 0.1)';
+                messageArea.style.border = '1px solid rgba(107, 255, 107, 0.3)';
+                break;
+            case 'info':
+            default:
+                messageArea.style.color = '#ADD8E6'; // Light Blue for info
+                messageArea.style.backgroundColor = 'rgba(173, 216, 230, 0.1)';
+                messageArea.style.border = '1px solid rgba(173, 216, 230, 0.3)';
+                break;
+        }
+        messageArea.style.padding = '0.8rem';
+        messageArea.style.borderRadius = '4px';
+    }
+
+    function updateNav(isLoggedIn) {
+        if (isLoggedIn) {
+            navLoginSignup.style.display = 'none';
+            navCreateStory.style.display = 'inline-block';
+            navBrowseStories.style.display = 'inline-block';
+            navLogout.style.display = 'inline-block';
+        } else {
+            navLoginSignup.style.display = 'inline-block';
+            navCreateStory.style.display = 'none';
+            navBrowseStories.style.display = 'none';
+            navLogout.style.display = 'none';
+            showSection(authSection);
+        }
+    }
+
+    // --- API CALLS ---
+    async function apiRequest(endpoint, method = 'GET', body = null, isFormDataType = false) {
+        console.log(`[apiRequest] Called with endpoint: "${endpoint}", method: "${method}", isFormDataType (parameter value): ${isFormDataType}`);
+
+        const token = localStorage.getItem('authToken'); // Changed 'jwtToken' to 'authToken'
+        console.log('[apiRequest] Token from localStorage (inside apiRequest):', token);
+
+        const headers = {};
+
+        if (isFormDataType) {
+            console.log('[apiRequest] FormData request, Content-Type will be set by browser.');
+        } else {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        } else {
+            console.log('[apiRequest] No token found (inside apiRequest), Authorization header not set.');
+        }
+
+        const options = {
+            method,
+            headers,
+        };
+
+        if (body && method !== 'GET' && method !== 'HEAD') {
+            options.body = isFormDataType ? body : JSON.stringify(body);
+        }
+
+        const urlToFetch = `${API_BASE_URL}${endpoint}`;
+
+        console.log('[apiRequest] Attempting to fetch URL:', urlToFetch);
+        console.log('[apiRequest] Options being sent (stringified for brevity, headers may differ for FormData):', JSON.stringify({ ...options, body: body ? (isFormDataType ? '[FormData]' : typeof options.body) : undefined }, null, 2));
+
+        try {
+            const response = await fetch(urlToFetch, options);
+
+            console.log(`[apiRequest] Response for ${method} ${urlToFetch}: Status ${response.status} ${response.statusText}`);
+
+            if (!response.ok) {
+                let errorBodyText = "[Could not read response text]";
+                try {
+                    errorBodyText = await response.text();
+                    console.error(`[apiRequest] Error response body for ${urlToFetch} (text):`, errorBodyText);
+                } catch (textError) {
+                    console.error(`[apiRequest] Failed to read error response text for ${urlToFetch}:`, textError);
+                }
+
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorBodyText);
+                } catch (e) {
+                    errorData = { message: "Failed to parse error response as JSON.", raw_body: errorBodyText };
+                }
+
+                const error = new Error(`HTTP error! Status: ${response.status} (${response.statusText}) for ${method} ${urlToFetch}. Body: ${errorBodyText.substring(0, 100)}...`);
+                error.response = response;
+                error.status = response.status;
+                error.data = errorData;
+
+                console.error('[apiRequest] Constructed error object:', error);
+
+                let displayErrorMessage = `Server error: ${response.status} (${response.statusText}) when calling ${method} ${endpoint}. `;
+                if (errorData && errorData.detail) {
+                    if (typeof errorData.detail === 'string') {
+                        displayErrorMessage += errorData.detail;
+                    } else if (Array.isArray(errorData.detail) && errorData.detail.length > 0 && errorData.detail[0].msg) {
+                        displayErrorMessage += errorData.detail.map(d => `${d.loc.join('->')}: ${d.msg}`).join('; ');
+                    } else {
+                        displayErrorMessage += JSON.stringify(errorData.detail);
+                    }
+                } else if (errorData && errorData.message && errorData.message !== "Failed to parse error response as JSON.") {
+                    displayErrorMessage += errorData.message;
+                } else if (errorBodyText !== "[Could not read response text]" && errorBodyText.trim() !== "") {
+                    const previewText = errorBodyText.length > 150 ? errorBodyText.substring(0, 150) + "..." : errorBodyText;
+                    displayErrorMessage += "Details: " + previewText;
+                }
+
+                displayMessage(displayErrorMessage, 'error');
+                throw error;
+            }
+
+            if (response.status === 204) {
+                console.log(`[apiRequest] Received 204 No Content for ${urlToFetch}`);
+                return null;
+            }
+
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                return await response.json();
+            } else {
+                return await response.text();
+            }
+
+        } catch (error) {
+            console.error(`[apiRequest] Catch block triggered for ${method} ${urlToFetch}. Error message: ${error.message}`, error);
+
+            if (!error.response) {
+                let finalErrorMessage = `API Request Failed for ${method} ${endpoint}. `;
+                if (error.message) {
+                    finalErrorMessage += error.message;
+                } else {
+                    finalErrorMessage += "An unknown network error occurred."
+                }
+                displayMessage(finalErrorMessage, 'error');
+            }
+            throw error;
+        }
+    }
+
+    // --- POPULATE DYNAMIC FORM ELEMENTS ---
+    async function populateGenreDropdown() {
+        const genreSelect = storyCreationForm.genre;
+        if (!genreSelect) {
+            console.error('Genre select element not found.');
+            return;
+        }
+
+        try {
+            const genres = await apiRequest('/genres/'); // No token needed for public genres
+            genreSelect.innerHTML = ''; // Clear existing options
+            if (genres && genres.length > 0) {
+                genres.forEach(genre => {
+                    const option = document.createElement('option');
+                    option.value = genre;
+                    option.textContent = genre;
+                    genreSelect.appendChild(option);
+                });
+            } else {
+                displayMessage('Could not load story genres.', 'error');
+            }
+        } catch (error) {
+            displayMessage('Failed to load story genres. Please try refreshing.', 'error');
+        }
+    }
+
+    // Event listeners for switching between login and signup views
     if (showSignupLink) {
         showSignupLink.addEventListener('click', (e) => {
             e.preventDefault();
-            loginForm.style.display = 'none';
-            signupForm.style.display = 'block';
-            const authSectionHeading = authSection.querySelector('h2');
-            if (authSectionHeading) {
-                authSectionHeading.textContent = 'Sign Up';
+            if (loginForm && signupForm && authSection) {
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+                const authSectionHeading = authSection.querySelector('h2');
+                if (authSectionHeading) {
+                    authSectionHeading.textContent = 'Sign Up';
+                }
             }
-            displayMessage(''); // Clear any previous messages
         });
     }
 
     if (showLoginLink) {
         showLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
-            signupForm.style.display = 'none';
-            loginForm.style.display = 'block';
-            const authSectionHeading = authSection.querySelector('h2');
-            if (authSectionHeading) {
-                authSectionHeading.textContent = 'Login';
+            if (loginForm && signupForm && authSection) {
+                signupForm.style.display = 'none';
+                loginForm.style.display = 'block';
+                const authSectionHeading = authSection.querySelector('h2');
+                if (authSectionHeading) {
+                    authSectionHeading.textContent = 'Login';
+                }
             }
-            displayMessage(''); // Clear any previous messages
         });
     }
 
-    // --- INITIALIZATION ---
-    const storedToken = localStorage.getItem('authToken');
-    if (storedToken) {
-        authToken = storedToken;
-        updateNav(true);
-        showSection(storyCreationSection); // Default to create story if logged in
-    } else {
-        updateNav(false);
+    // Event listeners for navigation
+    if (navCreateStory) {
+        navCreateStory.addEventListener('click', () => {
+            showSection(storyCreationSection);
+            // Optionally, clear the form or reset story ID if needed
+            // storyCreationForm.reset(); 
+            // currentStoryId = null;
+            // exportPdfButton.style.display = 'none';
+        });
     }
-    populateGenreDropdown(); // Populate genres on page load
+
+    if (navBrowseStories) {
+        navBrowseStories.addEventListener('click', async () => {
+            showSection(browseStoriesSection);
+            await loadAndDisplayUserStories(); // Function to fetch and render stories
+        });
+    }
+
+    // --- AUTHENTICATION --- 
+    signupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = signupForm.username.value;
+        const email = signupForm.email.value; // Get email value
+        const password = signupForm.password.value;
+        try {
+            await apiRequest('/users/', 'POST', { username, email, password }); // Add email to payload
+            displayMessage('Signup successful! Please login.', 'success');
+            signupForm.reset();
+            loginForm.style.display = 'block';
+            signupForm.style.display = 'none';
+        } catch (error) {
+        }
+    });
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = loginForm.username.value;
+        const password = loginForm.password.value;
+
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            authToken = data.access_token;
+            localStorage.setItem('authToken', authToken); // Persist token
+            displayMessage('Login successful!', 'success');
+            updateNav(true);
+            showSection(storyCreationSection); // Or browse stories
+            loginForm.reset();
+        } catch (error) {
+            displayMessage(error.message || 'Login failed.', 'error');
+        }
+    });
+
+    navLogout.addEventListener('click', () => {
+        authToken = null;
+        localStorage.removeItem('authToken');
+        updateNav(false);
+        displayMessage('Logged out.', 'info');
+        currentStoryId = null;
+        exportPdfButton.style.display = 'none';
+    });
+
+    // --- STORY CREATION ---
+    storyCreationForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        displayMessage('Generating story... This may take a moment.', 'info');
+        showSpinner();
+
+        const mainCharacters = [];
+        for (let i = 1; i <= characterCount; i++) {
+            const name = document.getElementById(`char-name-${i}`)?.value;
+            if (name) {
+                mainCharacters.push({
+                    name: name,
+                    age: document.getElementById(`char-age-${i}`)?.value || null,
+                    gender: document.getElementById(`char-gender-${i}`)?.value || null,
+                    physical_appearance: document.getElementById(`char-physical-appearance-${i}`)?.value || null,
+                    clothing_style: document.getElementById(`char-clothing-style-${i}`)?.value || null,
+                    key_traits: document.getElementById(`char-key-traits-${i}`)?.value || null,
+                });
+            }
+        }
+
+        const storyData = {
+            title: document.getElementById('story-title').value, // Added this line
+            genre: document.getElementById('story-genre').value,
+            story_outline: document.getElementById('story-outline').value,
+            main_characters: mainCharacters,
+            num_pages: parseInt(document.getElementById('story-num-pages').value, 10),
+            tone: document.getElementById('story-tone').value,
+            setting: document.getElementById('story-setting').value,
+            word_to_picture_ratio: document.getElementById('story-word-to-picture-ratio').value,
+            text_density: document.getElementById('story-text-density').value,
+            image_style: document.getElementById('story-image-style').value
+        };
+
+        console.log('[FormSubmit] storyData before API call (raw object):', storyData);
+        const tokenForStoryCreation = localStorage.getItem('authToken');
+        if (!tokenForStoryCreation) {
+            displayMessage('Authentication token is missing. Please log in again.', 'error');
+            hideSpinner();
+            return;
+        }
+
+        try {
+            const createdStory = await apiRequest('/stories/', 'POST', storyData, false);
+
+            if (createdStory && createdStory.id && createdStory.title && createdStory.pages) {
+                currentStoryId = createdStory.id;
+
+                showSection(storyPreviewSection); // CALL FIRST: Make the section visible (this will hide PDF button by default)
+                renderStoryPreview(createdStory); // CALL SECOND: Render content (this will show PDF button if pages exist)
+                displayMessage(`Story "${createdStory.title}" created and loaded successfully!`, 'success');
+
+            } else {
+                let errorMessage = 'Story creation completed, but the response was not in the expected format.';
+                if (createdStory && createdStory.title) {
+                    errorMessage = `Story "${createdStory.title}" created, but failed to load full details for preview. You may find it in 'Browse Stories'.`;
+                } else if (createdStory && createdStory.id) {
+                    errorMessage = `Story (ID: ${createdStory.id}) created, but failed to load full details for preview. You may find it in 'Browse Stories'.`;
+                }
+                console.warn('[FormSubmit] Story creation response issue:', createdStory);
+                displayMessage(errorMessage, 'warning');
+            }
+        } catch (error) {
+            console.error('[FormSubmit] Error during story creation:', error);
+            if (!messageArea.textContent.includes('Failed') && !messageArea.textContent.includes('error')) {
+                const errMessage = error && error.message ? String(error.message) : 'An unexpected error occurred during story creation.';
+                displayMessage(`Story creation failed: ${errMessage}`, 'error');
+            }
+        } finally {
+            hideSpinner();
+        }
+    });
+
+    // --- STORY BROWSING ---
+    async function loadAndDisplayUserStories() {
+        if (!userStoriesList) {
+            console.error("[loadAndDisplayUserStories] userStoriesList element not found.");
+            displayMessage("Cannot display stories area.", "error");
+            return;
+        }
+        userStoriesList.innerHTML = ''; // Clear previous list
+        showSpinner();
+        displayMessage("Loading your stories...", "info");
+
+        try {
+            const stories = await apiRequest('/stories/'); // GET request
+            if (stories && stories.length > 0) {
+                const ul = document.createElement('ul');
+                ul.classList.add('stories-list');
+                stories.forEach(story => {
+                    const li = document.createElement('li');
+                    li.classList.add('story-item');
+
+                    const titleDiv = document.createElement('div');
+                    titleDiv.classList.add('story-item-title');
+                    titleDiv.textContent = story.title || "Untitled Story";
+
+                    const dateDiv = document.createElement('div');
+                    dateDiv.classList.add('story-item-date');
+                    dateDiv.textContent = `Created: ${formatDate(story.created_at)}`;
+
+                    const viewButton = document.createElement('button');
+                    viewButton.textContent = "View Story";
+                    viewButton.classList.add('button-small');
+                    viewButton.addEventListener('click', async () => {
+                        displayMessage(`Loading story '${story.title}'...`, "info");
+                        showSpinner();
+                        try {
+                            // We need to fetch the full story details again, as /stories/ might return a summary
+                            const fullStory = await apiRequest(`/stories/${story.id}`);
+                            if (fullStory) {
+                                currentStoryId = fullStory.id;
+                                showSection(storyPreviewSection);
+                                renderStoryPreview(fullStory);
+                                displayMessage(`Story '${fullStory.title}' loaded.`, "success");
+                            } else {
+                                displayMessage(`Could not load details for story '${story.title}'.`, "error");
+                            }
+                        } catch (err) {
+                            displayMessage(`Error loading story: ${err.message}`, "error");
+                        } finally {
+                            hideSpinner();
+                        }
+                    });
+
+                    li.appendChild(titleDiv);
+                    li.appendChild(dateDiv);
+                    li.appendChild(viewButton);
+                    ul.appendChild(li);
+                });
+                userStoriesList.appendChild(ul);
+                displayMessage("Stories loaded.", "success");
+            } else {
+                userStoriesList.innerHTML = '<p>You haven\'t created any stories yet.</p>';
+                displayMessage("No stories found.", "info");
+            }
+        } catch (error) {
+            console.error("[loadAndDisplayUserStories] Error fetching stories:", error);
+            displayMessage(`Failed to load stories: ${error.message}`, "error");
+            userStoriesList.innerHTML = '<p>Could not load stories. Please try again later.</p>';
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    // --- PDF EXPORT ---
+    if (exportPdfButton) {
+        exportPdfButton.addEventListener('click', async () => {
+            if (!currentStoryId) {
+                displayMessage('No story selected or story ID is missing. Cannot export PDF.', 'error');
+                return;
+            }
+
+            displayMessage('Exporting PDF... Please wait.', 'info');
+            showSpinner();
+
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(`${API_BASE_URL}/stories/${currentStoryId}/pdf`, { // Changed endpoint to /pdf
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    let errorDetail = "Unknown error";
+                    try {
+                        const errorData = await response.json();
+                        errorDetail = errorData.detail || JSON.stringify(errorData);
+                    } catch (e) {
+                        errorDetail = await response.text();
+                    }
+                    throw new Error(`PDF export failed: ${response.status} ${response.statusText}. Detail: ${errorDetail}`);
+                }
+
+                const blob = await response.blob();
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = 'story.pdf'; // Default filename
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                    if (filenameMatch && filenameMatch.length > 1) {
+                        filename = filenameMatch[1];
+                    }
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                displayMessage('PDF exported successfully!', 'success');
+
+            } catch (error) {
+                console.error('[PDFExport] Error exporting PDF:', error);
+                displayMessage(`Error exporting PDF: ${error.message}`, 'error');
+            } finally {
+                hideSpinner();
+            }
+        });
+    } else {
+        console.error("Export PDF button not found during event listener setup.");
+    }
+
 });

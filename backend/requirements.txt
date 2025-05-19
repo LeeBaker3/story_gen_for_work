@@ -4,7 +4,7 @@ pydantic
 sqlalchemy
 requests
 python-dotenv
-openai
+openai>=1.0.0  # Use version 1.0.0 or newer
 passlib
 bcrypt==3.2.0
 python-jose[cryptography]

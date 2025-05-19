@@ -76,22 +76,46 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    # Add extensive logging here
+    app_logger.info(
+        f"GET_CURRENT_USER: Token received (first 10): {token[:10] if token else 'No token'}...")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        app_logger.info(
+            f"GET_CURRENT_USER: Attempting jwt.decode with SECRET_KEY (first 5): {SECRET_KEY[:5] if SECRET_KEY else 'None'}... and ALGORITHM: {ALGORITHM}")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        app_logger.info(
+            f"GET_CURRENT_USER: jwt.decode successful. Payload: {payload}")
         username: str = payload.get("sub")
         if username is None:
+            app_logger.error(
+                "GET_CURRENT_USER: Username (sub) is None in token payload.")
             raise credentials_exception
+        app_logger.info(f"GET_CURRENT_USER: Username from token: {username}")
         token_data = schemas.TokenData(username=username)
-    except JWTError:
+    except JWTError as e:
+        error_logger.error(
+            f"GET_CURRENT_USER: JWTError during token decoding: {e}", exc_info=True)
         raise credentials_exception
+    except Exception as e:  # Catch any other unexpected errors during decoding
+        error_logger.error(
+            f"GET_CURRENT_USER: Unexpected error during token decoding phase: {e}", exc_info=True)
+        raise credentials_exception
+
+    app_logger.info(
+        f"GET_CURRENT_USER: Attempting to fetch user \'{token_data.username}\' from DB.")
     user = crud.get_user_by_username(db, username=token_data.username)
     if user is None:
+        app_logger.error(
+            f"GET_CURRENT_USER: User \'{token_data.username}\' not found in DB.")
         raise credentials_exception
+
+    app_logger.info(
+        f"GET_CURRENT_USER: User \'{user.username}\' found and authenticated.")
     return user
 
 

@@ -5,6 +5,8 @@ import requests
 import json
 from dotenv import load_dotenv
 from typing import List, Dict, Any
+import base64  # Added for image encoding
+
 # Import loggers
 from .logging_config import api_logger, error_logger
 from .schemas import CharacterDetail, WordToPictureRatio  # Added WordToPictureRatio
@@ -28,7 +30,7 @@ EXPECTED_PAGE_KEYS = ["Page_number", "Text", "Image_description"]
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
     """
     Generates a story using OpenAI's ChatGPT API based on user inputs.
-    story_input should contain: genre, story_outline, main_characters, num_pages, tone, setting, image_style, word_to_picture_ratio, text_density.
+    story_input should contain: title (optional), genre, story_outline, main_characters, num_pages, tone, setting, image_style, word_to_picture_ratio, text_density.
     """
     # Prepare character descriptions
     character_lines = []
@@ -51,6 +53,15 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
             details.append(f"Personality: {char_data['personality']}")
         if char_data.get('background'):
             details.append(f"Background: {char_data['background']}")
+        if char_data.get('reference_image_path'):
+            details.append(
+                f"Visuals should align with their established concept art (referenced by path: {char_data['reference_image_path']}). Their look is defined and should not change significantly.")
+            if char_data.get('detailed_visual_description_from_reference'):
+                details.append(
+                    f"AI-Generated Detailed Visuals from Reference Art: {char_data['detailed_visual_description_from_reference']}. These details are extracted directly from the reference image and are paramount for consistency.")
+        else:
+            details.append(
+                f"The listed physical appearance, clothing, and key traits define {char_data['name']}'s consistent look. This look should be maintained across all images.")
         details_str = ". ".join(filter(None, details))
         character_lines.append(
             f"- {char_data['name']}: {details_str if details_str else 'No specific details provided.'}")
@@ -70,16 +81,16 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         text_density = str(raw_text_density)
 
     text_density_instruction = ""
-    if text_density == 'CONCISE':
-        text_density_instruction = "Each page should contain concise text, approximately 3-4 lines long."
-    elif text_density == 'STANDARD':
-        text_density_instruction = "Each page should contain a standard amount of text, approximately 5-7 lines long."
-    elif text_density == 'DETAILED':
-        text_density_instruction = "Each page should contain detailed text, approximately 8-10 lines or more."
+    if text_density == 'Concise (~30-50 words)':
+        text_density_instruction = "Each page should contain concise text, approximately 30-50 words long."
+    elif text_density == 'Standard (~60-90 words)':
+        text_density_instruction = "Each page should contain a standard amount of text, approximately 60-90 words long."
+    elif text_density == 'Detailed (~100-150 words)':
+        text_density_instruction = "Each page should contain detailed text, approximately 100-150 words long."
     else:
         error_logger.warning(
-            f"Invalid text_density '{text_density}' received. Defaulting to Concise (3-4 lines).")
-        text_density_instruction = "Each page should contain concise text, approximately 3-4 lines long."
+            f"Invalid text_density '{text_density}' received. Defaulting to Concise (~30-50 words).")
+        text_density_instruction = "Each page should contain concise text, approximately 30-50 words long."
 
     # Prepare word-to-picture ratio and instructions
     # Default to PER_PAGE if not provided or invalid, though schema has a default.
@@ -126,27 +137,131 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         # for validation logic later
         word_to_picture_ratio = WordToPictureRatio.PER_PAGE.value
         image_generation_instructions = f"""
-- The story must be {num_pages_input} pages long.
+- The story must be {num_pages_description} long.
 - For each page, provide the page number, the story text for that page, and a detailed image prompt (Image_description).
 - It is absolutely crucial that every page has a non-empty "Image_description".
 """
 
-    prompt = f"""Please generate a story that meets the following requirements. The story will be of a specific length. Each segment of the story will need an image description (or null if specified by the ratio) that is appropriate for use as a prompt to generate an AI-created image.
+    # Enhanced character instructions for the prompt
+    character_visual_instructions = [
+        "IMPORTANT: The following visual details for each character are key to maintaining consistency across all images.",
+        "When a character is in a scene, their Image_description MUST incorporate these details accurately and consistently with their established look."
+    ]
+    for char_data in story_input['main_characters']:
+        char_name = char_data['name']
 
-Instructions:
+        # Escape curly braces in user-provided details
+        _raw_physical_appearance = char_data.get('physical_appearance')
+        user_physical_appearance = _raw_physical_appearance.replace(
+            '{', '{{').replace('}', '}}') if _raw_physical_appearance else None
+
+        _raw_clothing_style = char_data.get('clothing_style')
+        user_clothing_style = _raw_clothing_style.replace(
+            '{', '{{').replace('}', '}}') if _raw_clothing_style else None
+
+        _raw_ai_generated_desc_from_ref = char_data.get(
+            'detailed_visual_description_from_reference')
+        ai_generated_desc_from_ref = _raw_ai_generated_desc_from_ref.replace(
+            '{', '{{').replace('}', '}}') if _raw_ai_generated_desc_from_ref else None
+
+        _raw_reference_image_revised_prompt = char_data.get(
+            'reference_image_revised_prompt')
+        reference_image_revised_prompt = _raw_reference_image_revised_prompt.replace(
+            '{', '{{').replace('}', '}}') if _raw_reference_image_revised_prompt else None
+
+        _raw_key_traits = char_data.get('key_traits')
+        user_key_traits = _raw_key_traits.replace(
+            '{', '{{').replace('}', '}}') if _raw_key_traits else None
+
+        details_for_prompt = [f"Character Name: {char_name}"]
+
+        if reference_image_revised_prompt:
+            details_for_prompt.append(
+                f"  - Primary Visual Reference (from DALL-E revised_prompt): '{reference_image_revised_prompt}'. This is the MOST IMPORTANT visual description. If {char_name} is in the scene, this ENTIRE description MUST be appended VERBATIM to the Image_description.")
+            if user_physical_appearance:
+                details_for_prompt.append(
+                    f"  - User-Defined Physical Appearance (Supplementary): '{user_physical_appearance}'. Use this to complement the Primary Visual Reference if consistent.")
+            if user_clothing_style:
+                details_for_prompt.append(
+                    f"  - User-Defined Clothing Style (Supplementary): '{user_clothing_style}'. Use this to complement the Primary Visual Reference if consistent.")
+        else:  # No revised_prompt, fall back to user descriptions
+            if user_physical_appearance:
+                details_for_prompt.append(
+                    f"  - User-Defined Physical Appearance: '{user_physical_appearance}'. This description MUST be included VERBATIM in the image prompt if {char_name} is present.")
+            if user_clothing_style:
+                details_for_prompt.append(
+                    f"  - User-Defined Clothing Style: '{user_clothing_style}'. This description MUST be included VERBATIM in the image prompt if {char_name} is present.")
+
+        if ai_generated_desc_from_ref:  # This is the AI's text description of the reference image
+            details_for_prompt.append(
+                f"  - AI-Generated Detailed Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'. This provides supplementary details. If a Primary Visual Reference (revised_prompt) exists, this is secondary. Otherwise, if no other specific descriptions are present, this can be used VERBATIM if {char_name} is present.")
+
+        if not reference_image_revised_prompt and not user_physical_appearance and not user_clothing_style and not ai_generated_desc_from_ref:
+            details_for_prompt.append(
+                f"  - Note: No specific visual appearance, clothing, or AI-generated details were provided for {char_name}. Use story context if they appear in images.")
+
+        if user_key_traits:
+            details_for_prompt.append(
+                f"  - Other Distinctive User-Defined Visual Traits: '{user_key_traits}'. These should be incorporated if compatible and additive to the primary descriptions.")
+
+        if char_data.get('age'):
+            details_for_prompt.append(f"  - Age Context: {char_data['age']}")
+        if char_data.get('gender'):
+            details_for_prompt.append(
+                f"  - Gender Context: {char_data['gender']}")
+
+        if char_data.get('reference_image_path'):
+            details_for_prompt.append(
+                f"  - Reference Image Note: This character has a reference image. The descriptions above are derived from user inputs and this reference. Visuals MUST align.")
+
+        if len(details_for_prompt) > 1:
+            character_visual_instructions.append("\n".join(details_for_prompt))
+
+    detailed_characters_description = "\n\n".join(
+        character_visual_instructions)
+
+    # Prepare story title information for the prompt
+    user_provided_title = story_input.get('title')
+    title_instruction = ""
+    if user_provided_title and user_provided_title.strip():
+        title_instruction = f"- The user has provided the following title for the story: '{user_provided_title}'. This title MUST be used for the story."
+    else:
+        title_instruction = "- The user has NOT provided a story title. You MUST generate a suitable and creative title for the story based on the other inputs."
+
+    prompt = f"""Please generate a story that meets ALL the following requirements with EXTREME precision. The story will be of a specific length. Each segment of the story will need an image description (or null if specified by the ratio) that is appropriate for use as a prompt to generate an AI-created image.
+
+CRITICAL REQUIREMENT - TEXT DENSITY PER PAGE:
+- Adhere ABSOLUTELY STRICTLY to the specified text density: {text_density_instruction}.
+- This means the 'Text' field for EACH page object in the JSON output MUST conform to the word count defined in this instruction. This is a primary constraint.
+
+Further Instructions:
+{title_instruction}
 - The story genre is: {story_input['genre']}.
 - Story outline: {story_input['story_outline']}.
-- Main characters:\n{characters_description}
+- Main characters and their detailed visual descriptions. These are CRITICAL for visual consistency.
+  Review each character's details below. For each character, specific visual descriptions are provided.
+{detailed_characters_description}
 {image_generation_instructions}
 - The desired visual style for all images is: '{image_style_description}'. All "Image_description" fields that are not null must reflect this style (e.g., by appending ', {image_style_description} style' or similar phrasing to the description).
-- {text_density_instruction}
 - Optional tone: {story_input.get('tone', 'N/A')}.
 - Optional setting: {story_input.get('setting', 'N/A')}.
 
-Requirements:
+Output Requirements:
 - The story should start with a title.
-- For each "Image_description" that is not null, ensure it vividly describes the scene based on the "Text" of the page/segment AND incorporates the specified visual style: '{image_style_description}'.
-- Crucially, if main characters (as defined above) are present or implied in the scene for a page/segment with an image, their "Image_description" (if not null) MUST include their key visual details to ensure visual consistency. Reiterate these character details in each relevant image description, also maintaining the '{image_style_description}' style.
+- CRUCIAL FOR IMAGE DESCRIPTION AND VISUAL CONSISTENCY:
+  For every page/segment that requires an image (i.e., "Image_description" is not null), construct the "Image_description" using the following STRICT, SEQUENTIAL process:
+  1. START WITH SCENE FROM PAGE TEXT: MANDATORY FIRST STEP. Create a vivid description of the scene, including specific actions, character interactions, key objects, and the environment. This description MUST be based DIRECTLY and EXCLUSIVELY on the "Text" of that specific page/segment. This forms the foundational part of the "Image_description". DO NOT skip or minimize this step.
+  2. Identify Characters in Scene: After describing the scene from the text, determine which of the Main Characters (listed above) are present or clearly implied in this scene.
+  3. Append Character Visuals Verbatim: For EACH identified Main Character present in the scene, sequentially append their visual details AFTER the scene description from step 1. Follow this hierarchy for appending details:
+     a. Check for a 'Primary Visual Reference (from DALL-E revised_prompt)'. If it exists for the character, append this ENTIRE description VERBATIM. This is the highest priority visual data.
+     b. If no 'Primary Visual Reference' exists, then check for 'User-Defined Physical Appearance'. If present, append it VERBATIM.
+     c. If no 'Primary Visual Reference' exists, then check for 'User-Defined Clothing Style'. If present, append it VERBATIM.
+     d. If a 'Primary Visual Reference' exists, 'User-Defined Physical Appearance' and 'User-Defined Clothing Style' can be appended VERBATIM as *supplementary* details if they are consistent and add value beyond the revised_prompt.
+     e. Check for 'AI-Generated Detailed Visuals (from reference image analysis)'. If a 'Primary Visual Reference' (revised_prompt) exists, this is secondary. If no revised_prompt or user-defined descriptions are primary, this can be appended VERBATIM.
+     f. Check for 'Other Distinctive User-Defined Visual Traits'. Append these VERBATIM if they are compatible and additive to the already appended descriptions.
+     The chosen visual descriptions MUST NOT be summarized, shortened, rephrased, or altered in any way. They are to be treated as fixed blocks of text to be appended sequentially for each character, AFTER the initial scene description derived from the page text.
+  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Appended Character Visuals]) reflects the overall '{image_style_description}'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append ', {image_style_description} style' to the complete description.
+  This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Append Verbatim Character Details Sequentially -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
 - The final output MUST be a single JSON object. This JSON object must have a top-level key 'Title' (string) and a top-level key 'Pages' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
     api_logger.debug(
@@ -156,7 +271,7 @@ Requirements:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a creative story writer that outputs structured JSON."},
+                {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -252,10 +367,10 @@ Requirements:
         raise
 
 
-def generate_image_from_dalle(prompt: str, image_path: str) -> str:
+def generate_image_from_dalle(prompt: str, image_path: str) -> dict:
     """
     Generates an image using DALL·E 3 based on a prompt and saves it locally.
-    Returns the path to the saved image.
+    Returns a dictionary containing the path to the saved image, the revised_prompt, and the gen_id.
     """
     api_logger.debug(
         f"Attempting to generate image with DALL-E. Prompt: {prompt[:200]}...")
@@ -268,8 +383,18 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> str:
             n=1,
             response_format="url"  # or "b64_json"
         )
-        image_url = response.data[0].url
+        image_data = response.data[0]
+        image_url = image_data.url
+        revised_prompt = image_data.revised_prompt
+        # The DALL-E API doesn't explicitly return a 'seed' or 'gen_id' in this response format.
+        # The 'revised_prompt' is the most consistent piece of information we can get back
+        # that is related to the generation. We will use the revised_prompt itself or a hash of it
+        # if a seed-like behavior is needed, or rely on the user to input a seed if the API changes.
+        # For now, we'll log that gen_id is not directly available from this endpoint.
         api_logger.info(f"DALL-E returned image URL: {image_url}")
+        api_logger.info(f"DALL-E revised_prompt: {revised_prompt}")
+        api_logger.info(
+            "Note: gen_id is not directly available in the standard DALL-E API response for 'url' format.")
 
         # Download and save the image
         api_logger.debug(f"Downloading image from URL: {image_url}")
@@ -282,7 +407,8 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> str:
                 f.write(chunk)
         api_logger.info(
             f"Successfully downloaded and saved image to: {image_path}")
-        return image_path
+        # gen_id is None for now
+        return {"image_path": image_path, "revised_prompt": revised_prompt, "gen_id": None}
     except openai.APIError as e:
         error_logger.error(f"DALL-E API Error: {e}", exc_info=True)
         # Potentially return a placeholder or raise a specific exception
@@ -297,7 +423,7 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> str:
         raise
 
 
-def generate_character_reference_image(character: CharacterDetail, base_image_path: str) -> str:
+def generate_character_reference_image(character: CharacterDetail, base_image_path: str) -> dict:
     """
     Generates a character reference image using DALL·E 3 and saves it.
 
@@ -306,7 +432,8 @@ def generate_character_reference_image(character: CharacterDetail, base_image_pa
         base_image_path: The base directory path to save the image (e.g., data/images/story_id/).
 
     Returns:
-        The path to the saved character reference image.
+        A dictionary containing the path to the saved character reference image,
+        the revised_prompt, and gen_id (currently None).
     """
     api_logger.info(
         f"Generating reference image for character: {character.name}")
@@ -347,16 +474,116 @@ def generate_character_reference_image(character: CharacterDetail, base_image_pa
     full_image_path = os.path.join(character_image_dir, image_filename)
 
     try:
-        saved_image_path = generate_image_from_dalle(prompt, full_image_path)
+        # generate_image_from_dalle now returns a dict
+        generation_result = generate_image_from_dalle(prompt, full_image_path)
+        saved_image_path = generation_result["image_path"]
+        revised_prompt = generation_result["revised_prompt"]
+        gen_id = generation_result["gen_id"]  # Will be None for now
+
         api_logger.info(
             f"Successfully generated and saved reference image for {character.name} at {saved_image_path}")
-        return saved_image_path
+        return {"image_path": saved_image_path, "revised_prompt": revised_prompt, "gen_id": gen_id}
     except Exception as e:
         error_logger.error(
             f"Failed to generate reference image for character {character.name}: {e}", exc_info=True)
         # Depending on desired error handling, could return None or re-raise
         # For now, re-raising to make it visible during development
         raise
+
+
+def generate_detailed_description_from_image(image_path: str, character_name: str, initial_character_details: CharacterDetail) -> str:
+    """
+    Uses a vision-capable model (like GPT-4 Vision) to generate a detailed textual description
+    of a character based on a reference image and initial details.
+
+    Args:
+        image_path: Path to the character's reference image.
+        character_name: Name of the character.
+        initial_character_details: The initial CharacterDetail object provided by the user.
+
+    Returns:
+        A detailed textual description of the character's visual appearance from the image.
+    """
+    api_logger.info(
+        f"Generating detailed visual description for {character_name} from image: {image_path}")
+
+    try:
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+    except FileNotFoundError:
+        error_logger.error(
+            f"Reference image file not found at {image_path} for character {character_name}.")
+        raise ValueError(
+            f"Reference image file not found for {character_name} at {image_path}.")
+    except Exception as e:
+        error_logger.error(
+            f"Could not read or encode image {image_path} for {character_name}: {e}")
+        raise ValueError(f"Could not process image file for {character_name}.")
+
+    user_provided_details_parts = []
+    if initial_character_details.physical_appearance:
+        user_provided_details_parts.append(
+            f"User-provided physical appearance: {initial_character_details.physical_appearance}")
+    if initial_character_details.clothing_style:
+        user_provided_details_parts.append(
+            f"User-provided clothing style: {initial_character_details.clothing_style}")
+    if initial_character_details.key_traits:
+        user_provided_details_parts.append(
+            f"User-provided key traits: {initial_character_details.key_traits}")
+
+    user_details_prompt_segment = ". ".join(user_provided_details_parts)
+    if not user_details_prompt_segment.strip():
+        user_details_prompt_segment = "No specific user-provided visual details beyond the image itself were given for context."
+    else:
+        user_details_prompt_segment = f"For context, here are some details the user initially provided for this character: {user_details_prompt_segment}."
+
+    prompt_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"""Analyze the provided image of the character named '{character_name}'.
+Based *only* on what is visually apparent in this image, provide a very detailed and specific textual description of their appearance.
+Focus on concrete visual elements like: hair style and color, eye color and shape, facial features (nose, mouth, jawline, etc.), skin tone, build/physique, exact clothing items and their colors/styles/textures, accessories, and any unique distinguishing marks or features visible.
+This description will be used to help an image generation AI recreate this character consistently in subsequent images. Be as objective and descriptive as possible.
+{user_details_prompt_segment}
+Your output should be a single, coherent paragraph focusing *only* on the character's visual attributes as seen in the image. Do not describe the background, pose, or image composition. Do not add any preamble like 'Okay, here is the description...'. Just provide the description itself."""
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        # Assuming PNG, adjust if other formats are possible
+                        "url": f"data:image/png;base64,{base64_image}"
+                    }
+                }
+            ]
+        }
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4-turbo",  # Updated model
+            messages=prompt_messages,
+            max_tokens=600  # Increased slightly for potentially more detailed descriptions
+        )
+        description = response.choices[0].message.content.strip()
+        api_logger.info(
+            f"Successfully generated detailed description for {character_name} from reference image.")
+        api_logger.debug(
+            f"Generated description for {character_name}: {description}")
+        return description
+    except openai.APIError as e:
+        error_logger.error(
+            f"OpenAI API Error during vision description generation for {character_name}: {e}", exc_info=True)
+        # Consider returning a specific error message or None
+        raise ValueError(
+            f"AI vision service failed to generate description for {character_name}.")
+    except Exception as e:
+        error_logger.error(
+            f"Unexpected error during vision description generation for {character_name}: {e}", exc_info=True)
+        raise ValueError(
+            f"An unexpected error occurred while generating vision description for {character_name}.")
 
 
 # Example usage (for testing this file directly)

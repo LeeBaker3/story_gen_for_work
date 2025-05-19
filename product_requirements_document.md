@@ -14,6 +14,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Story Creation Form:
 	•	Select story genre (Children’s, Sci-Fi, Drama, Horror, Action). Dropdowns (e.g., genre) support alphabetical/numerical sorting.
 	•	Enter:
+	•	Story Title (Optional. If left blank, a title will be AI-generated. Can be edited later).
 	•	Story outline.
 	•	Main characters (name, personality, background).
 	•	Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide DALL·E for consistent character depiction throughout the story.
@@ -22,10 +23,11 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Option to select an image style for story illustrations (e.g., cartoon, watercolor, photorealistic).
 	•	Additional optional fields (tone, setting, etc.).
 	•	Story Preview Page:
+	•	Displays the story, starting with a Title Page featuring the story title and a cover image.
 	•	Displays generated story per page, with accompanying image.
 	•	Navigation between pages.
 	•	Export options (PDF).
-	•	Option to edit story and regenerate pages/images.
+	•	Option to edit story title, page text, and regenerate pages/images.
 	•	Authentication:
 	•	Secure login and session management for regular and admin users. Admin users have distinct privileges.
 	•	User dashboard showing saved stories.
@@ -43,8 +45,10 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	ChatGPT API: Returns story content in structured JSON format.
 	•	DALL·E 3 API: Generates images based on page-specific prompts.
 	•	Functionality:
-	•	Accepts user inputs and sends prompts to ChatGPT.
-	•	Parses and stores story and image metadata in a SQLite database.
+	•	Accepts user inputs (including an optional story title) and sends prompts to ChatGPT.
+	•	If no title is provided by the user, generates a suitable story title based on the outline and other parameters.
+	•	Parses and stores story (including title), pages (with a dedicated title page as the first page), and image metadata in a SQLite database.
+	•	Generates a cover image for the title page using DALL·E 3, based on the final story title, overall themes, and main character descriptions.
 	•	Generates PDF combining story text and locally stored images.
 	•	Provides an endpoint to retrieve a list of stories for the authenticated user.
 	•	Generates and stores character reference images based on detailed user input, to be used in subsequent DALL·E prompts for consistency.
@@ -53,6 +57,8 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Implements a secure 'Forgot Password' mechanism (e.g., token-based).
 	•	Implements role-based access control (RBAC) to differentiate between regular users and admins.
 	•	Provides CRUD endpoints for managing dynamic list content (e.g., genres, image styles) accessible only by admins.
+	•	Handles user-defined story titles, allowing for creation and updates. (New)
+	•	Generates a cover image for the title page using DALL·E 3, based on the story title, themes, and character descriptions. (New)
 
 3.2 Frontend
 	•	Technologies: HTML, CSS (site-wide), JavaScript
@@ -106,6 +112,9 @@ The Story Generator Web App is a web-based application that allows users to gene
     FR17 Admins can log in and access a dedicated admin panel/functions. (New)
     FR18 Admins can manage content for dynamic UI elements (e.g., image styles, genres) through the admin panel. (New)
     FR19 Dropdown content for story creation (e.g., image styles, genres) is populated from the database and manageable by admins. (New)
+    FR20 Users can specify a story title before generation or edit an AI-generated/user-provided title after generation. (New)
+    FR21 Each story will have a dedicated title page as the first page, displaying the story title and a cover image. (New)
+    FR22 The system will automatically generate a cover image for the title page based on the story's final title, overall themes, and main character descriptions. (New)
 
 5. Example Prompt (for ChatGPT API)
     Please generate a story that meets the following requirements. The story will be of a specific length in pages. Each page of the story will need an image description that is appropriate for use as a prompt to generate an AI-created image. The image description should be relevant to the story content on that page and consistent in visual style.
@@ -141,6 +150,8 @@ The Story Generator Web App is a web-based application that allows users to gene
 	•	Story creation and editing
 	•	Image generation and preview
 	•	PDF export functionality
+	•	Story title creation (user-defined and AI-generated) and editing. (New)
+	•	Title page generation with cover image. (New)
 
 8. Deployment & Environment
 	•	Runs entirely on local machine:
@@ -191,6 +202,7 @@ This section tracks the major milestones and completed work items.
     9.6.4 "Forgot Password" Functionality (FR15) - *Pending*
     9.6.5 Admin User Role & Panel (FR16, FR17) - *Pending* (New)
     9.6.6 Database-Managed Dropdowns (FR18, FR19) - *Pending* (New)
+    9.6.7 User-Defined Story Title and Title Page (FR20, FR21, FR22) - *Pending* (New)
 
 9.7 Testing & Quality Assurance
     •   Unit Tests for Backend (FR10) - *Pending*
@@ -205,6 +217,7 @@ This section tracks the major milestones and completed work items.
         •   Selectable image styles: Tracked in 9.6.3.
         •   Admin User Role & Panel: Tracked in 9.6.5.
         •   Database-Managed Dropdowns: Tracked in 9.6.6.
+        •   User-Defined Story Title and Title Page: Tracked in 9.6.7.
     •   Implement "Forgot Password" functionality: Tracked in 9.6.4.
     •   Continue with 8-Step Development Plan (e.g., unit tests for backend - FR10): Tracked in 9.7.
     •   Thorough testing of all existing and new features: Tracked in 9.7.
