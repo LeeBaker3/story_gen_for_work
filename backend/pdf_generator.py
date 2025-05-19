@@ -49,30 +49,46 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
         story_elements.append(Spacer(1, 0.2*inch))
 
         # Page Image
-        if page.image_path and os.path.exists(page.image_path):
-            try:
-                # Ensure image path is absolute or correctly relative for ImageReader
-                # If page.image_path is like "data/images/...", it should be fine from project root.
-                img = Image(page.image_path, width=6*inch,
-                            height=4*inch)  # Adjust size as needed
-                img.hAlign = 'CENTER'
-                story_elements.append(img)
-                app_logger.debug(
-                    f"Added image {page.image_path} to PDF for page {page.page_number} of story {story_data.id}")
-            except Exception as e:
-                error_logger.error(
-                    f"Could not add image {page.image_path} to PDF for story {story_data.id}, page {page.page_number}: {e}", exc_info=True)
-                story_elements.append(Paragraph(
-                    f"[Image not available: {os.path.basename(page.image_path)}]", styles['Italic']))
+        if page.image_path:
+            # Construct the full path to the image file.
+            # os.path.dirname(__file__) is the 'backend' directory.
+            # os.pardir goes up one level to the project root.
+            PROJECT_ROOT = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), os.pardir))
+            # page.image_path is relative to the 'data' directory from the DB, e.g., "images/user_1/story_1/file.png"
+            # So, full_image_path becomes PROJECT_ROOT/data/images/user_1/story_1/file.png
+            full_image_path = os.path.join(
+                PROJECT_ROOT, "data", page.image_path)
+
+            app_logger.debug(
+                f"PDF Gen: Attempting to access image at absolute path: {full_image_path}")
+
+            if os.path.exists(full_image_path):
+                try:
+                    img = Image(full_image_path, width=6*inch,
+                                height=4*inch)  # Adjust size as needed
+                    img.hAlign = 'CENTER'
+                    story_elements.append(img)
+                    app_logger.debug(
+                        f"Added image {full_image_path} to PDF for page {page.page_number} of story {story_data.id}")
+                except Exception as e:
+                    error_logger.error(
+                        f"Could not add image {full_image_path} to PDF for story {story_data.id}, page {page.page_number}: {e}", exc_info=True)
+                    story_elements.append(Paragraph(
+                        f"[Image not available: {os.path.basename(page.image_path)}]", styles['Italic']))
+            else:
+                app_logger.warning(
+                    f"Image file not found at constructed path: {full_image_path} (original DB path: {page.image_path}) for story {story_data.id}, page {page.page_number}")
+                story_elements.append(
+                    Paragraph("[Image not available]", styles['Italic']))
         else:
-            app_logger.warning(
-                f"Image path not found or missing for story {story_data.id}, page {page.page_number}: {page.image_path}")
-            story_elements.append(
-                Paragraph("[Image not available]", styles['Italic']))
+            app_logger.info(  # Changed from warning to info, as it's expected for pages without images
+                f"No image path specified for story {story_data.id}, page {page.page_number}. Skipping image in PDF.")
 
         story_elements.append(Spacer(1, 0.25*inch))
         # Don't add page break after the last page
-        if page.page_number < len(sorted_pages):
+        # Corrected condition: check against the actual last page number in sorted_pages
+        if sorted_pages and page.page_number < sorted_pages[-1].page_number:
             story_elements.append(PageBreak())
 
     try:

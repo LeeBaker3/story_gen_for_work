@@ -247,37 +247,80 @@ button[type="button"]:hover {
     margin-bottom: 1.5rem;
 }
 
-.story-page-preview {
-    background-color: #2A2A2A;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    border-radius: 5px;
-    border: 1px solid #333;
+.story-main-title {
+    text-align: center;
+    margin-bottom: 25px;
+    font-size: 2.2em;
+    color: #333;
+    /* Darker color for main title */
 }
 
-.story-page-preview h4 {
-    color: #00A9FF;
-    margin-top: 0;
+.story-page-preview,
+.story-title-page-preview,
+.story-content-page-preview {
+    border: 1px solid #ddd;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    background-color: #fff;
+    /* White background for pages */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    /* Subtle shadow for depth */
 }
 
-.story-page-preview img {
-    max-width: 100%;
-    height: auto;
+.story-title-page-preview {
+    background-color: #f9f9f9;
+    /* Slightly different background for title page */
+    text-align: center;
+    /* Center content on title page */
+}
+
+.title-page-story-title {
+    font-size: 1.8em;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    color: #444;
+}
+
+.title-page-cover-image {
+    max-width: 90%;
+    /* Allow larger image on title page */
+    max-height: 500px;
+    /* Increased max height */
+    display: block;
+    margin: 20px auto;
+    /* Center image */
     border-radius: 4px;
-    margin-top: 1rem;
-    border: 1px solid #444;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-#export-pdf-button {
-    background-color: #17a2b8;
-    /* Info color for export */
-    margin-top: 1rem;
+.story-content-page-preview h4 {
+    /* Page number heading for content pages */
+    font-size: 1.4em;
+    color: #555;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
 }
 
-#export-pdf-button:hover {
-    background-color: #117a8b;
+.content-page-image {
+    max-width: 100%;
+    /* Images can take full width of their container */
+    max-height: 350px;
+    /* Adjust as needed */
+    display: block;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
 }
 
+#story-preview-section hr {
+    border: 0;
+    height: 1px;
+    background-color: #ccc;
+    margin-top: 30px;
+    margin-bottom: 30px;
+}
 
 /* Message Area */
 #message-area {

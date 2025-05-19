@@ -92,6 +92,19 @@ def get_stories_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 1
 def get_story(db: Session, story_id: int):
     return db.query(Story).filter(Story.id == story_id).first()
 
+
+def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[Story]:
+    """
+    Updates the title of an existing story.
+    """
+    db_story = db.query(Story).filter(Story.id == story_id).first()
+    if db_story:
+        db_story.title = new_title
+        db.commit()
+        db.refresh(db_story)
+        return db_story
+    return None
+
 # Page CRUD (will be used internally when story is generated)
 
 
@@ -101,3 +114,29 @@ def create_story_page(db: Session, page: schemas.PageCreate, story_id: int, imag
     db.commit()
     db.refresh(db_page)
     return db_page
+
+def delete_story_db_entry(db: Session, story_id: int) -> bool:
+    """
+    Deletes a story and all its associated pages from the database.
+    Returns True if deletion was successful, False otherwise.
+    """
+    db_story = db.query(Story).filter(Story.id == story_id).first()
+    if db_story:
+        # Delete associated pages first to maintain foreign key integrity
+        db.query(Page).filter(Page.story_id == story_id).delete(synchronize_session=False)
+        db.delete(db_story)
+        db.commit()
+        return True
+    return False
+
+def update_page_image_path(db: Session, page_id: int, image_path: str) -> Optional[Page]:
+    """
+    Updates the image_path of an existing page.
+    """
+    db_page = db.query(Page).filter(Page.id == page_id).first()
+    if db_page:
+        db_page.image_path = image_path
+        db.commit()
+        db.refresh(db_page)
+        return db_page
+    return None

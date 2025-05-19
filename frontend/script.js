@@ -150,57 +150,115 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        console.log('[renderStoryPreview] Story object received:', JSON.parse(JSON.stringify(story))); // Log a deep copy for inspection
-        console.log('[renderStoryPreview] exportPdfButton element reference:', exportPdfButton); // Added log
+        console.log('[renderStoryPreview] Story object received:', JSON.parse(JSON.stringify(story)));
+        console.log('[renderStoryPreview] exportPdfButton element reference:', exportPdfButton);
 
         storyPreviewContent.innerHTML = ''; // Clear previous content
 
-        const titleElement = document.createElement('h3');
-        titleElement.textContent = story.title || 'Untitled Story';
-        storyPreviewContent.appendChild(titleElement);
+        // Display the main story title once at the top
+        const mainStoryTitleElement = document.createElement('h2'); // Main title, perhaps larger
+        mainStoryTitleElement.textContent = story.title || 'Untitled Story';
+        mainStoryTitleElement.classList.add('story-main-title'); // For potential styling
+        storyPreviewContent.appendChild(mainStoryTitleElement);
 
         if (story.pages && story.pages.length > 0) {
             console.log('[renderStoryPreview] story.pages.length:', story.pages.length);
-            story.pages.forEach((page, index) => {
-                console.log(`[renderStoryPreview] Page ${index + 1} data:`, JSON.parse(JSON.stringify(page)));
-                console.log(`[renderStoryPreview] Page ${index + 1} image_path:`, page.image_path);
+
+            // Sort pages to ensure title page (page_number 0) is first, then others by page_number
+            const sortedPages = story.pages.sort((a, b) => {
+                // Ensure page_number is treated as a number for sorting, even if it's a string like "0" or "Title" (which becomes 0)
+                const pageNumA = parseInt(a.page_number, 10);
+                const pageNumB = parseInt(b.page_number, 10);
+                return pageNumA - pageNumB;
+            });
+
+            sortedPages.forEach((page, index) => {
+                console.log(`[renderStoryPreview] Processing page data (Page Number: ${page.page_number}):`, JSON.parse(JSON.stringify(page)));
+
                 const pageContainer = document.createElement('div');
-                pageContainer.classList.add('story-page-preview');
 
-                const pageNumberElement = document.createElement('h4');
-                pageNumberElement.textContent = `Page ${page.page_number}`;
-                pageContainer.appendChild(pageNumberElement);
+                // Check if it's the title page (page_number 0)
+                // The backend converts "Title" to 0, so we check for numeric 0.
+                if (parseInt(page.page_number, 10) === 0) {
+                    pageContainer.classList.add('story-title-page-preview');
 
-                if (page.text) {
-                    const textElement = document.createElement('p');
-                    textElement.textContent = page.text;
-                    pageContainer.appendChild(textElement);
-                }
-
-                if (page.image_path) { // Changed from page.image_url
-                    const imageElement = document.createElement('img');
-                    // page.image_path is expected to be like "data/images/user_X/story_Y/image.png"
-                    if (page.image_path.startsWith('data/')) {
-                        imageElement.src = '/static_content/' + page.image_path.substring('data/'.length);
-                    } else {
-                        // Fallback if the path is already correct or different structure (e.g. already has /static_content/)
-                        imageElement.src = page.image_path; // Changed from page.image_url
+                    // Title from page.text (should be the story title for page 0)
+                    if (page.text) {
+                        const titlePageTitleElement = document.createElement('h3'); // Title on the title page
+                        titlePageTitleElement.classList.add('title-page-story-title');
+                        titlePageTitleElement.textContent = page.text;
+                        pageContainer.appendChild(titlePageTitleElement);
                     }
-                    imageElement.alt = `Image for page ${page.page_number}`;
-                    imageElement.style.maxWidth = '300px'; // Basic styling for preview
-                    imageElement.style.maxHeight = '300px';
-                    imageElement.style.display = 'block';
-                    imageElement.style.marginTop = '10px';
-                    imageElement.style.marginBottom = '10px';
-                    pageContainer.appendChild(imageElement);
-                } else if (page.image_description) {
-                    const descElement = document.createElement('p');
-                    descElement.style.fontStyle = 'italic';
-                    descElement.textContent = `Image Description: ${page.image_description}`;
-                    pageContainer.appendChild(descElement);
+
+                    // Cover image for title page
+                    if (page.image_path) {
+                        const imageElement = document.createElement('img');
+                        imageElement.classList.add('title-page-cover-image');
+                        // Ensure the path is correctly formed for static content
+                        if (page.image_path.startsWith('data/')) {
+                            imageElement.src = '/static_content/' + page.image_path.substring('data/'.length);
+                        } else if (page.image_path.startsWith('/static_content/')) {
+                            imageElement.src = page.image_path; // Already correctly prefixed
+                        } else {
+                            // Assuming it might be a relative path that needs the prefix
+                            imageElement.src = '/static_content/' + page.image_path;
+                        }
+                        imageElement.alt = story.title ? `Cover image for ${story.title}` : 'Cover image';
+                        // Basic styling for preview - can be enhanced with CSS
+                        imageElement.style.maxWidth = '80%';
+                        imageElement.style.maxHeight = '400px';
+                        imageElement.style.display = 'block';
+                        imageElement.style.margin = '20px auto'; // Center it a bit
+                        pageContainer.appendChild(imageElement);
+                    } else if (page.image_description) { // Fallback to description if no image
+                        const descElement = document.createElement('p');
+                        descElement.style.fontStyle = 'italic';
+                        descElement.textContent = `Cover Image Description: ${page.image_description}`;
+                        pageContainer.appendChild(descElement);
+                    }
+                } else { // Regular content page
+                    pageContainer.classList.add('story-content-page-preview');
+
+                    const pageNumberElement = document.createElement('h4');
+                    pageNumberElement.textContent = `Page ${page.page_number}`;
+                    pageContainer.appendChild(pageNumberElement);
+
+                    if (page.text) {
+                        const textElement = document.createElement('p');
+                        textElement.textContent = page.text;
+                        pageContainer.appendChild(textElement);
+                    }
+
+                    if (page.image_path) {
+                        const imageElement = document.createElement('img');
+                        imageElement.classList.add('content-page-image');
+                        // Ensure the path is correctly formed for static content
+                        if (page.image_path.startsWith('data/')) {
+                            imageElement.src = '/static_content/' + page.image_path.substring('data/'.length);
+                        } else if (page.image_path.startsWith('/static_content/')) {
+                            imageElement.src = page.image_path; // Already correctly prefixed
+                        } else {
+                            // Assuming it might be a relative path that needs the prefix
+                            imageElement.src = '/static_content/' + page.image_path;
+                        }
+                        imageElement.alt = `Image for page ${page.page_number}`;
+                        imageElement.style.maxWidth = '300px';
+                        imageElement.style.maxHeight = '300px';
+                        imageElement.style.display = 'block';
+                        imageElement.style.marginTop = '10px';
+                        imageElement.style.marginBottom = '10px';
+                        pageContainer.appendChild(imageElement);
+                    } else if (page.image_description) {
+                        const descElement = document.createElement('p');
+                        descElement.style.fontStyle = 'italic';
+                        descElement.textContent = `Image Description: ${page.image_description}`;
+                        pageContainer.appendChild(descElement);
+                    }
                 }
+
                 storyPreviewContent.appendChild(pageContainer);
-                if (index < story.pages.length - 1) { // Add a separator if not the last page
+                // Add a separator if not the last page (considering sortedPages)
+                if (index < sortedPages.length - 1) {
                     storyPreviewContent.appendChild(document.createElement('hr'));
                 }
             });
@@ -212,11 +270,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (exportPdfButton) {
             const shouldShowButton = story.pages && story.pages.length > 0;
-            console.log('[renderStoryPreview] Condition (story.pages && story.pages.length > 0):', shouldShowButton); // Added log
+            console.log('[renderStoryPreview] Condition (story.pages && story.pages.length > 0):', shouldShowButton);
             exportPdfButton.style.display = shouldShowButton ? 'block' : 'none';
             console.log('[renderStoryPreview] exportPdfButton display set to:', exportPdfButton.style.display);
         } else {
-            console.error('[renderStoryPreview] exportPdfButton element is NULL or undefined!'); // Added log
+            console.error('[renderStoryPreview] exportPdfButton element is NULL or undefined!');
         }
     }
 
