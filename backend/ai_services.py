@@ -176,35 +176,55 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
             '{', '{{').replace('}', '}}') if _raw_key_traits else None
 
         details_for_prompt = [f"Character Name: {char_name}"]
+        char_specific_visual_description_parts = []
 
+        # 1. Primary Visual: DALL-E revised prompt or user inputs
         if reference_image_revised_prompt:
-            details_for_prompt.append(
-                f"  - Primary Visual Reference (from DALL-E revised_prompt): '{reference_image_revised_prompt}'. This is the MOST IMPORTANT visual description. If {char_name} is in the scene, this ENTIRE description MUST be appended VERBATIM to the Image_description.")
+            char_specific_visual_description_parts.append(
+                f"Primary Visual (from DALL-E revised prompt, use verbatim): '{reference_image_revised_prompt}'")
+            # Supplementary user inputs
             if user_physical_appearance:
-                details_for_prompt.append(
-                    f"  - User-Defined Physical Appearance (Supplementary): '{user_physical_appearance}'. Use this to complement the Primary Visual Reference if consistent.")
+                char_specific_visual_description_parts.append(
+                    f"Supplementary Physical Appearance: '{user_physical_appearance}'")
             if user_clothing_style:
-                details_for_prompt.append(
-                    f"  - User-Defined Clothing Style (Supplementary): '{user_clothing_style}'. Use this to complement the Primary Visual Reference if consistent.")
-        else:  # No revised_prompt, fall back to user descriptions
+                char_specific_visual_description_parts.append(
+                    f"Supplementary Clothing Style: '{user_clothing_style}'")
+        else:
+            # Fallback to user descriptions if no revised_prompt
             if user_physical_appearance:
-                details_for_prompt.append(
-                    f"  - User-Defined Physical Appearance: '{user_physical_appearance}'. This description MUST be included VERBATIM in the image prompt if {char_name} is present.")
+                char_specific_visual_description_parts.append(
+                    f"Physical Appearance: '{user_physical_appearance}'")
             if user_clothing_style:
-                details_for_prompt.append(
-                    f"  - User-Defined Clothing Style: '{user_clothing_style}'. This description MUST be included VERBATIM in the image prompt if {char_name} is present.")
+                char_specific_visual_description_parts.append(
+                    f"Clothing Style: '{user_clothing_style}'")
 
-        if ai_generated_desc_from_ref:  # This is the AI's text description of the reference image
+        # 2. AI Generated Description (from reference image analysis)
+        if ai_generated_desc_from_ref:
+            # Check if other primary/secondary details already exist
+            if reference_image_revised_prompt or \
+               (not reference_image_revised_prompt and (user_physical_appearance or user_clothing_style)):
+                char_specific_visual_description_parts.append(
+                    f"Supplementary AI-Generated Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'")
+            else: # This becomes a primary source if others are missing
+                char_specific_visual_description_parts.append(
+                    f"AI-Generated Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'")
+
+        # 3. User Key Traits
+        if user_key_traits:
+            char_specific_visual_description_parts.append(
+                f"Other Distinctive Traits: '{user_key_traits}'")
+
+        # 4. Form the Canonical Visual Description
+        if char_specific_visual_description_parts:
+            canonical_description = ". ".join(char_specific_visual_description_parts)
+            # Ensure the description ends with a period if it doesn't have one, for consistency.
+            if canonical_description and not canonical_description.endswith('.'):
+                canonical_description += "."
             details_for_prompt.append(
-                f"  - AI-Generated Detailed Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'. This provides supplementary details. If a Primary Visual Reference (revised_prompt) exists, this is secondary. Otherwise, if no other specific descriptions are present, this can be used VERBATIM if {char_name} is present.")
-
-        if not reference_image_revised_prompt and not user_physical_appearance and not user_clothing_style and not ai_generated_desc_from_ref:
+                f"  - Canonical Visual Description to use VERBATIM: '{canonical_description}'")
+        else:
             details_for_prompt.append(
                 f"  - Note: No specific visual appearance, clothing, or AI-generated details were provided for {char_name}. Use story context if they appear in images.")
-
-        if user_key_traits:
-            details_for_prompt.append(
-                f"  - Other Distinctive User-Defined Visual Traits: '{user_key_traits}'. These should be incorporated if compatible and additive to the primary descriptions.")
 
         if char_data.get('age'):
             details_for_prompt.append(f"  - Age Context: {char_data['age']}")
@@ -217,9 +237,9 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
                 f"  - Reference Image Note: This character has a reference image. The descriptions above are derived from user inputs and this reference. Visuals MUST align.")
 
         if len(details_for_prompt) > 1:
-            character_visual_instructions.append("\n".join(details_for_prompt))
+            character_visual_instructions.append("\\n".join(details_for_prompt))
 
-    detailed_characters_description = "\n\n".join(
+    detailed_characters_description = "\\n\\n".join(
         character_visual_instructions)
 
     # Prepare story title information for the prompt
@@ -253,10 +273,14 @@ Output Requirements:
 - This JSON object must have a top-level key 'Title' (string), which is the final title of the story (either user-provided or AI-generated as per title_instruction).
 - It must also have a top-level key 'Pages' (a list of page objects).
 - CRUCIAL - TITLE PAGE REQUIREMENT:
-  - The VERY FIRST page object in the 'Pages' list MUST be a special 'Title Page'.
-  - This 'Title Page' object MUST have its 'Page_number' field set to the exact string "Title".
-  - Its 'Text' field MUST contain the final story title (matching the top-level 'Title' field).
-  - Its 'Image_description' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE suitable for the story's genre, theme, and title. This description must be a non-empty string and should also incorporate the overall '{image_style_description}'.
+  - The VERY FIRST page object in the \'Pages\' list MUST be a special \'Title Page\'.
+  - This \'Title Page\' object MUST have its \'Page_number\' field set to the exact string "Title".
+  - Its \'Text\' field MUST contain the final story title (matching the top-level \'Title\' field).\n\
+  - Its \'Image_description\' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE.
+    - This prompt should focus on setting the overall mood, hinting at the story\'s theme and genre, and visually introducing the main character(s) in an artistic and engaging way, consistent with their established look but AVOIDING literal depiction of their detailed textual descriptions (like specific height, measurements, or lists of traits).
+    - The goal is a visually appealing cover, not a character specification sheet.
+    - The description must be a non-empty string and should also incorporate the overall \'{image_style_description}\'.
+    - When main characters are included on the cover, their appearance should be inspired by their \'Canonical Visual Description\' but integrated naturally and artistically into the scene, rather than having the full canonical description appended verbatim as is done for internal story pages.
 - CONTENT PAGES REQUIREMENT:
   - Subsequent page objects in the 'Pages' list represent the content pages of the story.
   - These content pages MUST have sequential integer 'Page_number' fields (e.g., 1, 2, 3, ...).
@@ -270,16 +294,11 @@ Output Requirements:
      - For the Title Page (Cover Image): Create a vivid description that captures the essence of the story, its genre, and its title. This forms the foundational part of the "Image_description".
      DO NOT skip or minimize this step.
   2. Identify Characters in Scene (if applicable, mainly for content pages): After describing the scene from the text, determine which of the Main Characters (listed above) are present or clearly implied in this scene. For the cover image, characters might be present if central to the theme.
-  3. Append Character Visuals Verbatim (if characters identified): For EACH identified Main Character present in the scene, sequentially append their visual details AFTER the scene description from step 1. Follow this hierarchy for appending details:
-     a. Check for a 'Primary Visual Reference (from DALL-E revised_prompt)'. If it exists for the character, append this ENTIRE description VERBATIM. This is the highest priority visual data.
-     b. If no 'Primary Visual Reference' exists, then check for 'User-Defined Physical Appearance'. If present, append it VERBATIM.
-     c. If no 'Primary Visual Reference' exists, then check for 'User-Defined Clothing Style'. If present, append it VERBATIM.
-     d. If a 'Primary Visual Reference' exists, 'User-Defined Physical Appearance' and 'User-Defined Clothing Style' can be appended VERBATIM as *supplementary* details if they are consistent and add value beyond the revised_prompt.
-     e. Check for 'AI-Generated Detailed Visuals (from reference image analysis)'. If a 'Primary Visual Reference' (revised_prompt) exists, this is secondary. If no revised_prompt or user-defined descriptions are primary, this can be appended VERBATIM.
-     f. Check for 'Other Distinctive User-Defined Visual Traits'. Append these VERBATIM if they are compatible and additive to the already appended descriptions.
-     The chosen visual descriptions MUST NOT be summarized, shortened, rephrased, or altered in any way. They are to be treated as fixed blocks of text to be appended sequentially for each character, AFTER the initial scene description derived from the page text.
+  3. Incorporate Character Visuals:
+     - For Content Pages: For EACH identified Main Character present in the scene, append their 'Canonical Visual Description' (as provided in the 'Main characters and their detailed visual descriptions' section above for each character) VERBATIM after the scene description from step 1. This 'Canonical Visual Description' has been pre-compiled based on priority from all available visual data (DALL-E prompts, user inputs, AI analysis of references) and MUST NOT be summarized, shortened, rephrased, or altered in any way. It should be treated as a single, fixed block of text to be appended for that character.
+     - For the Title Page (Cover Image): If main characters are part of the cover's theme, ensure their appearance is artistically integrated and clearly inspired by their 'Canonical Visual Description'. The goal is recognizability and consistency with their established look. AVOID appending the full 'Canonical Visual Description' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
   4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Appended Character Visuals]) reflects the overall '{image_style_description}'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append ', {image_style_description} style' to the complete description.
-  This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Append Verbatim Character Details Sequentially -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
+  This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Incorporate Character Visuals as specified for page type -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
 - The final output MUST be a single JSON object. This JSON object must have a top-level key 'Title' (string) and a top-level key 'Pages' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
     api_logger.debug(
@@ -341,9 +360,10 @@ Output Requirements:
         # If they differ, update the title page's text to match the main story title.
         main_story_title = story_data.get("Title")
         if main_story_title != title_page_text:
-            app_logger.warning( # Changed from error_logger.error to app_logger.warning
+            app_logger.warning(  # Changed from error_logger.error to app_logger.warning
                 f"Title Page text ('{title_page_text}') does not match top-level story title ('{main_story_title}'). Updating page text to match main title. Page: {title_page_data}")
-            story_data["Pages"][0]["Text"] = main_story_title # Update the text of the title page in the story_data
+            # Update the text of the title page in the story_data
+            story_data["Pages"][0]["Text"] = main_story_title
 
         title_page_img_desc = title_page_data.get("Image_description")
         if not isinstance(title_page_img_desc, str) or not title_page_img_desc.strip():
