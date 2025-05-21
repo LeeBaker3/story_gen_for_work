@@ -3,94 +3,163 @@ import io
 import os
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.lib.utils import ImageReader
 
 from .database import Story as StoryModel
 from .logging_config import app_logger, error_logger
 
-# Ensure the image paths are correct relative to the project root
-# If backend/pdf_generator.py is calling this, and images are in /data/images
-# then the path needs to be constructed carefully.
-# Assuming image_path stored in DB is relative to project root e.g., "data/images/..."
+# Helper function for page footer
+
+
+def _page_footer(canvas, doc):
+    app_logger.info(
+        f"PDFGEN_FOOTER: _page_footer called for doc.page: {doc.page}, physical page: {canvas.getPageNumber()}")
+    canvas.saveState()
+    try:
+        line_y = 0.75 * inch
+        # canvas.line(doc.leftMargin, line_y, # Keep debug line commented out for now
+        #             doc.pagesize[0] - doc.rightMargin, line_y)
+    except Exception as e:
+        pass
+    style = ParagraphStyle(name='FooterStyle',
+                           parent=getSampleStyleSheet()['Normal'],
+                           alignment=1,  # TA_CENTER
+                           textColor='black',
+                           fontSize=10)
+    # Adjust page number display and remove DEBUG prefix
+    # Changed from doc.page to doc.page - 1 and removed DEBUG:
+    page_num_text = f"Page {doc.page - 1}"
+    p = Paragraph(page_num_text, style)
+    available_width_for_text = doc.width
+    p_width, p_height = p.wrapOn(
+        canvas, available_width_for_text, doc.bottomMargin)
+    x_coord = doc.leftMargin + (available_width_for_text - p_width) / 2.0
+    y_coord = 0.5 * inch
+    p.drawOn(canvas, x_coord, y_coord)
+    canvas.restoreState()
+
+# Page event handlers
+
+
+def _on_first_page_handler(canvas, doc):
+    # app_logger.info(f"PDFGEN_HANDLER: onFirstPage called for doc.page: {doc.page}, physical page: {canvas.getPageNumber()}")
+    # No footer on the first page (cover page)
+    pass
+
+
+def _on_later_pages_handler(canvas, doc):
+    # app_logger.info(f"PDFGEN_HANDLER: onLaterPages called for doc.page: {doc.page}, physical page: {canvas.getPageNumber()}")
+    _page_footer(canvas, doc)
 
 
 def create_story_pdf(story_data: StoryModel) -> bytes:
-    """
-    Generates a PDF for the given story.
-    story_data should be an ORM model instance of Story.
-    """
     app_logger.info(
         f"Starting PDF generation for story: {story_data.title} (ID: {story_data.id})")
 
     buffer = io.BytesIO()
+    # Restore original SimpleDocTemplate constructor, without onFirstPage/onLaterPages here
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                             rightMargin=72, leftMargin=72,
-                            topMargin=72, bottomMargin=18)
+                            topMargin=72, bottomMargin=1.0*inch)
     styles = getSampleStyleSheet()
+
+    # Assign handlers directly to the doc instance
+    doc.onFirstPage = _on_first_page_handler
+    doc.onLaterPages = _on_later_pages_handler
+
+    # Remove the minimal handler test block that was here.
+    # Restore original story_elements population
     story_elements = []
 
-    # Story Title
-    story_elements.append(Paragraph(story_data.title, styles['h1']))
+    # Story Title - Main H1, Centered
+    centered_h1_style = ParagraphStyle(
+        name='CenteredH1', parent=styles['h1'], alignment=1)  # 1 for TA_CENTER
+    story_elements.append(Paragraph(story_data.title, centered_h1_style))
     story_elements.append(Spacer(1, 0.25*inch))
 
-    # Sort pages by page number just in case they are not ordered
     sorted_pages = sorted(story_data.pages, key=lambda p: p.page_number)
 
-    for page in sorted_pages:
+    if sorted_pages:
+        cover_page_data = sorted_pages[0]
         app_logger.debug(
-            f"Processing page {page.page_number} for PDF of story {story_data.id}")
-        # Page Text
-        story_elements.append(
-            Paragraph(f"Page {page.page_number}", styles['h3']))
-        story_elements.append(Spacer(1, 0.1*inch))
-        story_elements.append(Paragraph(page.text, styles['Normal']))
-        story_elements.append(Spacer(1, 0.2*inch))
-
-        # Page Image
-        if page.image_path:
-            # Construct the full path to the image file.
-            # os.path.dirname(__file__) is the 'backend' directory.
-            # os.pardir goes up one level to the project root.
+            f"Processing cover page elements (DB page_number {cover_page_data.page_number}) for PDF of story {story_data.id}")
+        if cover_page_data.image_path:
             PROJECT_ROOT = os.path.abspath(os.path.join(
                 os.path.dirname(__file__), os.pardir))
-            # page.image_path is relative to the 'data' directory from the DB, e.g., "images/user_1/story_1/file.png"
-            # So, full_image_path becomes PROJECT_ROOT/data/images/user_1/story_1/file.png
             full_image_path = os.path.join(
-                PROJECT_ROOT, "data", page.image_path)
-
+                PROJECT_ROOT, "data", cover_page_data.image_path)
             app_logger.debug(
-                f"PDF Gen: Attempting to access image at absolute path: {full_image_path}")
-
+                f"PDF Gen: Attempting to access cover image at: {full_image_path}")
             if os.path.exists(full_image_path):
                 try:
-                    img = Image(full_image_path, width=6*inch,
-                                height=4*inch)  # Adjust size as needed
+                    img = Image(full_image_path, width=6*inch, height=4*inch)
+                    img.hAlign = 'CENTER'
+                    story_elements.append(img)
+                    story_elements.append(Spacer(1, 0.25*inch))
+                    app_logger.debug(
+                        f"Added cover image {full_image_path} to PDF for story {story_data.id}")
+                except Exception as e:
+                    error_logger.error(
+                        f"Could not add cover image {full_image_path} to PDF for story {story_data.id}: {e}", exc_info=True)
+                    story_elements.append(Paragraph(
+                        f"[Cover image not available: {os.path.basename(cover_page_data.image_path)}]", styles['Italic']))
+            else:
+                app_logger.warning(
+                    f"Cover image file not found at: {full_image_path} (DB path: {cover_page_data.image_path}) for story {story_data.id}")
+                story_elements.append(Paragraph(
+                    "[Cover image not available]", styles['Italic']))
+        else:
+            app_logger.info(
+                f"No image path specified for cover page (DB page_number {cover_page_data.page_number}) of story {story_data.id}. Skipping cover image.")
+
+        if len(sorted_pages) > 1:
+            story_elements.append(PageBreak())
+
+    for page_idx, content_page_data in enumerate(sorted_pages[1:], start=1):
+        app_logger.debug(
+            f"Processing content page (DB page_number {content_page_data.page_number}) for PDF of story {story_data.id}")
+        story_elements.append(
+            Paragraph(content_page_data.text, styles['Normal']))
+        story_elements.append(Spacer(1, 0.2*inch))
+        if content_page_data.image_path:
+            PROJECT_ROOT = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), os.pardir))
+            full_image_path = os.path.join(
+                PROJECT_ROOT, "data", content_page_data.image_path)
+            app_logger.debug(
+                f"PDF Gen: Attempting to access content image at: {full_image_path}")
+            if os.path.exists(full_image_path):
+                try:
+                    img = Image(full_image_path, width=6*inch, height=4*inch)
                     img.hAlign = 'CENTER'
                     story_elements.append(img)
                     app_logger.debug(
-                        f"Added image {full_image_path} to PDF for page {page.page_number} of story {story_data.id}")
+                        f"Added image {full_image_path} to PDF for page {content_page_data.page_number} of story {story_data.id}")
                 except Exception as e:
                     error_logger.error(
-                        f"Could not add image {full_image_path} to PDF for story {story_data.id}, page {page.page_number}: {e}", exc_info=True)
+                        f"Could not add image {full_image_path} to PDF for story {story_data.id}, page {content_page_data.page_number}: {e}", exc_info=True)
                     story_elements.append(Paragraph(
-                        f"[Image not available: {os.path.basename(page.image_path)}]", styles['Italic']))
+                        f"[Image not available: {os.path.basename(content_page_data.image_path)}]", styles['Italic']))
             else:
                 app_logger.warning(
-                    f"Image file not found at constructed path: {full_image_path} (original DB path: {page.image_path}) for story {story_data.id}, page {page.page_number}")
+                    f"Image file not found at: {full_image_path} (DB path: {content_page_data.image_path}) for story {story_data.id}, page {content_page_data.page_number}")
                 story_elements.append(
                     Paragraph("[Image not available]", styles['Italic']))
         else:
-            app_logger.info(  # Changed from warning to info, as it's expected for pages without images
-                f"No image path specified for story {story_data.id}, page {page.page_number}. Skipping image in PDF.")
-
+            app_logger.info(
+                f"No image path specified for story {story_data.id}, page {content_page_data.page_number}. Skipping image in PDF.")
         story_elements.append(Spacer(1, 0.25*inch))
-        # Don't add page break after the last page
-        # Corrected condition: check against the actual last page number in sorted_pages
-        if sorted_pages and page.page_number < sorted_pages[-1].page_number:
+        if page_idx < len(sorted_pages[1:]):
             story_elements.append(PageBreak())
 
+    app_logger.info(
+        f"PDF Gen: Story ID {story_data.id} - Total sorted pages for PDF: {len(sorted_pages)}")
+    for i, p in enumerate(sorted_pages):
+        app_logger.info(
+            f"PDF Gen: Story ID {story_data.id} - Sorted Page {i}: DB page_number={p.page_number}, Text length={len(p.text) if p.text else 0}, Image path={p.image_path}")
+
+    # Restore original doc.build call with full story_elements
     try:
         doc.build(story_elements)
         app_logger.info(
@@ -98,7 +167,7 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
     except Exception as e:
         error_logger.error(
             f"Failed to build PDF document for story {story_data.id}: {e}", exc_info=True)
-        raise  # Re-raise the exception to be caught by the endpoint
+        raise
 
     pdf_bytes = buffer.getvalue()
     buffer.close()
