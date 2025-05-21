@@ -1,7 +1,6 @@
 from pydantic import BaseModel, ConfigDict  # Added ConfigDict
 from typing import List, Optional
 from enum import Enum  # Added for StoryGenre
-from datetime import datetime  # Added import for datetime
 
 # Story Genre Enum (New)
 
@@ -128,7 +127,6 @@ class StoryTitleUpdate(BaseModel):  # New Schema for updating title
 class Story(StoryBase):  # This schema is for representing a story, including AI generated title
     id: int
     owner_id: int
-    created_at: datetime  # Added created_at field
     pages: List[Page] = []
 
     model_config = ConfigDict(from_attributes=True)  # Replaced class Config

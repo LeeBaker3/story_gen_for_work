@@ -1,6 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+from sqlalchemy.sql import func
 
 # This will be ideally read from .env
 DATABASE_URL = "sqlite:///./story_generator.db"
@@ -22,6 +23,7 @@ class User(Base):
 
 class Story(Base):
     __tablename__ = "stories"
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
     story_outline = Column(Text, nullable=True)  # Changed from outline
@@ -39,6 +41,8 @@ class Story(Base):
     text_density = Column(String, nullable=True,
                           default="Concise")  # Default to Concise
     owner_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())  # Add created_at
+
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",
                          cascade="all, delete-orphan")
