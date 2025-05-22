@@ -275,7 +275,7 @@ Output Requirements:
 - CRUCIAL - TITLE PAGE REQUIREMENT:
   - The VERY FIRST page object in the \'Pages\' list MUST be a special \'Title Page\'.
   - This \'Title Page\' object MUST have its \'Page_number\' field set to the exact string "Title".
-  - Its \'Text\' field MUST contain the final story title (matching the top-level \'Title\' field).\n\
+  - Its \'Text\' field MUST contain the final story title (matching the top-level \'Title\' field).
   - Its \'Image_description\' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE.
     - This prompt should focus on setting the overall mood, hinting at the story\'s theme and genre, and visually introducing the main character(s) in an artistic and engaging way, consistent with their established look but AVOIDING literal depiction of their detailed textual descriptions (like specific height, measurements, or lists of traits).
     - The goal is a visually appealing cover, not a character specification sheet.
@@ -306,7 +306,7 @@ Output Requirements:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
                 {"role": "user", "content": prompt}
