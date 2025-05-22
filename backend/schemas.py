@@ -32,6 +32,7 @@ class ImageStyle(str, Enum):
     ANIME = "Anime"
     VINTAGE_COMIC = "Vintage Comic Book Art"
     MINIMALIST = "Minimalist"
+    NOIR = "Noir"  # Added NOIR
 
 # Word-to-Picture Ratio Enum (FR13)
 
