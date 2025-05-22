@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean  # Added Boolean
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
@@ -41,7 +41,12 @@ class Story(Base):
     text_density = Column(String, nullable=True,
                           default="Concise")  # Default to Concise
     owner_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())  # Add created_at
+    # Represents draft creation or story generation time
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Time of actual story generation, null for drafts
+    generated_at = Column(DateTime(timezone=True), nullable=True)
+    # True if story is a draft, False if generated
+    is_draft = Column(Boolean, default=True, nullable=False)
 
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",

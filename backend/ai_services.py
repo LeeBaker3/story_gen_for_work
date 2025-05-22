@@ -539,6 +539,8 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> dict:
     except openai.APIError as e:
         error_logger.error(
             f"OpenAI API Error during image generation: {e}", exc_info=True)
+        # Add full prompt to the log for easier debugging of DALL-E errors
+        error_logger.error(f"Problematic DALL-E prompt that caused APIError: {prompt}")
         raise
     except Exception as e:
         error_logger.error(

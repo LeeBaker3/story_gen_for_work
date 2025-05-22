@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Body  # Added Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse  # Added for PDF streaming
@@ -9,7 +9,7 @@ import uuid  # For unique image filenames
 import asyncio
 import os
 import io  # Added for BytesIO
-from typing import List  # Added for List type hint
+from typing import List, Optional  # Added for List and Optional type hints
 
 # Added pdf_generator
 from . import crud, schemas, auth, database, ai_services, pdf_generator
@@ -106,12 +106,13 @@ async def read_user_stories(
     db: Session = Depends(get_db),
     current_user: database.User = Depends(auth.get_current_active_user),
     skip: int = 0,
-    limit: int = 100  # Default to 100 stories, can be adjusted
+    limit: int = 100,  # Default to 100 stories, can be adjusted
+    include_drafts: bool = True  # FR24: Added to fetch drafts or only published
 ):
     app_logger.info(
-        f"User {current_user.username} requested their stories. Skip: {skip}, Limit: {limit}")
+        f"User {current_user.username} requested their stories. Skip: {skip}, Limit: {limit}, Include Drafts: {include_drafts}")
     stories = crud.get_stories_by_user(
-        db, user_id=current_user.id, skip=skip, limit=limit)
+        db, user_id=current_user.id, skip=skip, limit=limit, include_drafts=include_drafts)
     if not stories:
         app_logger.info(f"No stories found for user {current_user.username}.")
     # Return empty list if no stories, frontend handles this.
@@ -178,35 +179,129 @@ async def update_story_title_endpoint(
     return updated_story
 
 
-@app.post("/stories/", response_model=schemas.Story)
-async def create_new_story(
+@app.post("/stories/drafts/", response_model=schemas.Story)
+async def create_story_draft_endpoint(
     story_input: schemas.StoryCreate,
     db: Session = Depends(database.get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user)
 ):
     app_logger.info(
-        f"User {current_user.username} initiating new story creation with input: {story_input.model_dump(exclude_none=True)}")
+        f"User {current_user.username} creating a new story draft with input: {story_input.model_dump(exclude_none=True)}")
+    try:
+        db_story_draft = crud.create_story_draft(
+            db=db, story_data=story_input, user_id=current_user.id
+        )
+        app_logger.info(
+            f"Story draft created with ID: {db_story_draft.id} for user {current_user.username}")
+        return db_story_draft
+    except Exception as e:
+        error_logger.error(
+            f"Error creating story draft for user {current_user.username}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not create story draft: {str(e)}"
+        )
 
-    # Determine initial title for DB entry
+
+@app.put("/stories/drafts/{story_id}", response_model=schemas.Story)
+async def update_story_draft_endpoint(
+    story_id: int,
+    # Use StoryCreate as it contains all editable fields for a draft
+    story_update_data: schemas.StoryCreate,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user)
+):
+    app_logger.info(
+        f"User {current_user.username} updating draft ID: {story_id} with data: {story_update_data.model_dump(exclude_none=True)}")
+
+    # Verify the draft exists and belongs to the user
+    existing_draft = crud.get_story(db, story_id=story_id)
+    if not existing_draft or existing_draft.owner_id != current_user.id or not existing_draft.is_draft:
+        error_logger.warning(
+            f"User {current_user.username} attempted to update non-existent or unauthorized draft ID: {story_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found or not authorized to update")
+
+    try:
+        updated_draft = crud.update_story_draft(
+            db=db, story_id=story_id, story_update_data=story_update_data, user_id=current_user.id
+        )
+        if not updated_draft:
+            # This case should be caught by the check above, but as a safeguard:
+            error_logger.error(
+                f"Update_story_draft returned None for draft {story_id} for user {current_user.username} despite initial checks.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="Draft not found during update attempt.")
+
+        app_logger.info(
+            f"Story draft ID: {updated_draft.id} updated successfully by user {current_user.username}")
+        return updated_draft
+    except Exception as e:
+        error_logger.error(
+            f"Error updating story draft ID {story_id} for user {current_user.username}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not update story draft: {str(e)}"
+        )
+
+
+@app.post("/stories/", response_model=schemas.Story)
+async def create_new_story(
+    story_input: schemas.StoryCreate,  # This is the base input from the user
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+    # Optional: ID of the draft being finalized
+    draft_id: Optional[int] = Body(None)
+):
+    app_logger.info(
+        f"User {current_user.username} initiating new story creation. Input: {story_input.model_dump(exclude_none=True)}. Draft ID: {draft_id}")
+
+    db_story = None
     initial_title = story_input.title if story_input.title and story_input.title.strip(
     ) else "[AI Title Pending...]"
-    app_logger.info(f"Initial title for DB: {initial_title}")
 
-    db_story = crud.create_story_db_entry(
-        db=db,
-        story_data=story_input,  # Corrected: Pass the story_input object directly
-        user_id=current_user.id,
-        title=initial_title
-    )
+    if draft_id:
+        app_logger.info(
+            f"Finalizing draft ID: {draft_id} for user {current_user.username}")
+        # Finalize the draft: sets is_draft=False, generated_at=now(), updates title
+        # The story_input here provides the potentially updated details for the draft before finalization.
+        # First, update the draft with any last-minute changes from story_input
+        updated_draft_before_finalize = crud.update_story_draft(
+            db, draft_id, story_input, current_user.id)
+        if not updated_draft_before_finalize:
+            error_logger.warning(
+                f"Draft ID {draft_id} not found or not authorized for finalization by user {current_user.username}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="Draft to finalize not found or not authorized.")
 
-    if not db_story:
-        error_logger.error(
-            f"Failed to create preliminary story entry for user {current_user.username}.")
-        raise HTTPException(
-            status_code=500, detail="Internal server error: Unable to create story entry.")
-
-    app_logger.info(
-        f"Preliminary story entry created with ID: {db_story.id}, Title: {db_story.title}")
+        # Now, finalize it (sets is_draft=False, generated_at, and potentially a new title if provided)
+        db_story = crud.finalize_story_draft(
+            db, draft_id, current_user.id, title=initial_title)
+        if not db_story:
+            # This should ideally not happen if update_story_draft succeeded and it was a draft.
+            error_logger.error(
+                f"Failed to finalize draft {draft_id} for user {current_user.username} after successful update.")
+            raise HTTPException(
+                status_code=500, detail="Internal server error: Unable to finalize draft.")
+        app_logger.info(
+            f"Draft {draft_id} finalized. Story ID is now {db_story.id}, Title: {db_story.title}")
+    else:
+        app_logger.info(
+            f"Creating new story from scratch (not from draft) for user {current_user.username}. Initial title: {initial_title}")
+        db_story = crud.create_story_db_entry(
+            db=db,
+            story_data=story_input,
+            user_id=current_user.id,
+            title=initial_title,
+            is_draft=False  # Explicitly not a draft when using this direct creation path
+        )
+        if not db_story:
+            error_logger.error(
+                f"Failed to create preliminary story entry for user {current_user.username}.")
+            raise HTTPException(
+                status_code=500, detail="Internal server error: Unable to create story entry.")
+        app_logger.info(
+            f"Preliminary story entry created with ID: {db_story.id}, Title: {db_story.title}")
 
     # Prepare paths for character reference images
     user_images_base_path_for_db = f"images/user_{current_user.id}"

@@ -4,6 +4,7 @@ from .database import User, Story, Page
 from passlib.context import CryptContext
 from typing import List, Optional
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
+from datetime import datetime  # Ensure datetime is imported
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -32,10 +33,12 @@ def create_user(db: Session, user: schemas.UserCreate):
 # The title will be populated after AI generation
 
 
-def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: int, title: str):
+# Added is_draft, title is Optional
+def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: int, title: Optional[str] = None, is_draft: bool = False):
     """
     Creates the story entry in the database.
-    The main story content (pages) will be added separately after AI generation.
+    If it's a draft, the title might be None.
+    The main story content (pages) will be added separately after AI generation for non-drafts.
     """
     # Determine the string value for word_to_picture_ratio
     # The schema has a default, so story_data.word_to_picture_ratio should exist.
@@ -48,7 +51,7 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         if story_data.text_density else schemas.TextDensity.CONCISE.value
 
     db_story = Story(
-        title=title,  # Title is now passed explicitly
+        title=title,  # Title can be None for drafts
         genre=story_data.genre,
         # Changed from outline to story_outline
         story_outline=story_data.story_outline,
@@ -63,9 +66,102 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         word_to_picture_ratio=word_to_picture_ratio_value,
         # New Req: Added text_density
         text_density=text_density_value,
-        owner_id=user_id
+        owner_id=user_id,
+        is_draft=is_draft,  # FR24
+        generated_at=None if is_draft else datetime.utcnow()  # FR24
     )
     db.add(db_story)
+    db.commit()
+    db.refresh(db_story)
+    return db_story
+
+
+def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: int) -> Story:
+    """
+    Creates a story draft. Title can be None initially.
+    """
+    # Extract enums or use defaults
+    word_to_picture_ratio_value = story_data.word_to_picture_ratio.value if story_data.word_to_picture_ratio else schemas.WordToPictureRatio.PER_PAGE.value
+    text_density_value = story_data.text_density.value if story_data.text_density else schemas.TextDensity.CONCISE.value
+    image_style_value = story_data.image_style.value if story_data.image_style else schemas.ImageStyle.DEFAULT.value
+
+    db_story_draft = Story(
+        title=story_data.title,  # Can be None or a preliminary title
+        genre=story_data.genre,
+        story_outline=story_data.story_outline,
+        main_characters=jsonable_encoder(story_data.main_characters),
+        num_pages=story_data.num_pages,
+        tone=story_data.tone,
+        setting=story_data.setting,
+        image_style=image_style_value,
+        word_to_picture_ratio=word_to_picture_ratio_value,
+        text_density=text_density_value,
+        owner_id=user_id,
+        is_draft=True,
+        generated_at=None  # Drafts are not "generated" in the final sense
+    )
+    db.add(db_story_draft)
+    db.commit()
+    db.refresh(db_story_draft)
+    return db_story_draft
+
+
+def update_story_draft(db: Session, story_id: int, story_update_data: schemas.StoryCreate, user_id: int) -> Optional[Story]:
+    """
+    Updates an existing story draft.
+    """
+    db_story_draft = db.query(Story).filter(
+        Story.id == story_id, Story.owner_id == user_id, Story.is_draft == True).first()
+    if not db_story_draft:
+        return None
+
+    update_data = story_update_data.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        if key == "main_characters":
+            setattr(db_story_draft, key, jsonable_encoder(value))
+        elif hasattr(schemas, key.replace("_", " ").title().replace(" ", "")):  # Handle Enum types
+            # Attempt to get the Enum class dynamically
+            enum_class_name = key.replace("_", " ").title().replace(" ", "")
+            if enum_class_name == "ImageStyle":
+                enum_cls = schemas.ImageStyle
+            elif enum_class_name == "WordToPictureRatio":
+                enum_cls = schemas.WordToPictureRatio
+            elif enum_class_name == "TextDensity":
+                enum_cls = schemas.TextDensity
+            else:
+                enum_cls = None
+
+            if enum_cls and isinstance(value, str):
+                # Store the .value for enums
+                setattr(db_story_draft, key, enum_cls(value).value)
+            elif enum_cls and isinstance(value, enum_cls):
+                setattr(db_story_draft, key, value.value)
+            else:
+                # Fallback for other types or if enum not found
+                setattr(db_story_draft, key, value)
+        else:
+            setattr(db_story_draft, key, value)
+
+    db.commit()
+    db.refresh(db_story_draft)
+    return db_story_draft
+
+
+def finalize_story_draft(db: Session, story_id: int, user_id: int, title: str) -> Optional[Story]:
+    """
+    Finalizes a draft, setting is_draft to False and updating generated_at.
+    This would typically be called before AI generation of pages.
+    The title from the generation process is also updated here.
+    """
+    db_story = db.query(Story).filter(
+        Story.id == story_id, Story.owner_id == user_id, Story.is_draft == True).first()
+    if not db_story:
+        return None
+
+    db_story.is_draft = False
+    db_story.generated_at = datetime.utcnow()
+    db_story.title = title  # Update title upon finalization
     db.commit()
     db.refresh(db_story)
     return db_story
@@ -86,8 +182,13 @@ def update_story_with_pages(db: Session, story_id: int, pages_data: List[schemas
     db.commit()
 
 
-def get_stories_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 10):
-    return db.query(Story).filter(Story.owner_id == user_id).offset(skip).limit(limit).all()
+# Increased limit, added include_drafts
+def get_stories_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100, include_drafts: bool = True):
+    query = db.query(Story).filter(Story.owner_id == user_id)
+    if not include_drafts:
+        query = query.filter(Story.is_draft == False)
+    # Order by creation
+    return query.order_by(Story.created_at.desc()).offset(skip).limit(limit).all()
 
 
 def get_story(db: Session, story_id: int):
@@ -110,7 +211,8 @@ def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[S
 
 
 def create_story_page(db: Session, page: schemas.PageCreate, story_id: int, image_path: Optional[str] = None):
-    db_page = Page(**page.model_dump(), story_id=story_id, image_path=image_path) # Changed from .dict()
+    db_page = Page(**page.model_dump(), story_id=story_id,
+                   image_path=image_path)  # Changed from .dict()
     db.add(db_page)
     db.commit()
     db.refresh(db_page)

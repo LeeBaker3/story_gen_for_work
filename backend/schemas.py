@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict  # Added ConfigDict
 from typing import List, Optional
 from enum import Enum  # Added for StoryGenre
+from datetime import datetime  # Ensure datetime is imported
 
 # Story Genre Enum (New)
 
@@ -114,6 +115,8 @@ class StoryBase(BaseModel):
     # New Req: Added text_density
     text_density: Optional[TextDensity] = TextDensity.CONCISE
     # Add other metadata fields from PRD if necessary
+    is_draft: Optional[bool] = True  # For FR24
+    generated_at: Optional[datetime] = None  # For FR24
 
 
 class StoryCreate(StoryBase):  # This schema is for user input to generate a story
@@ -128,6 +131,7 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
     id: int
     owner_id: int
     pages: List[Page] = []
+    created_at: datetime  # Added based on previous work
 
     model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
