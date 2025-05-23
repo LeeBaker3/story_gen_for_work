@@ -130,13 +130,18 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   **FR-AI-02:** Update AI Model Dependencies: (Previously FRXX)
     *   Upgrade the image generation model from DALL-E 3 to a newer version (e.g., "GPT Image 1" or similar, based on availability and API compatibility).
     *   Upgrade the text generation model from GPT-4 to a newer, more capable version (e.g., "GPT-4 Turbo" like "GPT-4.1", based on availability and API compatibility).
+*   **FR-AI-03: Configurable Image Generation Style Mapping:**
+    *   The mapping between the application's defined `ImageStyle` (e.g., `CARTOON`, `PHOTOREALISTIC`, `FANTASY_ART`) and the OpenAI Image API's `style` parameter (which accepts `vivid` or `natural`) shall be configurable by an administrator.
+    *   The system will store these mappings (e.g., `FANTASY_ART` -> `vivid`, `PHOTOREALISTIC` -> `natural`).
+    *   When generating an image, the backend will look up the user-selected `ImageStyle`, retrieve its corresponding OpenAI `style` parameter from the configuration, and use it in the API call.
+    *   **Default Behavior:** If an `ImageStyle` does not have a specific mapping configured by the admin, the system shall default to using `vivid` for the OpenAI `style` parameter.
 
 ## 4.6 Administration
 *   **FR-ADM-01:** Admin Role: An administrator role with elevated privileges will exist. (Previously FR16 - new context)
 *   **FR-ADM-02:** User Management (Admin): Admins can view, activate, deactivate, and delete user accounts. (Previously FR17 - new context)
 *   **FR-ADM-03:** Content Moderation (Admin): Admins can review and remove inappropriate or low-quality generated stories. (Previously FR18 - new context)
 *   **FR-ADM-04:** System Monitoring (Admin): Admins can view basic system health and usage statistics. (Previously FR19 - new context)
-*   **FR-ADM-05:** Manage Dynamic UI Content: Admins can manage content for dynamic UI elements (e.g., image styles, genres) through the admin panel. (Previously original FR18)
+*   **FR-ADM-05:** Manage Dynamic UI Content and System Behavior: Admins can manage content for dynamic UI elements (e.g., image styles, genres) and configure system behaviors such as the mapping between application image styles and OpenAI API style parameters (`vivid`/`natural`) through the admin panel. (Previously original FR18, expanded)
 *   **FR-ADM-06:** Populate Dropdowns from DB: Dropdown content for story creation (e.g., image styles, genres) is populated from the database and manageable by admins. (Previously original FR19)
 
 ## 4.7 Testing

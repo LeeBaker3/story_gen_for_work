@@ -436,7 +436,7 @@ async def create_new_story(
                     story_page_image_dir_on_disk, image_filename)
 
                 # Call DALL-E service to generate and save the image
-                image_generation_result = ai_services.generate_image_from_dalle(
+                image_generation_result = ai_services.generate_image(  # Changed function name
                     prompt=page_to_create.image_description,
                     image_path=image_save_path_on_disk  # Pass the full disk path for saving
                 )

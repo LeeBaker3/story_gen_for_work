@@ -181,7 +181,7 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         # 1. Primary Visual: DALL-E revised prompt or user inputs
         if reference_image_revised_prompt:
             char_specific_visual_description_parts.append(
-                f"Primary Visual (from DALL-E revised prompt, use verbatim): '{reference_image_revised_prompt}'")
+                f"Primary Visual (from AI image model, use verbatim): '{reference_image_revised_prompt}'")
             # Supplementary user inputs
             if user_physical_appearance:
                 char_specific_visual_description_parts.append(
@@ -205,7 +205,7 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
                (not reference_image_revised_prompt and (user_physical_appearance or user_clothing_style)):
                 char_specific_visual_description_parts.append(
                     f"Supplementary AI-Generated Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'")
-            else: # This becomes a primary source if others are missing
+            else:  # This becomes a primary source if others are missing
                 char_specific_visual_description_parts.append(
                     f"AI-Generated Visuals (from reference image analysis): '{ai_generated_desc_from_ref}'")
 
@@ -216,7 +216,8 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
 
         # 4. Form the Canonical Visual Description
         if char_specific_visual_description_parts:
-            canonical_description = ". ".join(char_specific_visual_description_parts)
+            canonical_description = ". ".join(
+                char_specific_visual_description_parts)
             # Ensure the description ends with a period if it doesn't have one, for consistency.
             if canonical_description and not canonical_description.endswith('.'):
                 canonical_description += "."
@@ -237,9 +238,10 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
                 f"  - Reference Image Note: This character has a reference image. The descriptions above are derived from user inputs and this reference. Visuals MUST align.")
 
         if len(details_for_prompt) > 1:
-            character_visual_instructions.append("\\n".join(details_for_prompt))
+            character_visual_instructions.append(
+                "\\n".join(details_for_prompt))
 
-    detailed_characters_description = "\\n\\n".join(
+    detailed_characters_description = "\\\\n\\\\n".join(
         character_visual_instructions)
 
     # Prepare story title information for the prompt
@@ -273,21 +275,21 @@ Output Requirements:
 - This JSON object must have a top-level key 'Title' (string), which is the final title of the story (either user-provided or AI-generated as per title_instruction).
 - It must also have a top-level key 'Pages' (a list of page objects).
 - CRUCIAL - TITLE PAGE REQUIREMENT:
-  - The VERY FIRST page object in the \'Pages\' list MUST be a special \'Title Page\'.
-  - This \'Title Page\' object MUST have its \'Page_number\' field set to the exact string "Title".
-  - Its \'Text\' field MUST contain the final story title (matching the top-level \'Title\' field).
-  - Its \'Image_description\' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE.
-    - This prompt should focus on setting the overall mood, hinting at the story\'s theme and genre, and visually introducing the main character(s) in an artistic and engaging way, consistent with their established look but AVOIDING literal depiction of their detailed textual descriptions (like specific height, measurements, or lists of traits).
+  - The VERY FIRST page object in the \\'Pages\\' list MUST be a special \\'Title Page\\'.
+  - This \\'Title Page\\' object MUST have its \\'Page_number\\' field set to the exact string "Title".
+  - Its \\'Text\\' field MUST contain the final story title (matching the top-level \\'Title\\' field).
+  - Its \\'Image_description\\' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE.
+    - This prompt should focus on setting the overall mood, hinting at the story\\'s theme and genre, and visually introducing the main character(s) in an artistic and engaging way, consistent with their established look but AVOIDING literal depiction of their detailed textual descriptions (like specific height, measurements, or lists of traits).
     - The goal is a visually appealing cover, not a character specification sheet.
-    - The description must be a non-empty string and should also incorporate the overall \'{image_style_description}\'.
-    - When main characters are included on the cover, their appearance should be inspired by their \'Canonical Visual Description\' but integrated naturally and artistically into the scene, rather than having the full canonical description appended verbatim as is done for internal story pages.
+    - The description must be a non-empty string and should also incorporate the overall \\'{image_style_description}\\'.
+    - When main characters are included on the cover, their appearance should be inspired by their \\'Canonical Visual Description\\' but integrated naturally and artistically into the scene, rather than having the full canonical description appended verbatim as is done for internal story pages.
 - CONTENT PAGES REQUIREMENT:
   - Subsequent page objects in the 'Pages' list represent the content pages of the story.
   - These content pages MUST have sequential integer 'Page_number' fields (e.g., 1, 2, 3, ...).
   - The 'Text' for these content pages must adhere to the {text_density_instruction}.
   - The 'Image_description' for these content pages must follow the rules specified in {image_generation_instructions} and the 'CRUCIAL FOR IMAGE DESCRIPTION AND VISUAL CONSISTENCY' section below.
 
-- CRUCIAL FOR IMAGE DESCRIPTION AND VISUAL CONSISTENCY (for content pages and the Title Page's cover image):
+- CRUCIAL FOR IMAGE DESCRIPTION AND VISUAL CONSISTENCY (for content pages and the Title Page\\'s cover image):
   For every page/segment that requires an image (i.e., "Image_description" is not null), construct the "Image_description" using the following STRICT, SEQUENTIAL process:
   1. START WITH SCENE FROM PAGE TEXT (or Title/Theme for Cover): MANDATORY FIRST STEP.
      - For Content Pages: Create a vivid description of the scene, including specific actions, character interactions, key objects, and the environment. This description MUST be based DIRECTLY and EXCLUSIVELY on the "Text" of that specific page/segment.
@@ -295,11 +297,11 @@ Output Requirements:
      DO NOT skip or minimize this step.
   2. Identify Characters in Scene (if applicable, mainly for content pages): After describing the scene from the text, determine which of the Main Characters (listed above) are present or clearly implied in this scene. For the cover image, characters might be present if central to the theme.
   3. Incorporate Character Visuals:
-     - For Content Pages: For EACH identified Main Character present in the scene, append their 'Canonical Visual Description' (as provided in the 'Main characters and their detailed visual descriptions' section above for each character) VERBATIM after the scene description from step 1. This 'Canonical Visual Description' has been pre-compiled based on priority from all available visual data (DALL-E prompts, user inputs, AI analysis of references) and MUST NOT be summarized, shortened, rephrased, or altered in any way. It should be treated as a single, fixed block of text to be appended for that character.
-     - For the Title Page (Cover Image): If main characters are part of the cover's theme, ensure their appearance is artistically integrated and clearly inspired by their 'Canonical Visual Description'. The goal is recognizability and consistency with their established look. AVOID appending the full 'Canonical Visual Description' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
-  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Appended Character Visuals]) reflects the overall '{image_style_description}'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append ', {image_style_description} style' to the complete description.
+     - For Content Pages: For EACH identified Main Character present in the scene, append their \\'Canonical Visual Description\\' (as provided in the \\'Main characters and their detailed visual descriptions\\' section above for each character) VERBATIM after the scene description from step 1. This \\'Canonical Visual Description\\' has been pre-compiled based on priority from all available visual data (image model outputs, user inputs, AI analysis of references) and MUST NOT be summarized, shortened, rephrased, or altered in any way. It should be treated as a single, fixed block of text to be appended for that character.
+     - For the Title Page (Cover Image): If main characters are part of the cover\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\'Canonical Visual Description\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\'Canonical Visual Description\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
+  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Appended Character Visuals]) reflects the overall \\'{image_style_description}\\'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append \\', {image_style_description} style\\' to the complete description.
   This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Incorporate Character Visuals as specified for page type -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
-- The final output MUST be a single JSON object. This JSON object must have a top-level key 'Title' (string) and a top-level key 'Pages' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
+- The final output MUST be a single JSON object. This JSON object must have a top-level key \\'Title\\' (string) and a top-level key \\'Pages\\' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
     api_logger.debug(
         f"Prompt sent to ChatGPT for story generation (ratio: {word_to_picture_ratio}): {prompt[:500]}...")
@@ -477,61 +479,50 @@ Output Requirements:
         raise
 
 
-def generate_image_from_dalle(prompt: str, image_path: str) -> dict:
+def generate_image(prompt: str, image_path: str) -> dict:
     """
-    Generates an image using DALL·E 3 based on a prompt and saves it locally.
-    Returns a dictionary containing the path to the saved image, the revised_prompt, and the gen_id.
+    Generates an image using an AI image model based on a prompt and saves it locally.
+    Returns a dictionary containing the path to the saved image and the revised_prompt (if available).
     The `image_path` argument should be the full absolute or relative path (from project root)
     where the image file should be saved, including the filename and extension (e.g., 'data/images/user_1/story_1/page_1.png').
     """
     api_logger.debug(
-        f"Attempting to generate image with DALL-E. Prompt: {prompt[:200]}... Target save path: {image_path}")
+        f"Attempting to generate image with gpt-image-1. Prompt: {prompt[:200]}... Target save path: {image_path}")
     try:
         response = client.images.generate(
-            model="dall-e-3",
+            model="gpt-image-1",
             prompt=prompt,
-            size="1024x1024",  # or "1792x1024", "1024x1792"
-            quality="standard",  # or "hd"
-            n=1,
-            response_format="url"  # or "b64_json"
+            size="1024x1024",
+            n=1
         )
         image_data = response.data[0]
-        image_url = image_data.url
-        revised_prompt = image_data.revised_prompt
-        # The DALL-E API doesn't explicitly return a 'seed' or 'gen_id' in this response format.
-        # The 'revised_prompt' is the most consistent piece of information we can get back
-        # that is related to the generation. We will use the revised_prompt itself or a hash of it
-        # if a seed-like behavior is needed, or rely on the user to input a seed if the API changes.
-        # For now, we'll log that gen_id is not directly available from this endpoint.
-        api_logger.info(f"DALL-E returned image URL: {image_url}")
-        api_logger.info(f"DALL-E revised_prompt: {revised_prompt}")
-        api_logger.info(
-            "Note: gen_id is not directly available in the standard DALL-E API response for 'url' format.")
+        # Assuming gpt-image-1 returns b64_json by default as per documentation
+        # If the API contract changes, this access might need adjustment.
+        # Check the actual response structure if issues arise.
+        b64_json_data = image_data.b64_json
+        # revised_prompt is not available with gpt-image-1, set to None
+        revised_prompt = None
 
-        # Download and save the image
-        api_logger.debug(f"Downloading image from URL: {image_url}")
-        image_response = requests.get(image_url, stream=True)
-        image_response.raise_for_status()  # Raise an exception for bad status codes
+        api_logger.info(f"AI model returned image data (b64_json).")
+        # api_logger.info(f"Revised_prompt (not available with this model): {revised_prompt}")
+
+        # Decode and save the image
+        api_logger.debug(f"Decoding and saving image to: {image_path}")
+        image_bytes = base64.b64decode(b64_json_data)
 
         # Ensure the directory for image_path exists
         os.makedirs(os.path.dirname(image_path), exist_ok=True)
 
         with open(image_path, 'wb') as f:
-            for chunk in image_response.iter_content(chunk_size=8192):
-                f.write(chunk)
+            f.write(image_bytes)
         api_logger.info(
-            f"Image successfully downloaded and saved to {image_path}")
+            f"Image successfully decoded and saved to {image_path}")
 
         return {
-            "image_path": image_path,  # Return the path where the image was saved
+            "image_path": image_path,
             "revised_prompt": revised_prompt,
-            # gen_id is not directly available, so we can omit it or use revised_prompt as a proxy
-            "gen_id": None  # Or some hash of revised_prompt if needed elsewhere
+            "gen_id": None  # gen_id is not typically available directly
         }
-    except requests.exceptions.RequestException as e:
-        error_logger.error(
-            f"Failed to download image from DALL-E URL {image_url}. Error: {e}", exc_info=True)
-        raise  # Re-raise the exception to be handled by the caller
     except IOError as e:
         error_logger.error(
             f"Failed to save image to path {image_path}. Error: {e}", exc_info=True)
@@ -539,8 +530,8 @@ def generate_image_from_dalle(prompt: str, image_path: str) -> dict:
     except openai.APIError as e:
         error_logger.error(
             f"OpenAI API Error during image generation: {e}", exc_info=True)
-        # Add full prompt to the log for easier debugging of DALL-E errors
-        error_logger.error(f"Problematic DALL-E prompt that caused APIError: {prompt}")
+        error_logger.error(
+            f"Problematic image prompt that caused APIError: {prompt}")
         raise
     except Exception as e:
         error_logger.error(
@@ -559,14 +550,14 @@ def generate_character_reference_image(
     # db_path_prefix: Optional[str] = None
 ) -> dict:
     """
-    Generates a reference image for a character using DALL·E 3, saves it,
+    Generates a reference image for a character using an AI image model, saves it,
     and returns the updated character details as a dictionary including the image path (relative to 'data/'),
-    revised prompt, and gen_id.
+    revised prompt (if available), and gen_id.
     """
     app_logger.info(
         f"Generating reference image for character: {character.name} (User: {user_id}, Story: {story_id})")
 
-    # Construct prompt for DALL-E
+    # Construct prompt for the image model
     prompt_parts = [f"Full body character concept art for {character.name}."]
     if character.physical_appearance:
         prompt_parts.append(
@@ -592,9 +583,9 @@ def generate_character_reference_image(
     prompt_parts.append(
         "The character should be clearly visible, facing forward or slightly angled, on a simple or neutral background to emphasize their design.")
 
-    dalle_prompt = " ".join(prompt_parts)
+    image_prompt = " ".join(prompt_parts)  # Renamed from dalle_prompt
     api_logger.debug(
-        f"DALL-E prompt for character {character.name}: {dalle_prompt}")
+        f"Image model prompt for character {character.name}: {image_prompt}")
 
     # Define image save paths
     # Path relative to 'data/' for storing in DB and for frontend access
@@ -619,10 +610,10 @@ def generate_character_reference_image(
     image_path_for_db = os.path.join(_db_path_prefix, char_image_filename)
 
     try:
-        # Generate image using the existing DALL-E function
-        image_generation_result = generate_image_from_dalle(
-            prompt=dalle_prompt,
-            image_path=image_save_path_on_disk  # Pass the full disk path for saving
+        # Generate image using the updated image generation function
+        image_generation_result = generate_image(  # Changed function name
+            prompt=image_prompt,  # Changed variable name
+            image_path=image_save_path_on_disk
         )
 
         updated_character_dict = character.model_dump(exclude_none=True)
@@ -765,7 +756,8 @@ if __name__ == "__main__":
         "setting": "A medieval kingdom with a dark forest",
         "image_style": "Cartoon",
         # Or use WordToPictureRatio.PER_TWO_PAGES.value
-        "word_to_picture_ratio": "PER_TWO_PAGES"
+        "word_to_picture_ratio": "PER_TWO_PAGES",
+        "text_density": "Concise (~30-50 words)"  # Added for completeness
     }
     try:
         print(
@@ -788,10 +780,10 @@ if __name__ == "__main__":
                     os.makedirs(test_image_dir, exist_ok=True)
                     image_file_path = os.path.join(
                         test_image_dir, f"test_image_page_{page_num_text}.png")
-                    saved_path = generate_image_from_dalle(
+                    image_gen_details = generate_image(  # Changed function name
                         page_prompt, image_file_path)
                     print(
-                        f"Successfully generated and saved image to: {saved_path}")
+                        f"Successfully generated and saved image to: {image_gen_details['image_path']}")
                 else:
                     print(
                         f"\nNo image description (or it's null) for page {page_num_text} as per ratio.")
