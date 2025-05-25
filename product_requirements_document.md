@@ -231,7 +231,7 @@ This section tracks the major milestones and completed work items.
 ### 9.6.1 Detailed Character Creation (FR-STORY-03)
 *   UI for inputting detailed character attributes (age, gender, physical appearance, clothing style, key traits) - **Completed Q2 2025**
 *   Backend processing of detailed character attributes for story generation prompts - **Completed Q2 2025**
-*   Generation of upfront character reference images to guide DALL·E for consistent character depiction - *Partially Completed Q2 2025 (basic generation working, consistency needs improvement)*
+*   Generation of upfront character reference images to guide DALL·E for consistent character depiction - **Completed Q2 2025** (Logic implemented to generate images if missing during draft finalization. Addressed `TypeError` in `ai_services.py` related to `model` kwarg. Test cases updated.)
 ### 9.6.2 Adjustable Word-to-Picture Ratio (FR-STORY-04) - *Pending*
 ### 9.6.3 Selectable Image Styles (FR-STORY-05) - *Completed Q2 2025*
 ### 9.6.4 "Forgot Password" Functionality (FR-AUTH-04) - *Pending*
