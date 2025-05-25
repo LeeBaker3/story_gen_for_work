@@ -4,7 +4,8 @@ from .database import User, Story, Page
 from passlib.context import CryptContext
 from typing import List, Optional
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
-from datetime import datetime  # Ensure datetime is imported
+# Ensure datetime and timezone are imported
+from datetime import datetime, timezone
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -68,7 +69,7 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         text_density=text_density_value,
         owner_id=user_id,
         is_draft=is_draft,  # FR24
-        generated_at=None if is_draft else datetime.utcnow()  # FR24
+        generated_at=None if is_draft else datetime.now(timezone.utc)  # FR24
     )
     db.add(db_story)
     db.commit()
@@ -160,7 +161,7 @@ def finalize_story_draft(db: Session, story_id: int, user_id: int, title: str) -
         return None
 
     db_story.is_draft = False
-    db_story.generated_at = datetime.utcnow()
+    db_story.generated_at = datetime.now(timezone.utc)
     db_story.title = title  # Update title upon finalization
     db.commit()
     db.refresh(db_story)

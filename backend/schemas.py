@@ -95,6 +95,8 @@ class Page(PageBase):
     id: int
     story_id: int
     image_path: Optional[str] = None  # Path to locally stored image
+    created_at: datetime  # Added
+    updated_at: datetime  # Added
 
     model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 

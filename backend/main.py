@@ -9,7 +9,8 @@ import uuid  # For unique image filenames
 import asyncio
 import os
 import io  # Added for BytesIO
-from typing import List, Optional  # Added for List and Optional type hints
+# Added for List, Optional, and Dict type hints
+from typing import List, Optional, Dict
 
 # Added pdf_generator
 from . import crud, schemas, auth, database, ai_services, pdf_generator
@@ -256,16 +257,18 @@ async def create_new_story(
     app_logger.info(
         f"User {current_user.username} initiating new story creation. Input: {story_input.model_dump(exclude_none=True)}. Draft ID: {draft_id}")
 
-    db_story = None
-    initial_title = story_input.title if story_input.title and story_input.title.strip(
+    # Ensure db_story is typed for clarity
+    db_story: Optional[database.Story] = None
+    # initial_title is used for the first DB entry before AI generation, or for finalize_story_draft call.
+    initial_title_for_db_operation = story_input.title if story_input.title and story_input.title.strip(
     ) else "[AI Title Pending...]"
 
     if draft_id:
         app_logger.info(
             f"Finalizing draft ID: {draft_id} for user {current_user.username}")
-        # Finalize the draft: sets is_draft=False, generated_at=now(), updates title
-        # The story_input here provides the potentially updated details for the draft before finalization.
-        # First, update the draft with any last-minute changes from story_input
+        # First, update the draft with any last-minute changes from story_input.
+        # crud.update_story_draft should fetch the draft, check ownership, update fields, and return the updated draft.
+        # It should not change is_draft status.
         updated_draft_before_finalize = crud.update_story_draft(
             db, draft_id, story_input, current_user.id)
         if not updated_draft_before_finalize:
@@ -274,11 +277,11 @@ async def create_new_story(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                 detail="Draft to finalize not found or not authorized.")
 
-        # Now, finalize it (sets is_draft=False, generated_at, and potentially a new title if provided)
+        # Now, finalize it (sets is_draft=False, generated_at, and potentially a new title if provided by initial_title_for_db_operation)
+        # The title passed here is the one from the current user input, which might update the draft's existing title.
         db_story = crud.finalize_story_draft(
-            db, draft_id, current_user.id, title=initial_title)
+            db, draft_id, current_user.id, title=initial_title_for_db_operation)
         if not db_story:
-            # This should ideally not happen if update_story_draft succeeded and it was a draft.
             error_logger.error(
                 f"Failed to finalize draft {draft_id} for user {current_user.username} after successful update.")
             raise HTTPException(
@@ -287,13 +290,13 @@ async def create_new_story(
             f"Draft {draft_id} finalized. Story ID is now {db_story.id}, Title: {db_story.title}")
     else:
         app_logger.info(
-            f"Creating new story from scratch (not from draft) for user {current_user.username}. Initial title: {initial_title}")
+            f"Creating new story from scratch (not from draft) for user {current_user.username}. Initial title for DB: {initial_title_for_db_operation}")
         db_story = crud.create_story_db_entry(
             db=db,
             story_data=story_input,
             user_id=current_user.id,
-            title=initial_title,
-            is_draft=False  # Explicitly not a draft when using this direct creation path
+            title=initial_title_for_db_operation,  # Use the derived initial title
+            is_draft=False
         )
         if not db_story:
             error_logger.error(
@@ -318,32 +321,35 @@ async def create_new_story(
 
     updated_main_characters = []
     if story_input.main_characters:
-        for char_detail_input in story_input.main_characters:
-            # char_detail_dict = char_detail_input.model_dump(exclude_none=True) # Not needed if passing model directly
-            try:
-                # Assuming generate_character_reference_image now expects 'character' (Pydantic model)
-                # and handles its own image saving path construction using user_id, story_id,
-                # returning updated character details with 'reference_image_path' relative to 'data/'.
-                # If it needs explicit paths, its signature and call would be different.
-                # For now, only fixing the 'character_data' to 'character' based on error.
-                updated_char_info_dict = ai_services.generate_character_reference_image(
-                    character=char_detail_input,  # Changed from character_data=char_detail_dict
-                    user_id=current_user.id,
-                    story_id=db_story.id,
-                    image_style_enum=story_input.image_style
-                    # If generate_character_reference_image needs save_directory_on_disk and db_path_prefix:
-                    # save_directory_on_disk=char_ref_image_dir_on_disk,
-                    # db_path_prefix=char_ref_image_path_base_for_db
-                )
-                updated_main_characters.append(updated_char_info_dict)
-                app_logger.info(
-                    f"Generated reference image and updated details for character: {updated_char_info_dict.get('name')}")
-            except Exception as e:
-                error_logger.error(
-                    f"Error generating reference image for character {char_detail_input.name}: {e}", exc_info=True)
-                # Append original dict if error, or handle differently
+        if not draft_id:  # Only generate new reference images if NOT finalizing a draft
+            app_logger.info(
+                f"Generating new character reference images as this is not a draft finalization.")
+            for char_detail_input in story_input.main_characters:
+                try:
+                    updated_char_info_dict = ai_services.generate_character_reference_image(
+                        character=char_detail_input,
+                        user_id=current_user.id,
+                        story_id=db_story.id,
+                        image_style_enum=story_input.image_style
+                    )
+                    updated_main_characters.append(updated_char_info_dict)
+                    app_logger.info(
+                        f"Generated reference image and updated details for character: {updated_char_info_dict.get('name')}")
+                except Exception as e:
+                    error_logger.error(
+                        f"Error generating reference image for character {char_detail_input.name}: {e}", exc_info=True)
+                    updated_main_characters.append(
+                        char_detail_input.model_dump(exclude_none=True))
+        # If finalizing a draft, use character details from input (assuming they include any existing ref paths)
+        else:
+            app_logger.info(
+                f"Draft finalization (ID: {draft_id}): Skipping new character reference image generation. Using existing character details from input.")
+            for char_detail_input in story_input.main_characters:
                 updated_main_characters.append(
                     char_detail_input.model_dump(exclude_none=True))
+    else:
+        app_logger.info(
+            "No main characters provided in input. Skipping reference image generation.")
 
     ai_story_input_data = story_input.model_dump(exclude_none=True)
     ai_story_input_data['main_characters'] = updated_main_characters
@@ -355,7 +361,7 @@ async def create_new_story(
         generated_content = ai_services.generate_story_from_chatgpt(
             ai_story_input_data)
         app_logger.info(
-            f"Story content successfully generated by AI. Title: {generated_content.get('Title')}")
+            f"Story content successfully generated by AI. Title from AI: {generated_content.get('Title')}")
     except ValueError as ve:
         error_logger.error(
             f"ValueError during AI story generation: {ve}", exc_info=True)
@@ -373,17 +379,35 @@ async def create_new_story(
         raise HTTPException(
             status_code=500, detail=f"Failed to generate story content: {str(e)}")
 
-    final_story_title = initial_title
-    if initial_title == "[AI Title Pending...]" or not story_input.title:
-        final_story_title = generated_content.get(
-            "Title", "Untitled Story from AI")
-    app_logger.info(f"Final story title determined as: {final_story_title}")
+    # Determine the final story title
+    # Priority: 1. AI-generated title, 2. User-provided title (if not placeholder), 3. Default
+    final_story_title: str
+    ai_provided_title = generated_content.get("Title")
+    user_provided_title_stripped = story_input.title.strip() if story_input.title else None
+
+    if ai_provided_title:
+        final_story_title = ai_provided_title
+    elif user_provided_title_stripped and user_provided_title_stripped != "[AI Title Pending...]":
+        final_story_title = user_provided_title_stripped
+    else:
+        # If AI provides no title, and user provided nothing or only placeholder, use a default.
+        # This case also covers when initial_title_for_db_operation was "[AI Title Pending...]" and AI didn't override.
+        final_story_title = "Untitled Story"
+
+    app_logger.info(
+        f"Final story title determined as: '{final_story_title}'. Current db_story.title: '{db_story.title}'")
 
     if db_story.title != final_story_title:
-        db_story = crud.update_story_title(
+        updated_story_obj = crud.update_story_title(
             db=db, story_id=db_story.id, new_title=final_story_title)
-        app_logger.info(
-            f"Story ID {db_story.id} title updated to: {db_story.title}")
+        if updated_story_obj:
+            db_story = updated_story_obj  # Ensure db_story is the updated object for the response
+            app_logger.info(
+                f"Story ID {db_story.id} title updated by AI/logic to: '{db_story.title}'")
+        else:
+            error_logger.error(
+                f"crud.update_story_title returned None for story {db_story.id} when trying to set title to '{final_story_title}'. Proceeding with title '{db_story.title}'.")
+            # If update fails, db_story retains its previous title. The response will reflect that.
 
     # Prepare base paths for story page images
     # user_images_base_path_for_db defined earlier: f"images/user_{current_user.id}"
@@ -397,56 +421,87 @@ async def create_new_story(
     os.makedirs(story_page_image_dir_on_disk, exist_ok=True)
 
     created_pages_db = []
+    # The character_name_to_ref_image_map is not strictly needed if iterating updated_main_characters directly below,
+    # but it's harmless if updated_main_characters is the source of truth.
+
     for page_data_from_ai in generated_content.get("Pages", []):
         page_number_from_ai = page_data_from_ai.get("Page_number")
-
-        # Convert "Title" page number to 0 for DB storage.
-        # Assumes Page model's page_number field in DB is an Integer.
-        # If your Page model expects a string for page_number, this conversion isn't needed.
         db_page_number = 0 if page_number_from_ai == "Title" else int(
             page_number_from_ai)
 
         page_to_create = schemas.PageCreate(
             page_number=db_page_number,
-            text=page_data_from_ai.get("text", page_data_from_ai.get(
-                "Text", "")),  # Handle potential casing diff from AI
+            text=page_data_from_ai.get(
+                "text", page_data_from_ai.get("Text", "")),
             image_description=page_data_from_ai.get(
-                # Handle casing
                 "image_description", page_data_from_ai.get("Image_description"))
         )
 
         db_page = crud.create_story_page(
             db=db,
-            page=page_to_create,  # Corrected keyword argument from page_data to page
+            page=page_to_create,
             story_id=db_story.id
-            # The create_story_page function in crud.py handles the optional image_path,
-            # which will be None initially here. It will be updated later if an image is generated.
         )
 
         if page_to_create.image_description:
             try:
-                # Differentiating cover image filename slightly for clarity, though not strictly necessary
                 image_filename_prefix = "cover" if db_page_number == 0 else f"page_{db_page.page_number}"
-                # Create a unique filename for the image
                 unique_suffix = uuid.uuid4().hex[:8]
                 image_filename = f"{image_filename_prefix}_{unique_suffix}_story_{db_story.id}_pageid_{db_page.id}.png"
-
-                # Full path on disk where the image will be saved
                 image_save_path_on_disk = os.path.join(
                     story_page_image_dir_on_disk, image_filename)
 
-                # Call DALL-E service to generate and save the image
-                image_generation_result = ai_services.generate_image(  # Changed function name
-                    prompt=page_to_create.image_description,
-                    image_path=image_save_path_on_disk  # Pass the full disk path for saving
+                char_name_for_ref_prompt: Optional[str] = None
+                char_ref_paths_for_page: Optional[List[str]] = None
+
+                page_characters_in_scene = page_data_from_ai.get(
+                    "Characters_in_scene", [])
+                app_logger.debug(
+                    f"Page {db_page.page_number} (AI: {page_number_from_ai}): Characters in scene from AI: {page_characters_in_scene}")
+
+                if page_characters_in_scene:
+                    for char_name_in_scene in page_characters_in_scene:
+                        found_char_detail = next((
+                            char_detail for char_detail in updated_main_characters
+                            if char_detail.get("name") == char_name_in_scene
+                        ), None)
+
+                        if found_char_detail:
+                            # Always set the character name if a character from the scene is identified in main_characters
+                            char_name_for_ref_prompt = found_char_detail.get(
+                                "name")
+                            ref_path_from_char_detail = found_char_detail.get(
+                                "reference_image_path")
+
+                            if ref_path_from_char_detail:
+                                full_ref_image_disk_path = os.path.join(
+                                    "data", ref_path_from_char_detail)
+                                if os.path.exists(full_ref_image_disk_path):
+                                    char_ref_paths_for_page = [
+                                        full_ref_image_disk_path]
+                                    app_logger.info(
+                                        f"Found reference image for character '{char_name_for_ref_prompt}' for page {db_page.page_number}: {full_ref_image_disk_path}")
+                                    break  # Use the first character found with an existing reference image
+                                else:
+                                    error_logger.warning(
+                                        f"Reference image file for character '{char_name_for_ref_prompt}' ({full_ref_image_disk_path}) does not exist. Will not use for edit, but name is set.")
+                            # else: No reference_image_path recorded for this character detail. Character name is still set.
+                        # else: Character name from scene not found in main_characters list.
+                        if char_ref_paths_for_page:  # If we found a valid ref path, stop searching chars in scene
+                            break
+
+                app_logger.debug(
+                    f"Page {db_page.page_number}: char_name_for_ref_prompt='{char_name_for_ref_prompt}', char_ref_paths_for_page={char_ref_paths_for_page}")
+
+                image_generation_result = ai_services.generate_image(
+                    page_image_description=page_to_create.image_description,
+                    image_path=image_save_path_on_disk,
+                    character_reference_image_paths=char_ref_paths_for_page,
+                    character_name_for_reference=char_name_for_ref_prompt
                 )
 
-                # The path to be stored in the database (relative to the 'data' directory)
                 image_path_for_db = os.path.join(
                     story_page_image_path_for_db_base, image_filename)
-
-                # image_generation_result['image_path'] should be image_save_path_on_disk
-                # We use our constructed image_path_for_db for the database.
                 db_page = crud.update_page_image_path(
                     db=db, page_id=db_page.id, image_path=image_path_for_db)
                 app_logger.info(

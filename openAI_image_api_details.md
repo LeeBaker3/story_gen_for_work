@@ -1,9 +1,9 @@
 
 
-# 1. Images 
+# 0. Images 
 https://platform.openai.com/docs/api-reference/images
 
-1.1 ## Create image 
+## 1  Create image 
 https://platform.openai.com/docs/api-reference/images/create
 
 POST https://api.openai.com/v1/images/generations
@@ -188,3 +188,121 @@ The total number of tokens (images and text) used for the image generation.
     }
   }
 }
+
+
+# 3 Create image edit
+POST https://api.openai.com/v1/images/edits
+Creates an edited or extended image given one or more source images and a prompt. This endpoint only supports gpt-image-1
+## 3.1 Request body
+
+### 3.1.1 image
+string or array
+Required
+The image(s) to edit. Must be a supported image file or an array of images.
+
+For gpt-image-1, each image should be a png, webp, or jpg file less than 25MB. You can provide up to 16 images.
+
+### 3.1.2 prompt
+string
+Required
+A text description of the desired image(s). The maximum length is 32000 characters for gpt-image-1.
+
+### 3.1.3 background
+string or null
+Optional
+Defaults to auto
+Allows to set transparency for the background of the generated image(s). This parameter is only supported for gpt-image-1. Must be one of transparent, opaque or auto (default value). When auto is used, the model will automatically determine the best background for the image.
+
+If transparent, the output format needs to support transparency, so it should be set to either png (default value) or webp.
+
+### 3.1.4 mask
+file
+Optional
+An additional image whose fully transparent areas (e.g. where alpha is zero) indicate where image should be edited. If there are multiple images provided, the mask will be applied on the first image. Must be a valid PNG file, less than 4MB, and have the same dimensions as image.
+
+### 3.1.5 model
+string
+Optional
+Defaults to dall-e-2
+The model to use for image generation. Only dall-e-2 and gpt-image-1 are supported. Defaults to dall-e-2 unless a parameter specific to gpt-image-1 is used.
+
+### 3.1.6 n
+integer or null
+Optional
+Defaults to 1
+The number of images to generate. Must be between 1 and 10.
+
+### 3.1.7 quality
+string or null
+Optional
+Defaults to auto
+The quality of the image that will be generated. high, medium and low are only supported for gpt-image-1. Defaults to auto.
+
+### 3.1.8 response_format
+string or null
+Optional
+Defaults to url
+The format in which the generated images are returned. Must be one of url or b64_json. URLs are only valid for 60 minutes after the image has been generated. This parameter is only supported for dall-e-2, as gpt-image-1 will always return base64-encoded images.
+
+### 3.1.9 size
+string or null
+Optional
+Defaults to 1024x1024
+The size of the generated images. Must be one of 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default value) for gpt-image-1.
+
+### 3.1.10 user
+string
+Optional
+A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. Learn more.
+Returns
+
+Returns a list of image objects.
+
+## 3.2 Example Request
+import base64
+from openai import OpenAI
+client = OpenAI()
+
+prompt = """
+Generate a photorealistic image of a gift basket on a white background 
+labeled 'Relax & Unwind' with a ribbon and handwriting-like font, 
+containing all the items in the reference pictures.
+"""
+
+result = client.images.edit(
+    model="gpt-image-1",
+    image=[
+        open("body-lotion.png", "rb"),
+        open("bath-bomb.png", "rb"),
+        open("incense-kit.png", "rb"),
+        open("soap.png", "rb"),
+    ],
+    prompt=prompt
+)
+
+image_base64 = result.data[0].b64_json
+image_bytes = base64.b64decode(image_base64)
+
+with open("gift-basket.png", "wb") as f:
+    f.write(image_bytes)
+
+## 3.3 Example Response.
+
+{
+  "created": 1713833628,
+  "data": [
+    {
+      "b64_json": "..."
+    }
+  ],
+  "usage": {
+    "total_tokens": 100,
+    "input_tokens": 50,
+    "output_tokens": 50,
+    "input_tokens_details": {
+      "text_tokens": 10,
+      "image_tokens": 40
+    }
+  }
+}
+

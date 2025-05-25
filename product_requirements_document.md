@@ -129,7 +129,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   **FR-AI-01:** JSON format from ChatGPT includes title, pages, and image prompts with keys: Title, Page, Image_description. (Previously FR7)
 *   **FR-AI-02:** Update AI Model Dependencies: (Previously FRXX)
     *   Upgrade the image generation model from DALL-E 3 to a newer version (e.g., "GPT Image 1" or similar, based on availability and API compatibility).
-    *   Upgrade the text generation model from GPT-4 to a newer, more capable version (e.g., "GPT-4 Turbo" like "GPT-4.1", based on availability and API compatibility).
+    *   Upgrade the text generation model from GPT-4 to a newer, more capable version (e.g. like "GPT-4.1", based on availability and API compatibility).
 *   **FR-AI-03: Configurable Image Generation Style Mapping:**
     *   The mapping between the application's defined `ImageStyle` (e.g., `CARTOON`, `PHOTOREALISTIC`, `FANTASY_ART`) and the OpenAI Image API's `style` parameter (which accepts `vivid` or `natural`) shall be configurable by an administrator.
     *   The system will store these mappings (e.g., `FANTASY_ART` -> `vivid`, `PHOTOREALISTIC` -> `natural`).

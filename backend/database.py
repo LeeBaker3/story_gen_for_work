@@ -61,6 +61,8 @@ class Page(Base):
     text = Column(Text, nullable=False)
     image_description = Column(Text, nullable=True)  # Prompt for DALL-E
     image_path = Column(String, nullable=True)  # Path to locally stored image
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     story = relationship("Story", back_populates="pages")
 
 

@@ -26,7 +26,9 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
-EXPECTED_PAGE_KEYS = ["Page_number", "Text", "Image_description"]
+# Added "Characters_in_scene" to expected page keys
+EXPECTED_PAGE_KEYS = ["Page_number", "Text",
+                      "Image_description", "Characters_in_scene"]
 
 
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
@@ -295,7 +297,10 @@ Output Requirements:
      - For Content Pages: Create a vivid description of the scene, including specific actions, character interactions, key objects, and the environment. This description MUST be based DIRECTLY and EXCLUSIVELY on the "Text" of that specific page/segment.
      - For the Title Page (Cover Image): Create a vivid description that captures the essence of the story, its genre, and its title. This forms the foundational part of the "Image_description".
      DO NOT skip or minimize this step.
-  2. Identify Characters in Scene (if applicable, mainly for content pages): After describing the scene from the text, determine which of the Main Characters (listed above) are present or clearly implied in this scene. For the cover image, characters might be present if central to the theme.
+  2. Identify Characters in Scene (if applicable, mainly for content pages): After describing the scene from the text, determine which of the Main Characters (listed above by name) are present or clearly implied in this scene. For the cover image, characters might be present if central to the theme.
+     - For EACH page object (including the Title Page and all content pages), you MUST include a field called "Characters_in_scene". This field must be a JSON list of strings. Each string in the list must be the exact name of a Main Character (from the list provided to you) who is present in the scene described by that page's "Text" and "Image_description".
+     - If no Main Characters are present in a specific page's scene, "Characters_in_scene" must be an empty list `[]`.
+     - This "Characters_in_scene" list is separate from and in addition to the "Image_description".
   3. Incorporate Character Visuals:
      - For Content Pages: For EACH identified Main Character present in the scene, append their \\'Canonical Visual Description\\' (as provided in the \\'Main characters and their detailed visual descriptions\\' section above for each character) VERBATIM after the scene description from step 1. This \\'Canonical Visual Description\\' has been pre-compiled based on priority from all available visual data (image model outputs, user inputs, AI analysis of references) and MUST NOT be summarized, shortened, rephrased, or altered in any way. It should be treated as a single, fixed block of text to be appended for that character.
      - For the Title Page (Cover Image): If main characters are part of the cover\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\'Canonical Visual Description\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\'Canonical Visual Description\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
@@ -398,6 +403,19 @@ Output Requirements:
         #         f"Warning: Number of content pages ({actual_num_content_pages}) does not match expected ({expected_num_content_pages}).")
         # Depending on strictness, this could be an error.
 
+        # Validate Title Page (first page) - continued
+        title_page_chars_in_scene = title_page_data.get("Characters_in_scene")
+        if not isinstance(title_page_chars_in_scene, list):
+            error_logger.error(
+                f"Title Page: Characters_in_scene must be a list. Page: {title_page_data}")
+            raise ValueError("Title Page: Characters_in_scene must be a list.")
+        for char_name in title_page_chars_in_scene:
+            if not isinstance(char_name, str):
+                error_logger.error(
+                    f"Title Page: Each item in Characters_in_scene must be a string. Found: {char_name}. Page: {title_page_data}")
+                raise ValueError(
+                    "Title Page: Each item in Characters_in_scene must be a string.")
+
         # Start from the second page (index 1)
         for i, page_data in enumerate(story_data["Pages"][1:], start=1):
             if not all(key in page_data for key in EXPECTED_PAGE_KEYS):
@@ -409,6 +427,7 @@ Output Requirements:
             page_num = page_data.get("Page_number")
             img_desc = page_data.get("Image_description")
             page_text = page_data.get("Text")
+            chars_in_scene = page_data.get("Characters_in_scene")  # New field
 
             if not isinstance(page_num, int):
                 error_logger.error(
@@ -431,6 +450,18 @@ Output Requirements:
                 raise ValueError(
                     f"Content Page {page_num}: Text must be a string.")
             # Add text length validation here if needed, based on text_density_instruction
+
+            if not isinstance(chars_in_scene, list):  # Validation for new field
+                error_logger.error(
+                    f"Content Page {page_num}: Characters_in_scene must be a list. Page: {page_data}")
+                raise ValueError(
+                    f"Content Page {page_num}: Characters_in_scene must be a list.")
+            for char_name in chars_in_scene:  # Validation for new field
+                if not isinstance(char_name, str):
+                    error_logger.error(
+                        f"Content Page {page_num}: Each item in Characters_in_scene must be a string. Found: {char_name}. Page: {page_data}")
+                    raise ValueError(
+                        f"Content Page {page_num}: Each item in Characters_in_scene must be a string.")
 
             if not isinstance(img_desc, (str, type(None))):
                 error_logger.error(
@@ -479,63 +510,170 @@ Output Requirements:
         raise
 
 
-def generate_image(prompt: str, image_path: str) -> dict:
+def generate_image(page_image_description: str, image_path: str, character_reference_image_paths: Optional[List[str]] = None, character_name_for_reference: Optional[str] = None) -> dict:
     """
     Generates an image using an AI image model based on a prompt and saves it locally.
+    If character_reference_image_paths are provided, it attempts to use the image edit API for consistency.
+    The character_name_for_reference is used to improve the edit prompt if a reference image is used.
     Returns a dictionary containing the path to the saved image and the revised_prompt (if available).
     The `image_path` argument should be the full absolute or relative path (from project root)
     where the image file should be saved, including the filename and extension (e.g., 'data/images/user_1/story_1/page_1.png').
     """
     api_logger.debug(
-        f"Attempting to generate image with gpt-image-1. Prompt: {prompt[:200]}... Target save path: {image_path}")
+        f"Attempting to generate image. Target save path: {image_path}. Reference paths: {character_reference_image_paths}")
+
+    # Ensure the directory for image_path exists
+    os.makedirs(os.path.dirname(image_path), exist_ok=True)
+
+    if character_reference_image_paths and len(character_reference_image_paths) > 0:
+        reference_image_path = character_reference_image_paths[0]
+        api_logger.info(
+            f"Reference image provided: {reference_image_path}. Attempting image edit.")
+
+        # Check if the reference image file exists BEFORE trying to open it
+        if not os.path.exists(reference_image_path):
+            error_logger.error(
+                f"Reference image file not found: {reference_image_path}. Falling back to generation.")
+            # Fall through to the generation API by skipping the edit attempt
+        else:
+            # OpenAI DALL-E 2 edit prompt limit is 1000. gpt-image-1 might be similar. Leave a small buffer.
+            MAX_EDIT_PROMPT_LENGTH = 990
+
+            if character_name_for_reference:
+                instruction_prefix = (
+                    f"IMPORTANT: Use the provided image as a strict visual reference for the character \'{character_name_for_reference}\'. "
+                    f"The character \'{character_name_for_reference}\' in the output image MUST visually match this reference, especially their face, hair, and build. "
+                    f"This visual reference for \'{character_name_for_reference}\' takes precedence over any conflicting appearance details in the text prompt below. "
+                    f"Integrate \'{character_name_for_reference}\' (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
+                    f"Scene details: "
+                )
+            # Fallback if no specific character name is provided (less ideal but a safeguard)
+            else:
+                instruction_prefix = (
+                    f"IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
+                    f"This character in the output image MUST visually match the reference, especially their face, hair, and build. "
+                    f"This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
+                    f"Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
+                    f"Scene details: "
+                )
+
+            available_length_for_description = MAX_EDIT_PROMPT_LENGTH - \
+                len(instruction_prefix)
+
+            effective_page_image_description = page_image_description
+            if len(page_image_description) > available_length_for_description:
+                if available_length_for_description <= 0:
+                    error_logger.error(
+                        f"Instruction prefix for edit prompt is too long ({len(instruction_prefix)} chars). Cannot include page_image_description. Edit may fail or produce poor results."
+                    )
+                    effective_page_image_description = "A scene."  # Minimal placeholder
+                else:
+                    # Truncate from the end, keeping the start which is often more critical for scene setup.
+                    cutoff = available_length_for_description - 3  # for "..."
+                    effective_page_image_description = page_image_description[:cutoff] + "..."
+                    api_logger.warning(
+                        f"Page image description (original length {len(page_image_description)}) was truncated to {len(effective_page_image_description)} characters to fit within the {MAX_EDIT_PROMPT_LENGTH} character limit for the image edit prompt (prefix length {len(instruction_prefix)})."
+                    )
+
+            edit_prompt = instruction_prefix + effective_page_image_description
+
+            # Log a significant portion of the prompt for debugging, especially if truncated.
+            log_prompt_length = min(len(edit_prompt), 350)
+            api_logger.debug(
+                f"Constructed edit prompt (total length {len(edit_prompt)} chars). Start of prompt: '{edit_prompt[:log_prompt_length]}...'")
+
+            try:
+                with open(reference_image_path, "rb") as image_file:
+                    response = client.images.edit(
+                        # Assuming gpt-image-1 supports edit, verify if this is the correct model for edits.
+                        # OpenAI docs often mention dall-e-2 for edits, but gpt-image-1 is newer.
+                        # For now, using "gpt-image-1" as per previous discussions, but this needs verification.
+                        model="gpt-image-1",
+                        image=image_file,  # Pass the file object directly
+                        prompt=edit_prompt,
+                        n=1,
+                        # Ensure this size is supported by the edit API and model
+                        size="1024x1024"
+                    )
+
+                image_data = response.data[0]
+                # Assuming edit API also returns b64_json
+                b64_json_data = image_data.b64_json
+                revised_prompt = None  # Edit API might not provide a revised_prompt
+
+                api_logger.info(
+                    f"AI model returned edited image data (b64_json).")
+
+                image_bytes = base64.b64decode(b64_json_data)
+                with open(image_path, 'wb') as f:
+                    f.write(image_bytes)
+                api_logger.info(
+                    f"Edited image successfully decoded and saved to {image_path}")
+
+                return {
+                    "image_path": image_path,
+                    "revised_prompt": revised_prompt,                "gen_id": None}
+
+            # This specific FileNotFoundError for the reference image is now handled by the os.path.exists check above.
+            # However, keeping a general FileNotFoundError here in case open() itself fails for other reasons (e.g. permissions)
+            # after os.path.exists() passed.
+            except FileNotFoundError as e:  # This might catch issues with opening image_path for writing too
+                error_logger.error(
+                    f"File not found during image edit attempt (could be ref or output path): {e}. Falling back to generation.")
+            except openai.APIError as e:
+                error_logger.error(
+                    f"OpenAI API Error during image edit: {e}. Falling back to generation.", exc_info=True)
+                error_logger.error(
+                    f"Problematic edit prompt: {edit_prompt}. Reference image: {reference_image_path}")
+                # Fall through to the generation API
+            except Exception as e:
+                error_logger.error(
+                    f"An unexpected error occurred during image edit: {e}. Falling back to generation.", exc_info=True)
+                # Fall through to the generation API
+
+        app_logger.warning(
+            f"Image edit failed or reference not found for {image_path}. Falling back to standard image generation.")
+
+    # Fallback to "Create image" API (client.images.generate)
+    api_logger.debug(
+        f"Generating image with gpt-image-1 (fallback or no reference). Prompt: {page_image_description[:200]}...")
     try:
         response = client.images.generate(
             model="gpt-image-1",
-            prompt=prompt,
+            prompt=page_image_description,  # Original prompt for generation
             size="1024x1024",
             n=1
         )
         image_data = response.data[0]
-        # Assuming gpt-image-1 returns b64_json by default as per documentation
-        # If the API contract changes, this access might need adjustment.
-        # Check the actual response structure if issues arise.
         b64_json_data = image_data.b64_json
-        # revised_prompt is not available with gpt-image-1, set to None
-        revised_prompt = None
+        revised_prompt = None  # gpt-image-1 does not provide revised_prompt
 
-        api_logger.info(f"AI model returned image data (b64_json).")
-        # api_logger.info(f"Revised_prompt (not available with this model): {revised_prompt}")
+        api_logger.info(f"AI model returned generated image data (b64_json).")
 
-        # Decode and save the image
-        api_logger.debug(f"Decoding and saving image to: {image_path}")
         image_bytes = base64.b64decode(b64_json_data)
-
-        # Ensure the directory for image_path exists
-        os.makedirs(os.path.dirname(image_path), exist_ok=True)
-
         with open(image_path, 'wb') as f:
             f.write(image_bytes)
         api_logger.info(
-            f"Image successfully decoded and saved to {image_path}")
+            f"Generated image successfully decoded and saved to {image_path}")
 
         return {
             "image_path": image_path,
             "revised_prompt": revised_prompt,
-            "gen_id": None  # gen_id is not typically available directly
+            "gen_id": None
         }
-    except IOError as e:
+    except IOError as e:  # Specific to file saving for the generated image
         error_logger.error(
-            f"Failed to save image to path {image_path}. Error: {e}", exc_info=True)
-        raise  # Re-raise the exception
+            f"Failed to save generated image to path {image_path}. Error: {e}", exc_info=True)
+        raise
     except openai.APIError as e:
         error_logger.error(
-            f"OpenAI API Error during image generation: {e}", exc_info=True)
+            f"OpenAI API Error during image generation (fallback): {e}", exc_info=True)
         error_logger.error(
-            f"Problematic image prompt that caused APIError: {prompt}")
+            f"Problematic image prompt (fallback): {page_image_description}")
         raise
     except Exception as e:
         error_logger.error(
-            f"An unexpected error occurred while generating image: {e}", exc_info=True)
+            f"An unexpected error occurred while generating image (fallback): {e}", exc_info=True)
         raise
 
 
@@ -558,7 +696,10 @@ def generate_character_reference_image(
         f"Generating reference image for character: {character.name} (User: {user_id}, Story: {story_id})")
 
     # Construct prompt for the image model
-    prompt_parts = [f"Full body character concept art for {character.name}."]
+    # prompt_parts = [f"Full body character concept art for {character.name}."] # Old prompt start
+    prompt_parts = [
+        f"Generate a character sheet for {character.name} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view. It is crucial that all views depict the exact same character consistently."
+    ]  # New prompt start for multiple angles
     if character.physical_appearance:
         prompt_parts.append(
             f"Physical Appearance: {character.physical_appearance}.")
@@ -580,8 +721,11 @@ def generate_character_reference_image(
         # Default style description
         prompt_parts.append("Style: Clear, vibrant, detailed illustration.")
 
+    # prompt_parts.append(
+    #     "The character should be clearly visible, facing forward or slightly angled, on a simple or neutral background to emphasize their design.") # Old instruction
     prompt_parts.append(
-        "The character should be clearly visible, facing forward or slightly angled, on a simple or neutral background to emphasize their design.")
+        "The character should be clearly visible on a simple or neutral background to emphasize their design for the character sheet."
+    )  # New instruction
 
     image_prompt = " ".join(prompt_parts)  # Renamed from dalle_prompt
     api_logger.debug(
@@ -611,9 +755,12 @@ def generate_character_reference_image(
 
     try:
         # Generate image using the updated image generation function
-        image_generation_result = generate_image(  # Changed function name
-            prompt=image_prompt,  # Changed variable name
-            image_path=image_save_path_on_disk
+        image_generation_result = generate_image(
+            page_image_description=image_prompt,
+            image_path=image_save_path_on_disk,
+            model="gpt-image-1",
+            character_reference_image_paths=None,  # Explicitly pass None
+            character_name_for_reference=None  # Explicitly pass None
         )
 
         updated_character_dict = character.model_dump(exclude_none=True)
@@ -634,109 +781,109 @@ def generate_character_reference_image(
 
 
 # Changed character_name to character_details
-async def generate_image_description_from_image(image_path: str, character_details: CharacterDetail) -> str:
-    """
-    Uses GPT-4 Vision to generate a detailed textual description of a character
-    based on their reference image and initial details.
-    """
-    api_logger.info(
-        f"Generating detailed visual description for character: {character_details.name} from image: {image_path}")
-
-    try:
-        # Ensure the image_path is an absolute path or correctly relative to where the script runs
-        # For local files, it might need to be prefixed if not absolute.
-        # Assuming image_path is accessible.
-        full_image_path = os.path.abspath(image_path)
-        if not os.path.exists(full_image_path):
-            error_logger.error(
-                f"Image file not found at {full_image_path} for GPT-4 Vision processing.")
-            # Fallback or raise error
-            return "Error: Image file not found for description generation."
-
-        with open(full_image_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {OPENAI_API_KEY}"
-        }
-
-        # Constructing a more detailed prompt for GPT-4 Vision
-        vision_prompt_parts = [
-            f"Analyze the provided image, which is a character reference for '{character_details.name}'.",
-            "Focus on extracting and describing concrete visual details suitable for maintaining consistency in future image generations.",
-            "Describe the character's key physical features, clothing, any notable accessories, and overall style as depicted in the image.",
-            "Do not invent details not present in the image. Be objective and descriptive.",
-            "The goal is to create a textual description that can be used by an image generation AI (like DALL-E) to recreate this character accurately."
-        ]
-        # Add user-provided details as context, if available
-        if character_details.physical_appearance:  # Corrected from initial_character_details
-            vision_prompt_parts.append(
-                # Corrected
-                f"User-provided physical appearance for context: {character_details.physical_appearance}")
-        if character_details.clothing_style:  # Corrected
-            vision_prompt_parts.append(
-                # Corrected
-                f"User-provided clothing style for context: {character_details.clothing_style}")
-        if character_details.key_traits:  # Corrected
-            vision_prompt_parts.append(
-                # Corrected
-                f"User-provided key traits for context: {character_details.key_traits}")
-
-        vision_prompt = " ".join(vision_prompt_parts)
-
-        payload = {
-            "model": "gpt-4-vision-preview",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": vision_prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 300
-        }
-
-        api_logger.debug(
-            f"Sending request to GPT-4 Vision for character {character_details.name}. Prompt: {vision_prompt[:100]}...")
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-        response.raise_for_status()  # Raise an exception for bad status codes
-
-        description_data = response.json()
-        generated_description = description_data['choices'][0]['message']['content']
-
-        api_logger.info(
-            f"Successfully generated visual description for {character_details.name} using GPT-4 Vision.")
-        api_logger.debug(
-            f"Generated description for {character_details.name}: {generated_description}")
-
-        return generated_description
-
-    except requests.exceptions.RequestException as e:
-        error_logger.error(
-            f"API request failed during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
-        # Fallback description
-        return f"Could not generate detailed visual description due to API error. Basic details: Name {character_details.name}."
-    except FileNotFoundError as e:
-        error_logger.error(
-            f"Image file not found for GPT-4 Vision processing of {character_details.name}: {e}", exc_info=True)
-        return f"Could not generate detailed visual description as image was not found. Basic details: Name {character_details.name}."
-    except Exception as e:
-        error_logger.error(
-            f"An unexpected error occurred during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
-        # Fallback description
-        return f"Could not generate detailed visual description due to an unexpected error. Basic details: Name {character_details.name}."
+# async def generate_image_description_from_image(image_path: str, character_details: CharacterDetail) -> str:
+#     """
+#     Uses GPT-4 Vision to generate a detailed textual description of a character
+#     based on their reference image and initial details.
+#     """
+#     api_logger.info(
+#         f"Generating detailed visual description for character: {character_details.name} from image: {image_path}")
+#
+#     try:
+#         # Ensure the image_path is an absolute path or correctly relative to where the script runs
+#         # For local files, it might need to be prefixed if not absolute.
+#         # Assuming image_path is accessible.
+#         full_image_path = os.path.abspath(image_path)
+#         if not os.path.exists(full_image_path):
+#             error_logger.error(
+#                 f"Image file not found at {full_image_path} for GPT-4 Vision processing.")
+#             # Fallback or raise error
+#             return "Error: Image file not found for description generation."
+#
+#         with open(full_image_path, "rb") as image_file:
+#             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+#
+#         headers = {
+#             "Content-Type": "application/json",
+#             "Authorization": f"Bearer {OPENAI_API_KEY}"
+#         }
+#
+#         # Constructing a more detailed prompt for GPT-4 Vision
+#         vision_prompt_parts = [
+#             f"Analyze the provided image, which is a character reference for '{character_details.name}'.",
+#             "Focus on extracting and describing concrete visual details suitable for maintaining consistency in future image generations.",
+#             "Describe the character's key physical features, clothing, any notable accessories, and overall style as depicted in the image.",
+#             "Do not invent details not present in the image. Be objective and descriptive.",
+#             "The goal is to create a textual description that can be used by an image generation AI (like DALL-E) to recreate this character accurately."
+#         ]
+#         # Add user-provided details as context, if available
+#         if character_details.physical_appearance:  # Corrected from initial_character_details
+#             vision_prompt_parts.append(
+#                 # Corrected
+#                 f"User-provided physical appearance for context: {character_details.physical_appearance}")
+#         if character_details.clothing_style:  # Corrected
+#             vision_prompt_parts.append(
+#                 # Corrected
+#                 f"User-provided clothing style for context: {character_details.clothing_style}")
+#         if character_details.key_traits:  # Corrected
+#             vision_prompt_parts.append(
+#                 # Corrected
+#                 f"User-provided key traits for context: {character_details.key_traits}")
+#
+#         vision_prompt = " ".join(vision_prompt_parts)
+#
+#         payload = {
+#             "model": "gpt-4-vision-preview",
+#             "messages": [
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {
+#                             "type": "text",
+#                             "text": vision_prompt
+#                         },
+#                         {
+#                             "type": "image_url",
+#                             "image_url": {
+#                                 "url": f"data:image/png;base64,{base64_image}"
+#                             }
+#                         }
+#                     ]
+#                 }
+#             ],
+#             "max_tokens": 300
+#         }
+#
+#         api_logger.debug(
+#             f"Sending request to GPT-4 Vision for character {character_details.name}. Prompt: {vision_prompt[:100]}...")
+#         response = requests.post(
+#             "https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+#         response.raise_for_status()  # Raise an exception for bad status codes
+#
+#         description_data = response.json()
+#         generated_description = description_data['choices'][0]['message']['content']
+#
+#         api_logger.info(
+#             f"Successfully generated visual description for {character_details.name} using GPT-4 Vision.")
+#         api_logger.debug(
+#             f"Generated description for {character_details.name}: {generated_description}")
+#
+#         return generated_description
+#
+#     except requests.exceptions.RequestException as e:
+#         error_logger.error(
+#             f"API request failed during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
+#         # Fallback description
+#         return f"Could not generate detailed visual description due to API error. Basic details: Name {character_details.name}."
+#     except FileNotFoundError as e:
+#         error_logger.error(
+#             f"Image file not found for GPT-4 Vision processing of {character_details.name}: {e}", exc_info=True)
+#         return f"Could not generate detailed visual description as image was not found. Basic details: Name {character_details.name}."
+#     except Exception as e:
+#         error_logger.error(
+#             f"An unexpected error occurred during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
+#         # Fallback description
+#         return f"Could not generate detailed visual description due to an unexpected error. Basic details: Name {character_details.name}."
 
 
 # Example usage (for testing this file directly)
@@ -781,7 +928,11 @@ if __name__ == "__main__":
                     image_file_path = os.path.join(
                         test_image_dir, f"test_image_page_{page_num_text}.png")
                     image_gen_details = generate_image(  # Changed function name
-                        page_prompt, image_file_path)
+                        page_image_description=page_prompt,  # Pass prompt as page_image_description
+                        image_path=image_file_path,
+                        character_reference_image_paths=None,  # Add new parameter for testing
+                        character_name_for_reference=None  # Explicitly None for this test case
+                    )
                     print(
                         f"Successfully generated and saved image to: {image_gen_details['image_path']}")
                 else:
