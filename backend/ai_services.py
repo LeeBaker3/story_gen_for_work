@@ -758,7 +758,6 @@ def generate_character_reference_image(
         image_generation_result = generate_image(
             page_image_description=image_prompt,
             image_path=image_save_path_on_disk,
-            model="gpt-image-1",
             character_reference_image_paths=None,  # Explicitly pass None
             character_name_for_reference=None  # Explicitly pass None
         )
