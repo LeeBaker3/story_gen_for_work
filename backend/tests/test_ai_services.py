@@ -323,8 +323,7 @@ def test_generate_character_reference_image_success(
         page_image_description=expected_image_prompt,
         image_path=expected_image_save_path_on_disk,
         character_reference_image_paths=None,  # Added missing arg
-        character_name_for_reference=None,  # Added missing arg
-        model="gpt-image-1"  # Ensure model is part of the expected call
+        character_name_for_reference=None  # Added missing arg
     )
 
     assert result["reference_image_path"] == expected_image_path_for_db

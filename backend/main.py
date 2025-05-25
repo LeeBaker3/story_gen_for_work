@@ -340,13 +340,35 @@ async def create_new_story(
                         f"Error generating reference image for character {char_detail_input.name}: {e}", exc_info=True)
                     updated_main_characters.append(
                         char_detail_input.model_dump(exclude_none=True))
-        # If finalizing a draft, use character details from input (assuming they include any existing ref paths)
+        # If finalizing a draft, check for missing reference images and generate them
         else:
             app_logger.info(
-                f"Draft finalization (ID: {draft_id}): Skipping new character reference image generation. Using existing character details from input.")
+                f"Draft finalization (ID: {draft_id}): Checking for missing character reference images.")
             for char_detail_input in story_input.main_characters:
-                updated_main_characters.append(
-                    char_detail_input.model_dump(exclude_none=True))
+                # Convert CharacterDetailCreate to dict to check/update reference_image_path
+                char_dict = char_detail_input.model_dump(exclude_none=True)
+                if not char_dict.get('reference_image_path'):
+                    app_logger.info(
+                        f"Missing reference image for character: {char_detail_input.name}. Generating now.")
+                    try:
+                        updated_char_info_dict = ai_services.generate_character_reference_image(
+                            character=char_detail_input, # Pass the Pydantic model
+                            user_id=current_user.id,
+                            story_id=db_story.id,
+                            image_style_enum=story_input.image_style # Use story's image style
+                        )
+                        updated_main_characters.append(updated_char_info_dict)
+                        app_logger.info(
+                            f"Generated reference image and updated details for character: {updated_char_info_dict.get('name')}")
+                    except Exception as e:
+                        error_logger.error(
+                            f"Error generating reference image for character {char_detail_input.name} during draft finalization: {e}", exc_info=True)
+                        # Append original details if generation fails
+                        updated_main_characters.append(char_dict)
+                else:
+                    app_logger.info(
+                        f"Character {char_detail_input.name} already has a reference image: {char_dict.get('reference_image_path')}. Using existing.")
+                    updated_main_characters.append(char_dict)
     else:
         app_logger.info(
             "No main characters provided in input. Skipping reference image generation.")

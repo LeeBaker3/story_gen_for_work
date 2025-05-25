@@ -453,8 +453,22 @@ def test_create_new_story_draft_finalization(
     # Ensure the response story ID matches the ID of the finalized story from the mock setup
     assert response_data['id'] == actual_finalized_story_id # Corrected Assertion
 
-    # Check that AI service for character reference image was NOT called (original issue)
-    mock_ai_services['generate_character_reference_image'].assert_not_called() # Corrected Assertion
+    # Check that AI service for character reference image IS CALLED if images are missing.
+    # For this test, assume character details in story_create_input_mock do NOT have reference_image_path.
+    # So, for each character, generate_character_reference_image should be called.
+    expected_char_ref_calls = len(story_create_input_mock.main_characters)
+    if expected_char_ref_calls > 0:
+        assert mock_ai_services['generate_character_reference_image'].call_count == expected_char_ref_calls
+        for char_detail_input in story_create_input_mock.main_characters:
+            mock_ai_services['generate_character_reference_image'].assert_any_call(
+                character=char_detail_input,
+                user_id=current_user_mock.id,
+                story_id=actual_finalized_story_id, # Use the finalized story ID
+                image_style_enum=story_create_input_mock.image_style
+            )
+    else:
+        mock_ai_services['generate_character_reference_image'].assert_not_called()
+
     # Check that other AI services were called for story generation
     mock_ai_services['generate_story_from_chatgpt'].assert_called()
 
