@@ -9,6 +9,7 @@ The system supports:
 - Creating new stories from scratch.
 - Saving story ideas as drafts.
 - Finalizing drafts into complete stories.
+- Using existing stories as templates for new ones.
 - Generating character reference images.
 - Generating images for each page of the story.
 - Viewing and browsing created stories.

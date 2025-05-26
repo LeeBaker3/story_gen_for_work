@@ -121,8 +121,8 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   **FR-STORY-06:** Edit Story Title: Users can edit the title of a generated story after its creation. (Previously FR20 - Implemented)
 *   **FR-STORY-07:** Dedicated Title Page: Each story will begin with a dedicated title page. (Previously FR21 - Implemented)
 *   **FR-STORY-08:** Cover Image on Title Page: The title page will feature a prominent cover image relevant to the story's theme or main character. (Previously FR22 - Implemented)
-*   **FR-STORY-09:** Use Story as Template: Users can load the details of a previously generated story into the creation form to use as a template for a new story. (Previously FR23 - Implemented)
-*   **FR-STORY-10:** Save Story Draft: Users can save a story in progress (before generation) as a draft and resume editing it later. (Previously FR24 - Implemented)
+*   **FR-STORY-09:** Use Story as Template: Users can load the details of a previously generated story into the creation form to use as a template for a new story. (Previously FR23 - Implemented Q2 2025)
+*   **FR-STORY-10:** Save Story Draft: Users can save a story in progress (before generation) as a draft and resume editing it later. (Previously FR24 - Implemented Q2 2025)
 *   **FR-STORY-11:** Reusable Characters: Users can create and save character profiles independently and then select from these saved characters to include in new stories. (Previously FR25)
 
 ## 4.5 AI Model Integration
@@ -209,6 +209,7 @@ This section tracks the major milestones and completed work items.
 *   Corrected story finalization payload structure in `frontend/script.js` (addressing 422 Unprocessable Content errors) to ensure successful creation and finalization of stories, including those initiated from drafts (related to FR-STORY-10).
 *   Improved user experience after story generation: users now remain on the story preview page instead of being immediately redirected to the story creation form.
 *   Enhanced date display in "My Stories" view: timestamps (e.g., "Created", "Generated") are now converted to the user's local time for better readability.
+*   Resolved frontend freeze during new story generation by improving error handling and ensuring spinner is hidden in `frontend/script.js`.
 
 ## 9.2 Frontend Enhancements (Completed Q2 2025)
 *   Implemented clearer session timeout handling in `frontend/script.js`: On 401 errors, the application now displays a "session timed out" message and redirects the user to the login page, clearing any stale session data.
@@ -238,6 +239,9 @@ This section tracks the major milestones and completed work items.
 ### 9.6.5 Admin User Role & Panel (FR-ADM-01, FR-ADM-02) - *Pending*
 ### 9.6.6 Database-Managed Dropdowns (FR-ADM-05, FR-ADM-06) - *Pending*
 ### 9.6.7 User-Defined Story Title and Title Page (FR-STORY-06, FR-STORY-07, FR-STORY-08) - *Completed Q2 2025* (Note: FRs were marked implemented, this section reflects that)
+### 9.6.8 Use Story as Template (FR-STORY-09) - *Implemented Q2 2025*
+### 9.6.9 Save Story Draft (FR-STORY-10) - *Implemented Q2 2025*
+### 9.6.10 Reusable Characters (FR-STORY-11) - *Pending*
 
 ## 9.7 Testing & Quality Assurance
 *   Unit Tests for Backend (FR-TEST-01) - *Pending*
@@ -253,6 +257,9 @@ This section tracks the major milestones and completed work items.
     *   Admin User Role & Panel: Tracked in 9.6.5 (FR-ADM-01, FR-ADM-02).
     *   Database-Managed Dropdowns: Tracked in 9.6.6 (FR-ADM-05, FR-ADM-06).
     *   User-Defined Story Title and Title Page: Tracked in 9.6.7 (FR-STORY-06, FR-STORY-07, FR-STORY-08).
+    *   Use Story as Template: Tracked in 9.6.8 (FR-STORY-09).
+    *   Save Story Draft: Tracked in 9.6.9 (FR-STORY-10).
+    *   Reusable Characters: Tracked in 9.6.10 (FR-STORY-11).
 *   Implement "Forgot Password" functionality: Tracked in 9.6.4 (FR-AUTH-04).
 *   Continue with 8-Step Development Plan (e.g., unit tests for backend - FR-TEST-01): Tracked in 9.7.
 *   Thorough testing of all existing and new features: Tracked in 9.7.

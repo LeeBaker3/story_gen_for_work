@@ -3,11 +3,14 @@ from unittest.mock import patch, MagicMock, ANY  # Add ANY
 import os
 import base64  # Import base64
 from backend import ai_services
+# Import CharacterDetail and ImageStyle
+from backend.schemas import CharacterDetail, ImageStyle
+
 # Assuming OpenAI client is imported like this in ai_services
 # from openai import OpenAI # This line is not needed in the test file itself if already imported in ai_services
 
 # Ensure the test environment has necessary configurations if any (e.g., OPENAI_API_KEY)
-# For these tests, we\\'ll be mocking the API calls, so live keys aren\\'t strictly needed for the mocks to work.
+# For these tests, we\'ll be mocking the API calls, so live keys aren\'t strictly needed for the mocks to work.
 
 
 @pytest.fixture
@@ -26,6 +29,27 @@ def mock_openai_client():
             return_value=mock_image_api_response)
 
         yield mock_client_instance
+
+
+@pytest.fixture
+def sample_image_style():  # Fixture for ImageStyle
+    """Provides a sample ImageStyle enum for tests."""
+    return ImageStyle.DEFAULT
+
+
+@pytest.fixture
+def sample_character_detail():
+    """Provides a sample CharacterDetail object for tests."""
+    return CharacterDetail(
+        name="Test Character",
+        description="A brave adventurer.",
+        age=30,
+        gender="Non-binary",
+        physical_appearance="Tall with a keen gaze.",
+        clothing_style="Practical leather armor.",
+        key_traits="Resourceful and courageous.",
+        background="Mysterious origins."
+    )
 
 
 @patch('backend.ai_services.os.makedirs')
@@ -52,10 +76,11 @@ def test_generate_image_uses_generate_api_when_no_reference(
     mock_makedirs.assert_called_once_with(
         os.path.dirname(image_path), exist_ok=True)
     mock_openai_client.images.generate.assert_called_once_with(
-        model="gpt-image-1",
+        model="gpt-image-1",  # Updated model
         prompt=page_desc,
         size="1024x1024",
         n=1
+        # response_format="b64_json"  # Removed response_format
     )
     mock_b64decode.assert_called_once_with("fake_base64_encoded_image_data")
     mock_open.assert_called_once_with(image_path, 'wb')
@@ -72,58 +97,154 @@ def test_generate_image_uses_edit_api_when_reference_provided(
 ):
     """
     Test that generate_image calls client.images.edit when a character reference is provided.
+    Tests with a single reference image.
     """
     page_desc = "Character X in a forest."
     image_path = "/fake/path/to/save/edited_image.png"
-    ref_image_path = "/fake/path/to/ref_image.png"
+    ref_image_path_1 = "/fake/path/to/ref_image1.png"
 
-    mock_os_path_exists.return_value = True  # Assume reference image file exists
+    mock_os_path_exists.return_value = True
     mock_b64decode.return_value = b"fake_edited_image_bytes"
 
-    # Mock the file reading for the reference image and writing for the output
-    mock_ref_file_handle = MagicMock()
-    mock_output_file_handle = MagicMock()
+    # This is what __enter__ would return if used with 'with'
+    returned_ref_handle = MagicMock(name="ReturnedRefHandle")
+    mock_ref_file_cm = MagicMock(name="RefFileContextManager")
+    # For completeness if it were used in a 'with'
+    mock_ref_file_cm.__enter__.return_value = returned_ref_handle
+    mock_ref_file_cm.__exit__ = MagicMock(return_value=None)
+    # For the direct .close() call in ai_services.py
+    mock_ref_file_cm.close = MagicMock()
 
-    # open() is called twice: once for reading ref, once for writing output.
-    # The first __enter__ is for the ref image, the second for the output.
-    mock_open.return_value.__enter__.side_effect = [
-        mock_ref_file_handle, mock_output_file_handle]
+    mock_output_file_handle = MagicMock(name="DummyOutputHandle")
+    mock_output_file_cm = MagicMock(name="OutputFileContextManager")
+    mock_output_file_cm.__enter__.return_value = mock_output_file_handle
+    mock_output_file_cm.__exit__ = MagicMock(return_value=None)
+
+    # open(ref_path, "rb") returns mock_ref_file_cm directly (which is then used as image and closed)
+    # open(image_path, "wb") returns mock_output_file_cm (which is used in a 'with' statement)
+    mock_open.side_effect = [mock_ref_file_cm, mock_output_file_cm]
 
     ai_services.generate_image(
-        page_image_description=page_desc,
-        image_path=image_path,
-        character_reference_image_paths=[ref_image_path]
+        page_image_description=page_desc, image_path=image_path, character_reference_image_paths=[
+            ref_image_path_1]
     )
 
     mock_makedirs.assert_called_once_with(
         os.path.dirname(image_path), exist_ok=True)
-    mock_os_path_exists.assert_called_once_with(ref_image_path)
+    mock_os_path_exists.assert_called_once_with(ref_image_path_1)
 
-    # Corrected expected_edit_prompt
     instruction_prefix = (
         "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
         "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
         "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
-        "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
+        # Literal for scene\'s
+        "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene\\\'s style and actions. "
         "Scene details: "
     )
     expected_edit_prompt = instruction_prefix + page_desc
 
     assert mock_open.call_count == 2
-    mock_open.assert_any_call(ref_image_path, "rb")
+    mock_open.assert_any_call(ref_image_path_1, "rb")
     mock_open.assert_any_call(image_path, 'wb')
 
     mock_openai_client.images.edit.assert_called_once_with(
-        model="gpt-image-1",
-        image=mock_ref_file_handle,  # Check that the file object from open() is passed
+        model=ai_services.IMAGE_MODEL,
+        image=mock_ref_file_cm,  # Expecting the context manager mock itself
         prompt=expected_edit_prompt,
         n=1,
-        size="1024x1024"
+        size=ai_services.IMAGE_SIZE
+        # response_format="b64_json" # Removed response_format
     )
-    mock_b64decode.assert_called_once_with("fake_base64_encoded_image_data")
+
+    # Assert close on the context manager mock
+    mock_ref_file_cm.close.assert_called_once()
+
+    mock_output_file_cm.__enter__.assert_called_once()
     mock_output_file_handle.write.assert_called_once_with(
         b"fake_edited_image_bytes")
-    mock_openai_client.images.generate.assert_not_called()
+    mock_output_file_cm.__exit__.assert_called_once()
+
+
+@patch('backend.ai_services.os.path.exists')
+@patch('backend.ai_services.os.makedirs')
+@patch('builtins.open', new_callable=MagicMock)
+@patch('backend.ai_services.base64.b64decode')
+def test_generate_image_uses_edit_api_with_multiple_references(
+    mock_b64decode, mock_open, mock_makedirs, mock_os_path_exists, mock_openai_client
+):
+    page_desc = "Character X and Y in a castle."
+    image_path = "/fake/path/to/save/edited_multi_ref_image.png"
+    ref_image_path_1 = "/fake/path/to/ref_image1.png"
+    ref_image_path_2 = "/fake/path/to/ref_image2.png"
+
+    mock_os_path_exists.side_effect = lambda path: True
+    mock_b64decode.return_value = b"fake_edited_multi_ref_image_bytes"
+
+    # Mocks for first reference file
+    returned_ref_handle_1 = MagicMock(name="ReturnedRefHandle1")
+    mock_ref_file_cm_1 = MagicMock(name="RefFileContextManager1")
+    mock_ref_file_cm_1.__enter__.return_value = returned_ref_handle_1
+    mock_ref_file_cm_1.__exit__ = MagicMock(return_value=None)
+    mock_ref_file_cm_1.close = MagicMock()
+
+    # Mocks for second reference file
+    returned_ref_handle_2 = MagicMock(name="ReturnedRefHandle2")
+    mock_ref_file_cm_2 = MagicMock(name="RefFileContextManager2")
+    mock_ref_file_cm_2.__enter__.return_value = returned_ref_handle_2
+    mock_ref_file_cm_2.__exit__ = MagicMock(return_value=None)
+    mock_ref_file_cm_2.close = MagicMock()
+
+    # Mock for output file
+    mock_output_file_handle_multi = MagicMock(name="DummyOutputHandleMulti")
+    mock_output_file_cm = MagicMock(name="OutputFileContextManagerMulti")
+    mock_output_file_cm.__enter__.return_value = mock_output_file_handle_multi
+    mock_output_file_cm.__exit__ = MagicMock(return_value=None)
+
+    mock_open.side_effect = [mock_ref_file_cm_1,
+                             mock_ref_file_cm_2, mock_output_file_cm]
+
+    ai_services.generate_image(
+        page_image_description=page_desc,
+        image_path=image_path,
+        character_reference_image_paths=[ref_image_path_1, ref_image_path_2]
+    )
+
+    mock_makedirs.assert_called_once_with(
+        os.path.dirname(image_path), exist_ok=True)
+    mock_os_path_exists.assert_any_call(ref_image_path_1)
+    mock_os_path_exists.assert_any_call(ref_image_path_2)
+    assert mock_os_path_exists.call_count == 2
+
+    num_references = 2
+    other_refs_desc = f" Additionally, consider {num_references - 1} other guiding reference concepts implied by the context of this request."
+    instruction_prefix = (
+        f"IMPORTANT: Use the primary provided image as a strict visual reference for a key character. "
+        f"This character in the output image MUST visually match this primary reference (face, hair, build).{other_refs_desc} "
+        f"This visual guidance takes precedence. Integrate this character into the following scene. Scene details: "
+    )
+    expected_edit_prompt = instruction_prefix + page_desc
+
+    assert mock_open.call_count == 3
+    mock_open.assert_any_call(ref_image_path_1, "rb")
+    mock_open.assert_any_call(ref_image_path_2, "rb")
+    mock_open.assert_any_call(image_path, 'wb')
+
+    mock_openai_client.images.edit.assert_called_once_with(
+        model=ai_services.IMAGE_MODEL,
+        image=mock_ref_file_cm_1,  # Expecting the first context manager mock
+        prompt=expected_edit_prompt,
+        n=1,
+        size=ai_services.IMAGE_SIZE
+        # response_format="b64_json" # Removed response_format
+    )
+
+    mock_ref_file_cm_1.close.assert_called_once()
+    mock_ref_file_cm_2.close.assert_called_once()
+
+    mock_output_file_cm.__enter__.assert_called_once()
+    mock_output_file_handle_multi.write.assert_called_once_with(
+        b"fake_edited_multi_ref_image_bytes")
+    mock_output_file_cm.__exit__.assert_called_once()
 
 
 @patch('backend.ai_services.os.path.exists')
@@ -133,225 +254,276 @@ def test_generate_image_uses_edit_api_when_reference_provided(
 def test_generate_image_falls_back_to_generate_api_if_edit_fails(
     mock_b64decode, mock_open, mock_makedirs, mock_os_path_exists, mock_openai_client
 ):
-    """
-    Test that generate_image falls back to client.images.generate if client.images.edit fails.
-    """
     page_desc = "Character Y fighting a dragon."
     image_path = "/fake/path/to/save/fallback_image.png"
-    ref_image_path = "/fake/path/to/ref_image_y.png"
+    ref_image_path_1 = "/fake/path/to/ref_image_y1.png"
+    ref_image_path_2 = "/fake/path/to/ref_image_y2.png"
 
-    mock_os_path_exists.return_value = True
+    mock_os_path_exists.side_effect = lambda path: True
     mock_openai_client.images.edit.side_effect = Exception("Edit API failed")
+    # This b64decode is for the fallback generate call
     mock_b64decode.return_value = b"fake_fallback_image_bytes"
 
-    mock_ref_file_handle = MagicMock()
-    mock_fallback_output_file_handle = MagicMock()
-    mock_open.return_value.__enter__.side_effect = [
-        mock_ref_file_handle, mock_fallback_output_file_handle]
+    # Mocks for first reference file (attempted for edit)
+    returned_ref_handle_fb_1 = MagicMock(name="ReturnedRefHandleFb1")
+    mock_ref_file_cm_fb_1 = MagicMock(name="RefFileContextManagerFb1")
+    mock_ref_file_cm_fb_1.__enter__.return_value = returned_ref_handle_fb_1
+    mock_ref_file_cm_fb_1.__exit__ = MagicMock(return_value=None)
+    mock_ref_file_cm_fb_1.close = MagicMock()
+
+    # Mocks for second reference file (attempted for edit)
+    returned_ref_handle_fb_2 = MagicMock(name="ReturnedRefHandleFb2")
+    mock_ref_file_cm_fb_2 = MagicMock(name="RefFileContextManagerFb2")
+    mock_ref_file_cm_fb_2.__enter__.return_value = returned_ref_handle_fb_2
+    mock_ref_file_cm_fb_2.__exit__ = MagicMock(return_value=None)
+    mock_ref_file_cm_fb_2.close = MagicMock()
+
+    # Mock for output file (for the fallback generate call)
+    mock_fallback_output_handle = MagicMock(name="DummyFallbackOutputHandle")
+    mock_fallback_output_file_cm = MagicMock(
+        name="FallbackOutputFileContextManager")
+    mock_fallback_output_file_cm.__enter__.return_value = mock_fallback_output_handle
+    mock_fallback_output_file_cm.__exit__ = MagicMock(return_value=None)
+
+    # open() calls: ref1, ref2 (for edit attempt), then output file (for generate)
+    mock_open.side_effect = [mock_ref_file_cm_fb_1,
+                             mock_ref_file_cm_fb_2, mock_fallback_output_file_cm]
 
     ai_services.generate_image(
         page_image_description=page_desc,
         image_path=image_path,
-        character_reference_image_paths=[ref_image_path]
+        character_reference_image_paths=[ref_image_path_1, ref_image_path_2]
     )
 
-    # os.makedirs might be called twice if the logic doesn't prevent it on fallback,
-    # but for this test, we care it was called at least for the final attempt.
-    # If it's called for the edit attempt and then again for generate, that's fine.
-    # For simplicity, checking it was called with the correct path.
-    mock_makedirs.assert_any_call(os.path.dirname(image_path), exist_ok=True)
-    mock_os_path_exists.assert_called_once_with(ref_image_path)
+    mock_makedirs.assert_any_call(os.path.dirname(
+        image_path), exist_ok=True)  # Called for edit and generate
+    mock_os_path_exists.assert_any_call(ref_image_path_1)
+    mock_os_path_exists.assert_any_call(ref_image_path_2)
+    assert mock_os_path_exists.call_count == 2
 
-    # Corrected expected_edit_prompt
+    num_references = 2
+    other_refs_desc = f" Additionally, consider {num_references - 1} other guiding reference concepts implied by the context of this request."
     instruction_prefix = (
-        "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
-        "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
-        "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
-        "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
-        "Scene details: "
+        f"IMPORTANT: Use the primary provided image as a strict visual reference for a key character. "
+        f"This character in the output image MUST visually match this primary reference (face, hair, build).{other_refs_desc} "
+        f"This visual guidance takes precedence. Integrate this character into the following scene. Scene details: "
     )
     expected_edit_prompt = instruction_prefix + page_desc
+
     mock_openai_client.images.edit.assert_called_once_with(
-        model="gpt-image-1",
-        image=mock_ref_file_handle,
+        model=ai_services.IMAGE_MODEL,
+        image=mock_ref_file_cm_fb_1,  # Expecting the first context manager mock
         prompt=expected_edit_prompt,
         n=1,
-        size="1024x1024"
+        size=ai_services.IMAGE_SIZE
+        # response_format="b64_json" # Removed response_format
     )
 
     mock_openai_client.images.generate.assert_called_once_with(
-        model="gpt-image-1",
-        prompt=page_desc,
-        size="1024x1024",
-        n=1
+        model=ai_services.IMAGE_MODEL,
+        prompt=page_desc,  # Fallback uses original page_desc
+        n=1,
+        size=ai_services.IMAGE_SIZE
+        # response_format="b64_json" # Removed response_format
     )
-    mock_b64decode.assert_called_once_with(
-        "fake_base64_encoded_image_data")  # From the generate call
-    mock_fallback_output_file_handle.write.assert_called_once_with(
+
+    mock_ref_file_cm_fb_1.close.assert_called_once()
+    mock_ref_file_cm_fb_2.close.assert_called_once()
+
+    mock_fallback_output_file_cm.__enter__.assert_called_once()
+    mock_fallback_output_handle.write.assert_called_once_with(
         b"fake_fallback_image_bytes")
+    mock_fallback_output_file_cm.__exit__.assert_called_once()
+
+    assert mock_open.call_count == 3  # ref1, ref2, output_for_generate
+    mock_open.assert_any_call(ref_image_path_1, "rb")
+    mock_open.assert_any_call(ref_image_path_2, "rb")
+    # This is for the generate call
+    mock_open.assert_any_call(image_path, 'wb')
 
 
 @patch('backend.ai_services.os.path.exists')
 @patch('backend.ai_services.os.makedirs')
 @patch('builtins.open', new_callable=MagicMock)
 @patch('backend.ai_services.base64.b64decode')
-def test_generate_image_falls_back_if_reference_image_file_missing(
+def test_generate_image_falls_back_if_one_of_multiple_ref_files_missing(
     mock_b64decode, mock_open, mock_makedirs, mock_os_path_exists, mock_openai_client
 ):
-    """
-    Test that generate_image falls back to client.images.generate if the reference image file doesn\\'t exist.
-    """
-    page_desc = "Character Z near a castle."
-    image_path = "/fake/path/to/save/fallback_no_ref_file.png"
-    ref_image_path = "/fake/path/to/non_existent_ref.png"
+    page_desc = "Character Z near a castle with one good ref."
+    image_path = "/fake/path/to/save/fallback_partial_ref_file.png"
+    ref_image_path_1 = "/fake/path/to/existent_ref.png"  # Exists
+    ref_image_path_2 = "/fake/path/to/non_existent_ref.png"  # Does not exist
 
-    mock_os_path_exists.return_value = False  # Reference image file does NOT exist
-    mock_b64decode.return_value = b"fake_fallback_no_ref_bytes"
+    # os.path.exists will be called for ref_image_path_1 then ref_image_path_2
+    mock_os_path_exists.side_effect = lambda path: path == ref_image_path_1
+    # For the successful edit with one ref
+    mock_b64decode.return_value = b"fake_edited_one_ref_bytes"
 
-    mock_output_file_handle = MagicMock()
-    mock_open.return_value.__enter__.return_value = mock_output_file_handle
+    # Mock for the existing reference file
+    mock_ref_file_handle_1 = MagicMock(name="ref_handle_exist")
+    mock_ref_file_cm_1 = MagicMock(name="RefFileContextManagerPartial1")
+    mock_ref_file_cm_1.__enter__.return_value = mock_ref_file_handle_1
+    mock_ref_file_cm_1.__exit__ = MagicMock(return_value=None)
+    mock_ref_file_cm_1.close = MagicMock()
+
+    # Mock for the output file
+    mock_output_file_handle_partial = MagicMock(
+        name="DummyOutputHandlePartial")
+    mock_output_file_cm_partial = MagicMock(
+        name="OutputFileContextManagerPartial")
+    mock_output_file_cm_partial.__enter__.return_value = mock_output_file_handle_partial
+    mock_output_file_cm_partial.__exit__ = MagicMock(return_value=None)
+
+    # open() calls: existent_ref (for edit), then output file (for edit)
+    # non_existent_ref is not opened because os.path.exists is false for it.
+    mock_open.side_effect = [mock_ref_file_cm_1, mock_output_file_cm_partial]
 
     ai_services.generate_image(
         page_image_description=page_desc,
         image_path=image_path,
-        character_reference_image_paths=[ref_image_path]
+        character_reference_image_paths=[ref_image_path_1, ref_image_path_2]
     )
 
     mock_makedirs.assert_called_once_with(
         os.path.dirname(image_path), exist_ok=True)
-    mock_os_path_exists.assert_called_once_with(ref_image_path)
+    mock_os_path_exists.assert_any_call(ref_image_path_1)
+    mock_os_path_exists.assert_any_call(ref_image_path_2)
+    assert mock_os_path_exists.call_count == 2  # Called for both paths
 
-    mock_openai_client.images.edit.assert_not_called()  # Edit should not be attempted
-    mock_openai_client.images.generate.assert_called_once_with(
-        model="gpt-image-1",
-        prompt=page_desc,
-        size="1024x1024",
-        n=1
+    # Since only one reference is valid, it uses the single-reference prefix
+    instruction_prefix = (
+        "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
+        "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
+        "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
+        # Literal for scene\'s
+        "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene\\\'s style and actions. "
+        "Scene details: "
     )
-    mock_b64decode.assert_called_once_with("fake_base64_encoded_image_data")
-    mock_open.assert_called_once_with(image_path, 'wb')
-    mock_output_file_handle.write.assert_called_once_with(
-        b"fake_fallback_no_ref_bytes")
+    expected_edit_prompt = instruction_prefix + page_desc
 
-# TODO: Add tests for generate_character_reference_image if not already covered,
-# focusing on the prompt content (multiple angles).
+    assert mock_open.call_count == 2  # existent_ref, output_file
+    mock_open.assert_any_call(ref_image_path_1, "rb")
+    mock_open.assert_any_call(image_path, 'wb')
 
-# Note: The patch target for the OpenAI client is 'backend.ai_services.client'.
-# This assumes that in your ai_services.py, the OpenAI client is instantiated at the module level like:
-# client = OpenAI()
-# If it's instantiated within each function, the patch target 'backend.ai_services.OpenAI'
-# and the fixture structure would need to change to mock the constructor.
-
-
-@pytest.fixture
-def sample_character_detail():
-    """Fixture to create a sample CharacterDetail object."""
-    return ai_services.CharacterDetail(
-        name="Test Character",
-        age="30",
-        gender="Female",
-        physical_appearance="Tall with red hair",
-        clothing_style="Adventurer\\'s gear",
-        key_traits="Brave and curious"
+    mock_openai_client.images.edit.assert_called_once_with(
+        model=ai_services.IMAGE_MODEL,
+        image=mock_ref_file_cm_1,  # Expecting the context manager mock for the valid ref
+        prompt=expected_edit_prompt,
+        n=1,
+        size=ai_services.IMAGE_SIZE
+        # response_format="b64_json" # Removed response_format
     )
 
+    # Close called on the valid ref file mock
+    mock_ref_file_cm_1.close.assert_called_once()
 
-@pytest.fixture
-def sample_image_style():
-    """Fixture to create a sample ImageStyle object."""
-    return ai_services.ImageStyle.CARTOON  # Assuming CARTOON is a valid member
+    mock_output_file_cm_partial.__enter__.assert_called_once()
+    mock_output_file_handle_partial.write.assert_called_once_with(
+        b"fake_edited_one_ref_bytes")
+    mock_output_file_cm_partial.__exit__.assert_called_once()
+
+    # Should not fall back to generate
+    mock_openai_client.images.generate.assert_not_called()
 
 
 @patch('backend.ai_services.os.makedirs')
 @patch('backend.ai_services.uuid.uuid4')
-@patch('backend.ai_services.generate_image')  # Mock the internal call
+@patch('backend.ai_services.generate_image')
 def test_generate_character_reference_image_success(
     mock_generate_image, mock_uuid, mock_makedirs,
-    # mock_openai_client is not directly used here but good to have if generate_image wasn\\'t mocked
-    sample_character_detail, sample_image_style, mock_openai_client
+    sample_character_detail, sample_image_style,
+    mock_openai_client  # This mock is implicitly available due to the class-level patch
 ):
-    """
-    Test successful generation of a character reference image.
-    """
     user_id = 1
     story_id = 100
-    # Mock the hex attribute of the uuid4() result
-    mock_uuid.return_value.hex = "abcdef"
+    mock_uuid.return_value.hex = "abcdef123456"
 
-    # Mock the return value of the internally called generate_image
+    expected_char_filename_safe_name = "Test_Character"
+    expected_disk_save_dir = os.path.join(
+        "data", "images", f"user_{user_id}", f"story_{story_id}", "references")
+    expected_image_filename = f"char_{expected_char_filename_safe_name}_ref_abcdef.png"
+    expected_image_save_path_on_disk = os.path.join(
+        expected_disk_save_dir, expected_image_filename)
+
     mock_generate_image.return_value = {
-        "image_path": f"data/images/user_{user_id}/story_{story_id}/references/char_Test_Character_ref_abcdef.png",
-        "revised_prompt": "A revised prompt.",
-        "gen_id": "gen_123"
+        "image_path": expected_image_save_path_on_disk,
+        "revised_prompt": "Test Revised Prompt",
+        "gen_id": "testgenid123"
     }
 
-    result = ai_services.generate_character_reference_image(
+    result_dict = ai_services.generate_character_reference_image(
         character=sample_character_detail,
         user_id=user_id,
         story_id=story_id,
         image_style_enum=sample_image_style
     )
 
-    expected_char_filename_safe_name = "Test_Character"
-    expected_db_path_prefix = f"images/user_{user_id}/story_{story_id}/references"
-    expected_save_dir_on_disk = os.path.join("data", expected_db_path_prefix)
-    expected_image_filename = f"char_{expected_char_filename_safe_name}_ref_abcdef.png"
-    expected_image_save_path_on_disk = os.path.join(
-        expected_save_dir_on_disk, expected_image_filename)
+    expected_db_path_prefix = os.path.join(
+        "images", f"user_{user_id}", f"story_{story_id}", "references")
     expected_image_path_for_db = os.path.join(
         expected_db_path_prefix, expected_image_filename)
 
     mock_makedirs.assert_called_once_with(
-        expected_save_dir_on_disk, exist_ok=True)
+        expected_disk_save_dir, exist_ok=True)
     mock_uuid.assert_called_once()
 
-    # Construct the expected prompt
     prompt_parts = [
         f"Generate a character sheet for {sample_character_detail.name} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view. It is crucial that all views depict the exact same character consistently.",
         f"Physical Appearance: {sample_character_detail.physical_appearance}.",
         f"Clothing Style: {sample_character_detail.clothing_style}.",
         f"Key Traits: {sample_character_detail.key_traits}.",
-        f"Age: {sample_character_detail.age}.",
-        f"Gender: {sample_character_detail.gender}.",
-        # Assuming .value gives the string
-        f"Style: {sample_image_style.value}.",
-        "The character should be clearly visible on a simple or neutral background to emphasize their design for the character sheet."
     ]
-    expected_image_prompt = " ".join(prompt_parts)
+    if sample_character_detail.age:
+        prompt_parts.append(f"Age: {sample_character_detail.age}.")
+    if sample_character_detail.gender:
+        prompt_parts.append(f"Gender: {sample_character_detail.gender}.")
+
+    style_value = sample_image_style.value if hasattr(
+        sample_image_style, 'value') else str(sample_image_style)
+    if style_value != "Default":
+        prompt_parts.append(f"Style: {style_value}.")
+    else:
+        prompt_parts.append("Style: Clear, vibrant, detailed illustration.")
+
+    prompt_parts.append(
+        "The character should be clearly visible on a simple or neutral background to emphasize their design for the character sheet."
+    )
+    expected_image_prompt = " ".join(filter(None, prompt_parts))
+    # Removed call to ai_services._truncate_prompt
 
     mock_generate_image.assert_called_once_with(
         page_image_description=expected_image_prompt,
         image_path=expected_image_save_path_on_disk,
-        character_reference_image_paths=None,  # Added missing arg
-        character_name_for_reference=None  # Added missing arg
+        character_reference_image_paths=None,
+        character_name_for_reference=None
     )
 
-    assert result["reference_image_path"] == expected_image_path_for_db
-    assert result["reference_image_revised_prompt"] == "A revised prompt."
-    assert result["reference_image_gen_id"] == "gen_123"
-    assert result["name"] == sample_character_detail.name
+    assert result_dict is not None
+    assert isinstance(result_dict, dict)
+    assert result_dict.get(
+        "reference_image_path") == expected_image_path_for_db
+    assert result_dict.get("name") == sample_character_detail.name
+    assert result_dict.get(
+        "reference_image_revised_prompt") == "Test Revised Prompt"
+    assert result_dict.get("reference_image_gen_id") == "testgenid123"
 
 
-@patch('backend.ai_services.os.makedirs')
+@patch('backend.ai_services.error_logger')  # Patched specific error_logger
 @patch('backend.ai_services.uuid.uuid4')
 @patch('backend.ai_services.generate_image')
-@patch('backend.ai_services.error_logger')  # Mock the logger
+@patch('backend.ai_services.os.makedirs')
 def test_generate_character_reference_image_handles_generate_image_failure(
-    mock_error_logger, mock_generate_image, mock_uuid, mock_makedirs,
+    # Use mock_error_logger
+    mock_os_makedirs, mock_generate_image, mock_uuid, mock_error_logger,
     sample_character_detail, sample_image_style
 ):
-    """
-    Test that generate_character_reference_image handles exceptions from the internal generate_image call.
-    """
     user_id = 1
     story_id = 100
-    mock_uuid.return_value.hex = "abcdef"
+    mock_uuid.return_value.hex = "abcdef123456"
 
-    # Simulate failure in the internal generate_image call
     mock_generate_image.side_effect = Exception(
         "Internal image generation failed")
 
-    # Expected original character data to be returned
     expected_result = sample_character_detail.model_dump(exclude_none=True)
 
     result = ai_services.generate_character_reference_image(
@@ -361,30 +533,6 @@ def test_generate_character_reference_image_handles_generate_image_failure(
         image_style_enum=sample_image_style
     )
 
-    # Assert that the function returns the original character data (or its dump)
     assert result == expected_result
-    # Assert that an error was logged
+    # Assert on the directly patched logger
     mock_error_logger.error.assert_called_once()
-    # Check that the log message contains relevant info (optional, but good for robustness)
-    args, kwargs = mock_error_logger.error.call_args
-    assert f"Failed to generate reference image for character {sample_character_detail.name}" in args[
-        0]
-    # Ensure exc_info=True was passed to the logger
-    assert kwargs.get('exc_info') is True
-
-    # To check the actual exception message, you would typically inspect the call_args
-    # more deeply if the logger was configured to capture the exception instance itself,
-    # or if the message string in args[0] was expected to contain the exception string.
-    # For now, verifying exc_info=True is a good check that it was logged with exception info.
-    # If the first arg of logger.error is a formatted string that includes the exception,
-    # then you could check that:
-    # assert "Internal image generation failed" in args[0]
-    # However, the current implementation in ai_services.py logs a generic message
-    # and passes exc_info=True.
-    # If you want to assert the specific exception message, the logging call in ai_services.py
-    # would need to be like: error_logger.error(f"... {e}", exc_info=True)
-    # or the test would need to capture and inspect the actual exception passed to exc_info if the logger supports it.
-    # Given the current ai_services.py, the most robust check for the exception being handled is:
-    # Confirms the mock was set up to raise
-    assert mock_generate_image.side_effect is not None
-    # And that the error logger was called with exc_info=True

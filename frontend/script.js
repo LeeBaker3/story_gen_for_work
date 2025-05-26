@@ -67,19 +67,19 @@ document.addEventListener('DOMContentLoaded', function () {
             } else { // Reset fields of the first character entry
                 const nameInput = entry.querySelector('input[id^="char-name-"]');
                 if (nameInput) nameInput.value = '';
-                
+
                 const ageInput = entry.querySelector('input[id^="char-age-"]');
                 if (ageInput) ageInput.value = '';
-                
+
                 const genderInput = entry.querySelector('input[id^="char-gender-"]');
                 if (genderInput) genderInput.value = '';
-                
+
                 const physicalTextarea = entry.querySelector('textarea[id^="char-physical-appearance-"]');
                 if (physicalTextarea) physicalTextarea.value = '';
-                
+
                 const clothingTextarea = entry.querySelector('textarea[id^="char-clothing-style-"]');
                 if (clothingTextarea) clothingTextarea.value = '';
-                
+
                 const traitsTextarea = entry.querySelector('textarea[id^="char-key-traits-"]');
                 if (traitsTextarea) traitsTextarea.value = '';
 
@@ -95,7 +95,7 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log('[resetFormAndState] characterCount reset to 1.');
 
         // Reset draft-specific state
-        currentStoryId = null; 
+        currentStoryId = null;
         currentStoryIsDraft = false;
         console.log('[resetFormAndState] currentStoryId and currentStoryIsDraft reset.');
 
@@ -110,13 +110,13 @@ document.addEventListener('DOMContentLoaded', function () {
             storyTitleInput.value = '';
             console.log('[resetFormAndState] Story title input cleared.');
         }
-        
+
         // Hide PDF button as no story is actively being previewed after a reset from creation
         if (exportPdfButton) {
             exportPdfButton.style.display = 'none';
             console.log('[resetFormAndState] exportPdfButton hidden.');
         }
-        
+
         showSection(storyCreationSection); // Ensure the creation form is visible
         displayMessage('Form cleared. Ready for a new story.', 'info');
         console.log('[resetFormAndState] Form fields and draft state reset. Navigated to story creation section.');
@@ -252,8 +252,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return dateString; // Or 'Invalid Date' or 'N/A'
         }
 
-        const options = { 
-            year: 'numeric', month: 'long', day: 'numeric', 
+        const options = {
+            year: 'numeric', month: 'long', day: 'numeric',
             hour: '2-digit', minute: '2-digit',
             // timeZoneName: 'short' // Optional: to show timezone like PST, EST if desired
         };
@@ -837,32 +837,48 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to gather form data
     function getStoryDataFromForm() {
-        const mainCharacters = [];
-        for (let i = 1; i <= characterCount; i++) {
-            const nameElement = document.getElementById(`char-name-${i}`);
-            if (nameElement && nameElement.value) { // Ensure element exists and has a value
-                mainCharacters.push({
-                    name: nameElement.value,
-                    age: document.getElementById(`char-age-${i}`)?.value || null,
-                    gender: document.getElementById(`char-gender-${i}`)?.value || null,
-                    physical_appearance: document.getElementById(`char-physical-appearance-${i}`)?.value || null,
-                    clothing_style: document.getElementById(`char-clothing-style-${i}`)?.value || null,
-                    key_traits: document.getElementById(`char-key-traits-${i}`)?.value || null,
-                });
-            }
+        const mainCharacters = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry')).map(entry => {
+            const nameInput = entry.querySelector('input[id^="char-name-"]');
+            const ageInput = entry.querySelector('input[id^="char-age-"]');
+            const genderInput = entry.querySelector('input[id^="char-gender-"]');
+            const physicalTextarea = entry.querySelector('textarea[id^="char-physical-appearance-"]');
+            const clothingTextarea = entry.querySelector('textarea[id^="char-clothing-style-"]');
+            const traitsTextarea = entry.querySelector('textarea[id^="char-key-traits-"]');
+
+            const ageValue = ageInput ? ageInput.value.trim() : '';
+
+            return {
+                name: nameInput ? nameInput.value.trim() : '',
+                age: ageValue !== '' ? parseInt(ageValue, 10) : null, // Parse to int or send null
+                gender: genderInput ? genderInput.value.trim() : '',
+                physical_appearance: physicalTextarea ? physicalTextarea.value.trim() : '',
+                clothing_style: clothingTextarea ? clothingTextarea.value.trim() : '',
+                key_traits: traitsTextarea ? traitsTextarea.value.trim() : '',
+            };
+        });
+
+        const numPagesValue = document.getElementById('story-num-pages').value; // Corrected ID
+        let numPagesAsInt = parseInt(numPagesValue);
+
+        // Ensure num_pages is a positive integer, defaulting to 1 if empty, NaN, or <= 0.
+        // This is to satisfy StoryCreate's requirement for num_pages: int and downstream AI logic.
+        if (!numPagesValue.trim() || isNaN(numPagesAsInt) || numPagesAsInt <= 0) {
+            numPagesAsInt = 1;
+            // Optionally, update the form field to reflect the default:
+            // document.getElementById('numPages').value = "1";
         }
 
         return {
-            title: document.getElementById('story-title').value.trim() || null, // Send null if empty for drafts
-            genre: document.getElementById('story-genre').value,
-            story_outline: document.getElementById('story-outline').value,
+            title: document.getElementById('story-title').value, // Corrected ID
+            genre: document.getElementById('story-genre').value, // Corrected ID
+            story_outline: document.getElementById('story-outline').value, // Corrected ID
             main_characters: mainCharacters,
-            num_pages: parseInt(document.getElementById('story-num-pages').value, 10),
-            tone: document.getElementById('story-tone').value,
-            setting: document.getElementById('story-setting').value,
-            word_to_picture_ratio: document.getElementById('story-word-to-picture-ratio').value,
-            text_density: document.getElementById('story-text-density').value,
-            image_style: document.getElementById('story-image-style').value
+            num_pages: numPagesAsInt, 
+            tone: document.getElementById('story-tone').value, // Corrected ID
+            setting: document.getElementById('story-setting').value, // Corrected ID
+            word_to_picture_ratio: document.getElementById('story-word-to-picture-ratio').value, // Corrected ID
+            text_density: document.getElementById('story-text-density').value, // Corrected ID
+            image_style: document.getElementById('story-image-style').value // Corrected ID
             // is_draft will be handled by the endpoint/payload structure
         };
     }
@@ -928,10 +944,12 @@ document.addEventListener('DOMContentLoaded', function () {
             showSpinner();
 
             const storyData = getStoryDataFromForm();
+            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 0 - storyDataFromForm obtained >>>>>');
             try {
                 // console.log('[FormSubmit] storyData from form (cleaned):', JSON.parse(JSON.stringify(storyData)));
             } catch (e) {
-                console.error('[FormSubmit] Could not stringify/parse storyData for logging:', e, storyData);
+                // This specific try-catch for logging can be removed if it causes issues or is not needed.
+                // console.error('[FormSubmit] Could not stringify/parse storyData for logging (initial log):', e, storyData);
             }
             // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 1 - After getting storyData >>>>>');
 
@@ -948,19 +966,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 endpoint = `/stories/`;
                 method = 'POST';
             } else if (currentStoryId && !currentStoryIsDraft) {
-                // This case implies editing/overwriting an already finalized story.
-                // Depending on desired UX, this might be a PUT to /stories/{id} or a new creation.
-                // For now, let's assume it's an update to the existing story.
-                // However, the current backend POST /stories/ with draft_id handles finalization.
-                // If we want to *update* a finalized story, a PUT /stories/{id} would be more RESTful.
-                // For now, to avoid unintended behavior, let's treat this as creating a new story
-                // if the "Generate Story" button is clicked on a form populated from a *finalized* template.
-                // The "Use as Template" button should clear currentStoryId and currentStoryIsDraft.
                 console.warn('[FormSubmit] Form was populated from a finalized story, but "Generate Story" was clicked. Treating as new story creation.');
                 payload = { story_input: storyData };
                 endpoint = '/stories/';
                 method = 'POST';
-                currentStoryId = null; // Ensure it's treated as new
+                currentStoryId = null; 
                 currentStoryIsDraft = false;
             } else {
                 console.log('[FormSubmit] Creating a new story from scratch.');
@@ -973,60 +983,55 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 // console.log('[FormSubmit] Payload to be sent to apiRequest (cleaned):', JSON.parse(JSON.stringify(payload)));
             } catch (e) {
-                console.error('[FormSubmit] Could not stringify/parse payload for logging:', e, payload);
+                // This specific try-catch for logging can be removed.
+                // console.error('[FormSubmit] Could not stringify/parse payload for logging:', e, payload);
             }
             // console.log('[FormSubmit] Endpoint:', endpoint, 'Method:', method);
 
-            try {
+            try { // Main try for API call and processing
                 // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 3 - Calling apiRequest >>>>>');
-
                 const result = await apiRequest(endpoint, method, payload);
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4 - apiRequest returned (next log will show result components) >>>>>');
+                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4 - apiRequest returned >>>>>');
+                // console.log('[FormSubmit] API Result (type):', typeof result, 'Is null?', result === null, 'Content:', result);
 
-                // let tempVar = 1 + 1; // Debug variable
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.0 - tempVar calculated:', tempVar, 'Type of result:', typeof result, 'Is result null?', result === null);
 
-                if (result && typeof result === 'object' && result.id) { // Check for result and result.id
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.1 - Logging result.id:', result.id);
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.2 - Logging result.title:', result.title);
-                    if (result.pages) {
-                        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.3 - Logging result.pages.length:', result.pages.length);
-                    } else {
-                        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.3 - result.pages is null/undefined');
+                if (result && typeof result === 'object' && result.id) {
+                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.1 - Result has ID:', result.id, 'Title:', result.title);
+                    displayMessage('Story generated successfully!', 'success'); // This message will be briefly visible
+                    showSection(storyPreviewSection); // This clears the messageArea
+
+                    try {
+                        displayStory(result);
+                        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 5 - Story processed, displayStory called >>>>>');
+                    } catch (displayError) {
+                        console.error("Error during displayStory:", displayError);
+                        // Display a message to the user that story display failed, but generation might have succeeded.
+                        displayMessage(`Error displaying story content: ${displayError.message}. The story might have been created; check 'Browse Stories'.`, 'error');
+                        // The spinner will be hidden by the finally block.
                     }
-                    displayMessage('Story generated successfully!', 'success');
-                    showSection(storyPreviewSection);
-                    displayStory(result);
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 5 - Story processed, calling display >>>>>');
-                    
-                    // DO NOT reset form and state here if we want to stay on the preview.
-                    // resetFormAndState(); // Call the globally accessible function
-                    
-                    // Instead, update state for the newly created/finalized story
+
                     currentStoryId = result.id;
-                    currentStoryIsDraft = false; // It's now a finalized story
-                    if (generateStoryButton) {
-                        // Update button text if needed, or disable, or change its function
-                        // For now, let's assume after generation, the user might want to start a new one or browse.
-                        // The navCreateStory click handler already resets the form.
-                    }
+                    currentStoryIsDraft = false; 
                     console.log('[FormSubmit] Story generation successful. Current story ID:', currentStoryId, 'Is Draft:', currentStoryIsDraft);
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 7 - Form reset and state cleared >>>>>');
+                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 7 - State updated >>>>>');
                 } else {
                     // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.X - Result is null, undefined, not an object, or lacks id.');
-                    console.error('[FormSubmit] Story generation/finalization failed or returned invalid data:', result);
-                    hideSpinner();
+                    console.error('[FormSubmit] Story generation/finalization failed or returned invalid/unexpected data:', result);
                     displayMessage('Failed to generate story. The server response was not as expected. Please check console.', 'error');
                 }
 
-            } catch (error) {
+            } catch (error) { // Catches errors from apiRequest itself or issues before it (e.g. payload stringify if uncommented)
                 // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - ERROR IN API REQUEST CALL OR SUBSEQUENT HANDLING >>>>>', error);
-                hideSpinner(); // Ensure spinner is hidden on error
-                // The apiRequest function should ideally handle displaying the error message.
-                // If not, or if a more specific message is needed here:
-                if (!messageArea.textContent.includes('Failed') && !messageArea.textContent.includes('error')) {
-                     displayMessage(`Error generating story: ${error.message || 'Unknown error'}`, 'error');
+                console.error('[FormSubmit] Error during story generation process:', error);
+                // apiRequest usually displays a message on failure. This is a fallback or for more context.
+                if (!messageArea.textContent.includes('Failed') && 
+                    !messageArea.textContent.includes('error') && 
+                    !messageArea.textContent.includes('Error generating story')) {
+                    displayMessage(`Error generating story: ${error.message || 'Unknown error'}. Please check console.`, 'error');
                 }
+            } finally {
+                hideSpinner();
+                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - FINALLY - Spinner hidden >>>>>');
             }
         });
     } else {
@@ -1241,7 +1246,7 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log("[populateCreateFormWithStoryData] Populating form. isEditingDraft:", isEditingDraft, "Story:", storyData);
 
         // Call the global reset function first to clear the form and basic state
-        resetFormAndState(); 
+        resetFormAndState();
         // resetFormAndState will set currentStoryId = null and currentStoryIsDraft = false.
         // We need to override this if we are editing a draft or using a template.
 
@@ -1272,19 +1277,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 // Populate the (newly added or existing first) character entry
                 document.getElementById(`char-name-${characterCount}`).value = char.name || '';
-                
+
                 const ageEl = document.getElementById(`char-age-${characterCount}`);
                 if (ageEl) ageEl.value = char.age || '';
-                
+
                 const genderEl = document.getElementById(`char-gender-${characterCount}`);
                 if (genderEl) genderEl.value = char.gender || '';
-                
+
                 const physicalEl = document.getElementById(`char-physical-appearance-${characterCount}`);
                 if (physicalEl) physicalEl.value = char.physical_appearance || '';
-                
+
                 const clothingEl = document.getElementById(`char-clothing-style-${characterCount}`);
                 if (clothingEl) clothingEl.value = char.clothing_style || '';
-                
+
                 const traitsEl = document.getElementById(`char-key-traits-${characterCount}`);
                 if (traitsEl) traitsEl.value = char.key_traits || '';
 
@@ -1297,9 +1302,9 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
             // If no characters in storyData, ensure at least one blank character entry exists
             if (characterCount === 0) { // Should be 1 after reset, but as a safeguard
-                 addCharacterEntry(); // This sets characterCount to 1
+                addCharacterEntry(); // This sets characterCount to 1
             }
-             // Ensure fields of the first character entry are blank (resetFormAndState should handle this)
+            // Ensure fields of the first character entry are blank (resetFormAndState should handle this)
         }
 
         if (isEditingDraft) {
@@ -1317,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             displayMessage(`Form populated with template from "${storyData.title || 'Untitled Story'}". Review and modify as needed. This will create a new story.`, 'info');
         }
-        
+
         showSection(storyCreationSection); // Ensure the form is visible
         console.log("[populateCreateFormWithStoryData] Form population complete. currentStoryId:", currentStoryId, "currentStoryIsDraft:", currentStoryIsDraft);
     }

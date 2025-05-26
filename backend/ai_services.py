@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional  # Added Optional
 import base64  # Added for image encoding
 import uuid  # Added for unique filenames
+import sys  # Added import
+import logging  # Added logging import
 
 # Import loggers
 from .logging_config import api_logger, error_logger, app_logger  # Added app_logger
@@ -29,6 +31,34 @@ EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
 # Added "Characters_in_scene" to expected page keys
 EXPECTED_PAGE_KEYS = ["Page_number", "Text",
                       "Image_description", "Characters_in_scene"]
+
+OPENAI_CLIENT = None
+
+# Initialize logging
+logger = logging.getLogger(__name__)
+error_logger = logging.getLogger('error_logger')
+warning_logger = logging.getLogger('warning_logger')
+
+IMAGE_MODEL = "gpt-image-1"
+IMAGE_SIZE = "1024x1024"
+MAX_PROMPT_LENGTH = 4000  # Max prompt length for DALL-E 3
+
+
+def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
+    """
+    Truncates the prompt to the specified maximum length.
+    Avoids cutting words in half if possible, but prioritizes max_length.
+    """
+    if len(prompt) <= max_length:
+        return prompt
+    # Simple truncation for now, can be made smarter
+    truncated = prompt[:max_length]
+    # Try to cut at the last space to avoid breaking a word, if space exists nearby
+    last_space = truncated.rfind(' ', max_length - 30, max_length) # look for space in last 30 chars
+    if last_space != -1:
+        return truncated[:last_space] + "..."
+    app_logger.warning(f"Prompt was truncated mid-word or abruptly. Original length: {len(prompt)}, Max: {max_length}")
+    return truncated + "..." # Fallback if no space found near end
 
 
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
@@ -302,9 +332,9 @@ Output Requirements:
      - If no Main Characters are present in a specific page's scene, "Characters_in_scene" must be an empty list `[]`.
      - This "Characters_in_scene" list is separate from and in addition to the "Image_description".
   3. Incorporate Character Visuals:
-     - For Content Pages: For EACH identified Main Character present in the scene, append their \\'Canonical Visual Description\\' (as provided in the \\'Main characters and their detailed visual descriptions\\' section above for each character) VERBATIM after the scene description from step 1. This \\'Canonical Visual Description\\' has been pre-compiled based on priority from all available visual data (image model outputs, user inputs, AI analysis of references) and MUST NOT be summarized, shortened, rephrased, or altered in any way. It should be treated as a single, fixed block of text to be appended for that character.
-     - For the Title Page (Cover Image): If main characters are part of the cover\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\'Canonical Visual Description\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\'Canonical Visual Description\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
-  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Appended Character Visuals]) reflects the overall \\'{image_style_description}\\'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append \\', {image_style_description} style\\' to the complete description.
+     - For Content Pages: For EACH identified Main Character present in the scene, ensure their depiction in the image is CONSISTENT with their \\'Canonical Visual Description\\'. To achieve this, AFTER describing the scene from step 1, you should weave in KEY RECOGNIZABLE FEATURES from their \\'Canonical Visual Description\\' into the overall Image_description. The primary focus MUST remain the scene from the page text. The character details should support the scene, not overshadow it. Do not just append the entire canonical description if it makes the character description dominate the scene description. Instead, intelligently integrate the most important visual cues to ensure consistency while keeping the scene central. For example, if a character\\'s canonical description is very long, pick the 2-3 most defining visual elements to mention.
+     - For the Title Page (Cover Image): If main characters are part of the cover\\\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\\\'Canonical Visual Description\\\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\\\'Canonical Visual Description\\\\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
+  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Integrated Key Character Features]) reflects the overall \\\\\\'{image_style_description}\\\\\\''. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append \\\\\\', {image_style_description} style\\\\\\' to the complete description.
   This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Incorporate Character Visuals as specified for page type -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
 - The final output MUST be a single JSON object. This JSON object must have a top-level key \\'Title\\' (string) and a top-level key \\'Pages\\' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
@@ -510,195 +540,203 @@ Output Requirements:
         raise
 
 
-def generate_image(page_image_description: str, image_path: str, character_reference_image_paths: Optional[List[str]] = None, character_name_for_reference: Optional[str] = None) -> dict:
+def generate_image(
+    page_image_description: str,
+    image_path: str,
+    character_reference_image_paths: Optional[List[str]] = None,  # Modified
+    character_name_for_reference: Optional[str] = None,
+    # Changed from dall-e-3 to gpt-image-1
+    model: str = "gpt-image-1"
+) -> Dict[str, Any]:
     """
-    Generates an image using an AI image model based on a prompt and saves it locally.
-    If character_reference_image_paths are provided, it attempts to use the image edit API for consistency.
-    The character_name_for_reference is used to improve the edit prompt if a reference image is used.
-    Returns a dictionary containing the path to the saved image and the revised_prompt (if available).
-    The `image_path` argument should be the full absolute or relative path (from project root)
-    where the image file should be saved, including the filename and extension (e.g., 'data/images/user_1/story_1/page_1.png').
+    Generates an image using OpenAI's Image API.
+    If character_reference_image_paths is provided and valid, it attempts to use the edit API.
+    Otherwise, or if edit fails, it uses the generate API.
+    Saves the image to the specified image_path.
+    Returns a dictionary containing the image_path, revised_prompt (if any), and gen_id.
     """
-    api_logger.debug(
-        f"Attempting to generate image. Target save path: {image_path}. Reference paths: {character_reference_image_paths}")
+    app_logger.debug(
+        # Log paths
+        f"generate_image called with: description='{page_image_description[:50]}...', path='{image_path}', refs='{character_reference_image_paths}'")
 
-    # Ensure the directory for image_path exists
     os.makedirs(os.path.dirname(image_path), exist_ok=True)
+    revised_prompt_from_api = None
+    gen_id_from_api = None
 
-    if character_reference_image_paths and len(character_reference_image_paths) > 0:
-        reference_image_path = character_reference_image_paths[0]
-        api_logger.info(
-            f"Reference image provided: {reference_image_path}. Attempting image edit.")
+    # Prepare reference images if provided
+    valid_reference_files: List[Any] = []  # To hold open file objects
+    opened_files_for_cleanup: List[Any] = []
 
-        # Check if the reference image file exists BEFORE trying to open it
-        if not os.path.exists(reference_image_path):
-            error_logger.error(
-                f"Reference image file not found: {reference_image_path}. Falling back to generation.")
-            # Fall through to the generation API by skipping the edit attempt
-        else:
-            # OpenAI DALL-E 2 edit prompt limit is 1000. gpt-image-1 might be similar. Leave a small buffer.
-            MAX_EDIT_PROMPT_LENGTH = 990
-
-            if character_name_for_reference:
-                instruction_prefix = (
-                    f"IMPORTANT: Use the provided image as a strict visual reference for the character \'{character_name_for_reference}\'. "
-                    f"The character \'{character_name_for_reference}\' in the output image MUST visually match this reference, especially their face, hair, and build. "
-                    f"This visual reference for \'{character_name_for_reference}\' takes precedence over any conflicting appearance details in the text prompt below. "
-                    f"Integrate \'{character_name_for_reference}\' (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
-                    f"Scene details: "
-                )
-            # Fallback if no specific character name is provided (less ideal but a safeguard)
+    if character_reference_image_paths:
+        for ref_path in character_reference_image_paths:
+            if ref_path and os.path.exists(ref_path):
+                try:
+                    file_obj = open(ref_path, "rb")
+                    valid_reference_files.append(file_obj)
+                    opened_files_for_cleanup.append(file_obj)
+                except Exception as e:
+                    error_logger.warning(
+                        f"Could not open reference file {ref_path}: {e}")
             else:
+                error_logger.warning(
+                    f"Reference image path {ref_path} does not exist or is None.")
+
+    if valid_reference_files:
+        try:
+            primary_reference_file = valid_reference_files[0]
+            num_references = len(valid_reference_files)
+
+            instruction_prefix = (
+                "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
+                "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
+                "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
+                "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene\\\'s style and actions. "
+                "Scene details: "
+            )
+
+            if num_references > 1:
+                other_refs_desc = f" Additionally, consider {num_references - 1} other guiding reference concepts implied by the context of this request."
                 instruction_prefix = (
-                    f"IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
-                    f"This character in the output image MUST visually match the reference, especially their face, hair, and build. "
-                    f"This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
-                    f"Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
-                    f"Scene details: "
+                    f"IMPORTANT: Use the primary provided image as a strict visual reference for a key character. "
+                    f"This character in the output image MUST visually match this primary reference (face, hair, build).{other_refs_desc} "
+                    f"This visual guidance takes precedence. Integrate this character into the following scene. Scene details: "
                 )
 
-            available_length_for_description = MAX_EDIT_PROMPT_LENGTH - \
-                len(instruction_prefix)
-
-            effective_page_image_description = page_image_description
-            if len(page_image_description) > available_length_for_description:
-                if available_length_for_description <= 0:
-                    error_logger.error(
-                        f"Instruction prefix for edit prompt is too long ({len(instruction_prefix)} chars). Cannot include page_image_description. Edit may fail or produce poor results."
-                    )
-                    effective_page_image_description = "A scene."  # Minimal placeholder
-                else:
-                    # Truncate from the end, keeping the start which is often more critical for scene setup.
-                    cutoff = available_length_for_description - 3  # for "..."
-                    effective_page_image_description = page_image_description[:cutoff] + "..."
-                    api_logger.warning(
-                        f"Page image description (original length {len(page_image_description)}) was truncated to {len(effective_page_image_description)} characters to fit within the {MAX_EDIT_PROMPT_LENGTH} character limit for the image edit prompt (prefix length {len(instruction_prefix)})."
-                    )
-
-            edit_prompt = instruction_prefix + effective_page_image_description
-
-            # Log a significant portion of the prompt for debugging, especially if truncated.
-            log_prompt_length = min(len(edit_prompt), 350)
+            # The prompt for `images.edit` should be the `page_image_description` prefixed by the instruction.
+            edit_prompt = instruction_prefix + page_image_description
             api_logger.debug(
-                f"Constructed edit prompt (total length {len(edit_prompt)} chars). Start of prompt: '{edit_prompt[:log_prompt_length]}...'")
+                f"Attempting OpenAI Image API edit with prompt: {edit_prompt[:150]}... and {num_references} reference(s). Primary: {character_reference_image_paths[0] if character_reference_image_paths else 'None'}")
 
-            try:
-                with open(reference_image_path, "rb") as image_file:
-                    response = client.images.edit(
-                        # Assuming gpt-image-1 supports edit, verify if this is the correct model for edits.
-                        # OpenAI docs often mention dall-e-2 for edits, but gpt-image-1 is newer.
-                        # For now, using "gpt-image-1" as per previous discussions, but this needs verification.
-                        model="gpt-image-1",
-                        image=image_file,  # Pass the file object directly
-                        prompt=edit_prompt,
-                        n=1,
-                        # Ensure this size is supported by the edit API and model
-                        size="1024x1024"
-                    )
+            response = client.images.edit(
+                model=model,
+                image=primary_reference_file,  # This is the opened file object
+                prompt=edit_prompt,
+                n=1,
+                size="1024x1024"
+                # response_format="b64_json" # Removed: gpt-image-1 always returns b64_json
+            )
+            if response.data and response.data[0].b64_json:
+                image_data = base64.b64decode(response.data[0].b64_json)
+                with open(image_path, 'wb') as f_out:
+                    f_out.write(image_data)
+                app_logger.info(
+                    f"Image successfully generated using EDIT API and saved to {image_path}")
+                revised_prompt_from_api = response.data[0].revised_prompt if hasattr(
+                    response.data[0], 'revised_prompt') else edit_prompt
+                gen_id_from_api = f"edit_{response.created}" if hasattr(
+                    response, 'created') else f"edit_{uuid.uuid4().hex}"
 
-                image_data = response.data[0]
-                # Assuming edit API also returns b64_json
-                b64_json_data = image_data.b64_json
-                revised_prompt = None  # Edit API might not provide a revised_prompt
-
-                api_logger.info(
-                    f"AI model returned edited image data (b64_json).")
-
-                image_bytes = base64.b64decode(b64_json_data)
-                with open(image_path, 'wb') as f:
-                    f.write(image_bytes)
-                api_logger.info(
-                    f"Edited image successfully decoded and saved to {image_path}")
-
-                return {
-                    "image_path": image_path,
-                    "revised_prompt": revised_prompt,                "gen_id": None}
-
-            # This specific FileNotFoundError for the reference image is now handled by the os.path.exists check above.
-            # However, keeping a general FileNotFoundError here in case open() itself fails for other reasons (e.g. permissions)
-            # after os.path.exists() passed.
-            except FileNotFoundError as e:  # This might catch issues with opening image_path for writing too
+                # No need to iterate and close here, finally block will handle it
+                return {"image_path": image_path, "revised_prompt": revised_prompt_from_api, "gen_id": gen_id_from_api}
+            else:
                 error_logger.error(
-                    f"File not found during image edit attempt (could be ref or output path): {e}. Falling back to generation.")
-            except openai.APIError as e:
-                error_logger.error(
-                    f"OpenAI API Error during image edit: {e}. Falling back to generation.", exc_info=True)
-                error_logger.error(
-                    f"Problematic edit prompt: {edit_prompt}. Reference image: {reference_image_path}")
-                # Fall through to the generation API
-            except Exception as e:
-                error_logger.error(
-                    f"An unexpected error occurred during image edit: {e}. Falling back to generation.", exc_info=True)
-                # Fall through to the generation API
+                    "OpenAI Image API edit call did not return image data.")
+                # Fall through to generate API
 
-        app_logger.warning(
-            f"Image edit failed or reference not found for {image_path}. Falling back to standard image generation.")
+        except Exception as e:
+            error_logger.error(
+                f"OpenAI Image API edit call failed: {e}. Falling back to generate API.", exc_info=True)
+            # Fall through to generate API
+        finally:
+            for f_obj in opened_files_for_cleanup:  # Ensure all opened reference files are closed
+                # if hasattr(f_obj, 'closed') and not f_obj.closed: # Old condition
+                if hasattr(f_obj, 'close') and callable(f_obj.close):  # New condition
+                    try:
+                        f_obj.close()
+                    except Exception as close_e:
+                        error_logger.warning(
+                            f"Error closing reference file: {close_e}")
+            opened_files_for_cleanup.clear()  # Clear the list after attempting to close
 
-    # Fallback to "Create image" API (client.images.generate)
-    api_logger.debug(
-        f"Generating image with gpt-image-1 (fallback or no reference). Prompt: {page_image_description[:200]}...")
+    # Fallback to generate API if no valid references, or if edit API failed
+    app_logger.info(
+        "Using OpenAI Image API generate (either no valid refs, or edit failed/skipped).")
+    api_action_type_log = "generate" # Define for logging in case of error
+    prompt_to_log = page_image_description # Define for logging in case of error
     try:
+        # Ensure any files from a previous attempt (if edit block was skipped or failed early) are closed.
+        # This is now redundant due to the finally block above, but kept for safety if logic changes.
+        for f_obj in opened_files_for_cleanup:
+            if hasattr(f_obj, 'closed') and not f_obj.closed:
+                f_obj.close()
+        opened_files_for_cleanup.clear()
+
+        api_logger.debug(
+            f"Attempting OpenAI Image API generate with prompt: {page_image_description[:150]}...")
         response = client.images.generate(
-            model="gpt-image-1",
-            prompt=page_image_description,  # Original prompt for generation
+            model=model,  # Ensure model is passed here too
+            prompt=page_image_description,
             size="1024x1024",
             n=1
+            # response_format parameter removed as it\\\\\'s not supported for gpt-image-1
         )
-        image_data = response.data[0]
-        b64_json_data = image_data.b64_json
-        revised_prompt = None  # gpt-image-1 does not provide revised_prompt
 
-        api_logger.info(f"AI model returned generated image data (b64_json).")
+        if response.data and response.data[0] and response.data[0].b64_json:
+            image_data = base64.b64decode(response.data[0].b64_json)
+            with open(image_path, 'wb') as f_out:
+                f_out.write(image_data)
+            app_logger.info(
+                f"Image successfully generated using GENERATE API and saved to {image_path}")
+            
+            # Determine revised_prompt, fallback to original prompt if not available
+            current_revised_prompt = page_image_description 
+            if hasattr(response.data[0], 'revised_prompt') and response.data[0].revised_prompt:
+                current_revised_prompt = response.data[0].revised_prompt
+            
+            # Determine gen_id, fallback to UUID if 'created' not available
+            current_gen_id = f"gen_{uuid.uuid4().hex}" 
+            if hasattr(response, 'created') and response.created:
+                current_gen_id = f"gen_{response.created}"
 
-        image_bytes = base64.b64decode(b64_json_data)
-        with open(image_path, 'wb') as f:
-            f.write(image_bytes)
-        api_logger.info(
-            f"Generated image successfully decoded and saved to {image_path}")
+            return {"image_path": image_path, "revised_prompt": current_revised_prompt, "gen_id": current_gen_id}
+        else:
+            # This case means the API call succeeded (no exception) but the response format is unexpected.
+            error_logger.error(
+                f"OpenAI Image API generate call for prompt '{prompt_to_log[:100]}...' succeeded but returned no image data or unexpected response structure. Response: {response}")
+            raise ValueError("OpenAI Image API generate call returned no image data.")
 
-        return {
-            "image_path": image_path,
-            "revised_prompt": revised_prompt,
-            "gen_id": None
-        }
-    except IOError as e:  # Specific to file saving for the generated image
+    except openai.BadRequestError as e:
+        error_details = e.response.json() if e.response else {"error": {"message": str(e)}}
+        error_message_detail = error_details.get("error", {}).get("message", "Unknown BadRequestError")
+        error_code_detail = error_details.get("error", {}).get("code")
+
+        # Determine api_action_type_log if not already set (e.g. if error happened in edit block)
+        # This specific except block is for the 'generate' part, so api_action_type_log is 'generate'
+        # However, to be robust, if we were to combine error handling, we'd need a more dynamic way.
+        # For now, it's correctly 'generate' as per the flow.
+
+        if error_code_detail == 'moderation_blocked' or "safety system" in error_message_detail:
+            # Use prompt_to_log which is page_image_description for the generate block
+            error_logger.error(f"OpenAI Image API call failed due to moderation/safety system. ACTION: {api_action_type_log}. FULL PROMPT: {prompt_to_log}")
+            error_logger.error(f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
+        else:
+            error_logger.error(f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
+        raise # Re-raise the exception
+    except openai.OpenAIError as e:
         error_logger.error(
-            f"Failed to save generated image to path {image_path}. Error: {e}", exc_info=True)
-        raise
-    except openai.APIError as e:
-        error_logger.error(
-            f"OpenAI API Error during image generation (fallback): {e}", exc_info=True)
-        error_logger.error(
-            f"Problematic image prompt (fallback): {page_image_description}")
+            f"OpenAI API Error during image generation: {e}", exc_info=True)
         raise
     except Exception as e:
         error_logger.error(
-            f"An unexpected error occurred while generating image (fallback): {e}", exc_info=True)
+            f"An unexpected error occurred while generating image: {e}", exc_info=True)
         raise
 
 
-# Updated function signature and logic
 def generate_character_reference_image(
-    character: CharacterDetail,  # Changed from character_data: dict
+    character: CharacterDetail,
     user_id: int,
     story_id: int,
-    image_style_enum: ImageStyle,
-    # Optional: if you want to pass pre-determined paths
-    # save_directory_on_disk: Optional[str] = None,
-    # db_path_prefix: Optional[str] = None
-) -> dict:
-    """
-    Generates a reference image for a character using an AI image model, saves it,
-    and returns the updated character details as a dictionary including the image path (relative to 'data/'),
-    revised prompt (if available), and gen_id.
-    """
-    app_logger.info(
-        f"Generating reference image for character: {character.name} (User: {user_id}, Story: {story_id})")
+    image_style_enum: ImageStyle
+) -> Dict[str, Any]:
+    app_logger.info( # ADDED THIS ENTRY LOG
+        f"Attempting to generate reference image for character: {character.name} (User: {user_id}, Story: {story_id})")
 
-    # Construct prompt for the image model
-    # prompt_parts = [f"Full body character concept art for {character.name}."] # Old prompt start
+    # Use "the character" if name is empty or whitespace
+    char_name_for_prompt = character.name if character.name and character.name.strip() else "the character"
+
     prompt_parts = [
-        f"Generate a character sheet for {character.name} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view. It is crucial that all views depict the exact same character consistently."
+        f"Generate a character sheet for {char_name_for_prompt} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view.",
+        "It is crucial that all views depict the exact same character consistently."
     ]  # New prompt start for multiple angles
     if character.physical_appearance:
         prompt_parts.append(
@@ -727,7 +765,7 @@ def generate_character_reference_image(
         "The character should be clearly visible on a simple or neutral background to emphasize their design for the character sheet."
     )  # New instruction
 
-    image_prompt = " ".join(prompt_parts)  # Renamed from dalle_prompt
+    image_prompt = _truncate_prompt(" ".join(filter(None, prompt_parts)))
     api_logger.debug(
         f"Image model prompt for character {character.name}: {image_prompt}")
 
@@ -739,7 +777,6 @@ def generate_character_reference_image(
     unique_suffix = uuid.uuid4().hex[:6]
     char_image_filename = f"char_{char_filename_safe_name}_ref_{unique_suffix}.png"
 
-    # Construct paths if not provided (standard behavior)
     user_images_base_path_for_db = f"images/user_{user_id}"
     story_folder_name_for_db = f"story_{story_id}"
     char_ref_image_subfolder_name = "references"
@@ -753,13 +790,14 @@ def generate_character_reference_image(
         _save_directory_on_disk, char_image_filename)
     image_path_for_db = os.path.join(_db_path_prefix, char_image_filename)
 
+    app_logger.debug(f"generate_character_reference_image: About to call generate_image for character '{character.name}'. Disk path: {image_save_path_on_disk}. Prompt: '{image_prompt[:100]}...'") # ADDED/ENHANCED LOG
+
     try:
-        # Generate image using the updated image generation function
         image_generation_result = generate_image(
             page_image_description=image_prompt,
             image_path=image_save_path_on_disk,
-            character_reference_image_paths=None,  # Explicitly pass None
-            character_name_for_reference=None  # Explicitly pass None
+            character_reference_image_paths=None,
+            character_name_for_reference=None, # Explicitly None for character ref generation
         )
 
         updated_character_dict = character.model_dump(exclude_none=True)
@@ -769,15 +807,15 @@ def generate_character_reference_image(
         updated_character_dict["reference_image_gen_id"] = image_generation_result.get(
             "gen_id")
 
-        app_logger.info(
+        app_logger.info( # ENSURED THIS LOG IS PRESENT
             f"Reference image for {character.name} generated and saved to {image_save_path_on_disk}. DB path: {image_path_for_db}")
         return updated_character_dict
 
     except Exception as e:
         error_logger.error(
-            f"Failed to generate reference image for character {character.name}: {e}", exc_info=True)
+            f"generate_character_reference_image: Exception caught for char '{character.name}'. Type: {type(e).__name__}, Msg: {str(e)}. Failing prompt was: {image_prompt}", exc_info=True)
+        # Always return the model dump as per test expectation
         return character.model_dump(exclude_none=True)
-
 
 # Changed character_name to character_details
 # async def generate_image_description_from_image(image_path: str, character_details: CharacterDetail) -> str:
