@@ -1,4 +1,9 @@
-const API_BASE_URL = 'http://127.0.0.1:8000'; // Define the base URL for API calls
+let API_BASE_URL;
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    API_BASE_URL = 'http://127.0.0.1:8000'; // Local development
+} else {
+    API_BASE_URL = 'https://story-gen-for-work.onrender.com'; // Deployed environment
+}
 console.log("script.js file loaded and parsed by the browser.");
 
 document.addEventListener('DOMContentLoaded', function () {
