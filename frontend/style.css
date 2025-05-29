@@ -345,6 +345,7 @@ button[type="button"]:hover {
     /* White background for pages */
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     /* Subtle shadow for depth */
+    color: #333; /* Added default dark text color for page previews */
 }
 
 .story-title-page-preview {
@@ -352,6 +353,8 @@ button[type="button"]:hover {
     /* Slightly different background for title page */
     text-align: center;
     /* Center content on title page */
+    margin-bottom: 20px;
+    color: #333; /* Ensure title page text is dark */
 }
 
 .title-page-story-title {
@@ -376,7 +379,7 @@ button[type="button"]:hover {
 .story-content-page-preview h4 {
     /* Page number heading for content pages */
     font-size: 1.4em;
-    color: #555;
+    color: #444; /* Darker color for page numbers */
     margin-bottom: 10px;
     border-bottom: 1px solid #eee;
     padding-bottom: 5px;
@@ -390,6 +393,8 @@ button[type="button"]:hover {
     display: block;
     margin-top: 15px;
     margin-bottom: 15px;
+    margin-left: auto; /* Center image */
+    margin-right: auto; /* Center image */
     border-radius: 4px;
 }
 
