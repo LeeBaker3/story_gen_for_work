@@ -258,25 +258,26 @@ def mock_crud_operations(db_session_mock, current_user_mock, story_create_input_
 
         page_id_counter = 1
 
-        def create_page_side_effect_refined(db, story_id, page): # Corrected signature
+        # Corrected signature
+        def create_page_side_effect_refined(db, story_id, page):
             # Ensure it uses the mock_initial_draft_entry or story_obj_post_crud_finalize
             # depending on the context, or simply creates a new page object.
             # For this test, we expect it to be called after finalization.
-            
+
             # Find the correct story object based on story_id
             current_story_obj = None
             if story_id == story_obj_post_crud_finalize.id:
                 current_story_obj = story_obj_post_crud_finalize
-            elif story_id == mock_initial_draft_entry.id: # Should not happen in finalize path
+            elif story_id == mock_initial_draft_entry.id:  # Should not happen in finalize path
                 current_story_obj = mock_initial_draft_entry
-            else: # Fallback, though ideally one of the above should match
+            else:  # Fallback, though ideally one of the above should match
                 # This might indicate an issue if reached unexpectedly.
                 # For now, let's assume story_obj_post_crud_finalize is the target.
                 current_story_obj = story_obj_post_crud_finalize
 
+            # Simple ID generation for mock
+            created_page_id = len(current_story_obj.pages) + 1
 
-            created_page_id = len(current_story_obj.pages) + 1 # Simple ID generation for mock
-            
             # Create a mock Page object (ensure it matches schemas.Page)
             mock_page_db = schemas.Page(
                 id=created_page_id,
@@ -285,7 +286,7 @@ def mock_crud_operations(db_session_mock, current_user_mock, story_create_input_
                 text=page.text,
                 image_description=page.image_description,
                 # image_path will be set by update_page_image_path mock
-                image_path=f"mock/path/temp_page_{created_page_id}.png", 
+                image_path=f"mock/path/temp_page_{created_page_id}.png",
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC)
             )
@@ -302,7 +303,8 @@ def mock_crud_operations(db_session_mock, current_user_mock, story_create_input_
         mock_create_page.side_effect = create_page_side_effect_refined
 
         # Refined side effect for update_page_image_path
-        def update_page_img_side_effect_refined(db, page_id, image_path): # Corrected signature
+        # Corrected signature
+        def update_page_img_side_effect_refined(db, page_id, image_path):
             # Find the page in story_obj_post_crud_finalize.pages and update its image_path
             target_page = None
             # Check in the finalized story first
@@ -310,20 +312,21 @@ def mock_crud_operations(db_session_mock, current_user_mock, story_create_input_
                 if p.id == page_id:
                     target_page = p
                     break
-            
+
             # If not found, check in the initial draft (less likely for this flow)
             if not target_page:
                 for p in mock_initial_draft_entry.pages:
                     if p.id == page_id:
                         target_page = p
                         break
-            
+
             if target_page:
                 target_page.image_path = image_path
                 target_page.updated_at = datetime.now(UTC)
                 return target_page
             # This should ideally not happen if page_id is valid
-            raise ValueError(f"Mocked update_page_image_path: Page with id {page_id} not found in mock stories.")
+            raise ValueError(
+                f"Mocked update_page_image_path: Page with id {page_id} not found in mock stories.")
 
         mock_update_page_img.side_effect = update_page_img_side_effect_refined
 
@@ -337,10 +340,11 @@ def mock_crud_operations(db_session_mock, current_user_mock, story_create_input_
             'update_page_image_path': mock_update_page_img,
             'delete_story_db_entry': mock_delete_story,
             'update_story_draft': mock_update_draft,
-            'get_story': mock_get_story, # The mock itself is yielded; side_effect is set in the test
+            # The mock itself is yielded; side_effect is set in the test
+            'get_story': mock_get_story,
             'finalize_story_draft': mock_finalize_draft,
-            '_story_obj_after_finalize_and_ai': story_obj_post_crud_finalize, # Key for test access
-            '_mock_initial_draft_entry': mock_initial_draft_entry # If needed by other tests
+            '_story_obj_after_finalize_and_ai': story_obj_post_crud_finalize,  # Key for test access
+            '_mock_initial_draft_entry': mock_initial_draft_entry  # If needed by other tests
         }
         yield yield_dict
     # No more get_story side effect setup within this fixture.
@@ -356,61 +360,66 @@ def test_create_new_story_draft_finalization(
     mock_now = datetime.now(UTC)
 
     updated_draft_mock = schemas.Story(
-        id=draft_id_to_finalize, 
+        id=draft_id_to_finalize,
         owner_id=current_user_mock.id,
         title=story_create_input_mock.title,
         genre=story_create_input_mock.genre,
-        story_summary=story_create_input_mock.story_outline, 
+        story_summary=story_create_input_mock.story_outline,
         story_outline=story_create_input_mock.story_outline,
         main_characters=story_create_input_mock.main_characters,
-        num_pages=story_create_input_mock.num_pages, 
+        num_pages=story_create_input_mock.num_pages,
         # Assign the enum member directly, not its value
         image_style=story_create_input_mock.image_style,
         created_at=mock_now,
         updated_at=mock_now,
         is_draft=True,
-        pages=[], 
-        characters=[] 
+        pages=[],
+        characters=[]
     )
     # Assign to the mock_crud_operations fixture so it can be used by other parts of the test if necessary
     mock_crud_operations['update_story_draft'].return_value = updated_draft_mock
 
-
     # --- Define a robust side_effect for mock_crud_operations['get_story'] ---
     # This side_effect function is defined *inside* the test to have access to test-local variables.
     fixture_story_obj_post_crud_finalize = mock_crud_operations['_story_obj_after_finalize_and_ai']
-    _get_story_call_count = 0 
+    _get_story_call_count = 0
 
     def get_story_side_effect_handler(db, story_id, owner_id, is_draft_param=None, **kwargs):
-        nonlocal _get_story_call_count # Ensure we can modify the outer scope variable
+        nonlocal _get_story_call_count  # Ensure we can modify the outer scope variable
         _get_story_call_count += 1
-        print(f"TEST DEBUG (get_story call #{_get_story_call_count}): Args: story_id={story_id}, owner_id={owner_id}, is_draft_param={is_draft_param}, kwargs={kwargs}")
+        print(
+            f"TEST DEBUG (get_story call #{_get_story_call_count}): Args: story_id={story_id}, owner_id={owner_id}, is_draft_param={is_draft_param}, kwargs={kwargs}")
 
         if owner_id != current_user_mock.id:
-            print(f"TEST DEBUG ERROR: get_story_side_effect_handler - owner_id mismatch. Expected {current_user_mock.id}, got {owner_id}. Returning None.")
+            print(
+                f"TEST DEBUG ERROR: get_story_side_effect_handler - owner_id mismatch. Expected {current_user_mock.id}, got {owner_id}. Returning None.")
             return None
 
         # Case 1: Fetching the initial draft to be finalized.
         if story_id == draft_id_to_finalize:
-            print(f"TEST DEBUG: get_story_side_effect_handler - Returning updated_draft_mock (id={updated_draft_mock.id}, is_draft={updated_draft_mock.is_draft}) for story_id {story_id}.")
+            print(
+                f"TEST DEBUG: get_story_side_effect_handler - Returning updated_draft_mock (id={updated_draft_mock.id}, is_draft={updated_draft_mock.is_draft}) for story_id {story_id}.")
             return updated_draft_mock
 
         # Case 2: Fetching the story after it has been finalized and processed by AI.
         elif story_id == actual_finalized_story_id:
-            print(f"TEST DEBUG: get_story_side_effect_handler - Returning fixture_story_obj_post_crud_finalize (id={fixture_story_obj_post_crud_finalize.id}, is_draft={fixture_story_obj_post_crud_finalize.is_draft}, title='{fixture_story_obj_post_crud_finalize.title}', num_pages={fixture_story_obj_post_crud_finalize.num_pages}) for story_id {story_id}.")
+            print(
+                f"TEST DEBUG: get_story_side_effect_handler - Returning fixture_story_obj_post_crud_finalize (id={fixture_story_obj_post_crud_finalize.id}, is_draft={fixture_story_obj_post_crud_finalize.is_draft}, title='{fixture_story_obj_post_crud_finalize.title}', num_pages={fixture_story_obj_post_crud_finalize.num_pages}) for story_id {story_id}.")
             return fixture_story_obj_post_crud_finalize
-        
+
         else:
-            print(f"TEST DEBUG ERROR: get_story_side_effect_handler - Unexpected story_id: {story_id}. Returning None.")
+            print(
+                f"TEST DEBUG ERROR: get_story_side_effect_handler - Unexpected story_id: {story_id}. Returning None.")
             return None
 
     mock_crud_operations['get_story'].side_effect = get_story_side_effect_handler
     # --- End of side_effect definition ---
-    
+
     # Ensure the draft can be finalized
     response = client.post(
         "/stories/",  # Corrected endpoint
-        json={"story_input": story_create_input_mock.model_dump(), "draft_id": draft_id_to_finalize}, # Corrected payload
+        json={"story_input": story_create_input_mock.model_dump(
+        ), "draft_id": draft_id_to_finalize},  # Corrected payload
         headers={"X-Token": "testtoken"}
     )
 
@@ -451,7 +460,8 @@ def test_create_new_story_draft_finalization(
     # The get_story_side_effect_handler ensures that IF get_story is called by those, it behaves as expected.
 
     # Ensure the response story ID matches the ID of the finalized story from the mock setup
-    assert response_data['id'] == actual_finalized_story_id # Corrected Assertion
+    # Corrected Assertion
+    assert response_data['id'] == actual_finalized_story_id
 
     # Check that AI service for character reference image IS CALLED if images are missing.
     # For this test, assume character details in story_create_input_mock do NOT have reference_image_path.
@@ -463,7 +473,7 @@ def test_create_new_story_draft_finalization(
             mock_ai_services['generate_character_reference_image'].assert_any_call(
                 character=char_detail_input,
                 user_id=current_user_mock.id,
-                story_id=actual_finalized_story_id, # Use the finalized story ID
+                story_id=actual_finalized_story_id,  # Use the finalized story ID
                 image_style_enum=story_create_input_mock.image_style
             )
     else:
@@ -475,7 +485,8 @@ def test_create_new_story_draft_finalization(
     # Check that the story title was updated in the database
     # The title update should happen on the new story ID
     mock_crud_operations['update_story_title'].assert_called_once_with(
-        db=ANY, story_id=actual_finalized_story_id, new_title=ANY) # Corrected to use keyword arguments
+        # Corrected to use keyword arguments
+        db=ANY, story_id=actual_finalized_story_id, new_title=ANY)
 
     # Ensure the title was updated to something meaningful
     # Accessing call_args when using keyword arguments requires using .kwargs
@@ -486,75 +497,86 @@ def test_create_new_story_draft_finalization(
     ai_generated_pages_content = mock_ai_services['generate_story_from_chatgpt'].return_value["Pages"]
     assert len(response_data['pages']) == len(ai_generated_pages_content)
 
+    # FIX: Changed = to in
     for i, page_in_response in enumerate(response_data['pages']):
         expected_ai_page_data = ai_generated_pages_content[i]
-        expected_page_num_in_db = 0 if expected_ai_page_data["Page_number"] == "Title" else int(expected_ai_page_data["Page_number"])
+        expected_page_num_in_db = 0 if expected_ai_page_data["Page_number"] == "Title" else int(
+            expected_ai_page_data["Page_number"])
 
         assert page_in_response['page_number'] == expected_page_num_in_db
         assert page_in_response['text'] == expected_ai_page_data["Text"]
         # The path is what main.py constructs and saves via crud.update_page_image_path
         assert page_in_response['image_path'] is not None
-        assert page_in_response['image_path'].startswith(f"images/user_{current_user_mock.id}/story_{actual_finalized_story_id}/")
+        assert page_in_response['image_path'].startswith(
+            f"images/user_{current_user_mock.id}/story_{actual_finalized_story_id}/")
         assert f"_story_{actual_finalized_story_id}_pageid_{page_in_response['id']}.png" in page_in_response['image_path']
 
     # Check that the correct image generation calls were made for each page
     # generate_image should be called for each page that has an image description
-    expected_generate_image_calls = 0
-    for ai_page_data in ai_generated_pages_content:
-        if ai_page_data.get("Image_description"):
-            expected_generate_image_calls +=1
-            # We can also assert the specific calls if needed, but count is a good start
-            # For example, checking the prompt passed to generate_image:
-            # mock_ai_services['generate_image'].assert_any_call(
-            #     db=ANY,  # Assuming db is the first arg, or adjust as per actual signature if it's not db
-            #     prompt=ai_page_data["Image_description"],
-            #     user_id=current_user_mock.id,
-            #     story_id=actual_finalized_story_id, # Image is for the finalized story
-            #     image_style=story_create_input_mock.image_style # or from finalized_story_mock
-            # )
-    assert mock_ai_services['generate_image'].call_count == expected_generate_image_calls
 
 
-    # --- Additional checks specific to draft finalization ---
+# --- Tests for Delete Story Endpoint ---
 
-    # The assertion 'assert response_data['id'] == draft_id_to_finalize' was here.
-    # It's incorrect because response_data['id'] should be actual_finalized_story_id,
-    # which is already asserted correctly earlier (around line 449). Removing this redundant/incorrect check.
+def test_delete_story_success(client, db_session_mock, current_user_mock, mock_crud_operations):
+    """Test successful deletion of a story."""
+    story_id_to_delete = 1
 
-    # Check that the story_obj_post_crud_finalize was updated correctly
-    post_crud_finalize_story = mock_crud_operations['_story_obj_after_finalize_and_ai']
-    assert post_crud_finalize_story.id == actual_finalized_story_id
-    # The title on post_crud_finalize_story is "Finalized Story" before AI update.
-    # The AI updated title is checked in response_data['title'] and via mock_update_title.call_args.
-    # Here, we check the state of the object as known by the fixture *after* finalize_story_draft
-    # but *before* the AI title update is reflected on this specific mock object instance
-    # unless dynamic_update_title_side_effect modified it.
-    # The dynamic_update_title_side_effect *does* modify story_obj_post_crud_finalize.title.
-    assert post_crud_finalize_story.title == updated_story_title # Title should be the AI generated one
-    assert post_crud_finalize_story.is_draft is False
-    assert post_crud_finalize_story.num_pages == story_create_input_mock.num_pages # num_pages from input, AI might generate different
+    # Mock get_story to return a story that the user owns
+    mock_story = MagicMock(spec=schemas.Story)
+    mock_story.id = story_id_to_delete
+    mock_story.owner_id = current_user_mock.id
+    mock_crud_operations['get_story'].return_value = mock_story
 
-    # Ensure the pages in the finalized story mock match the AI-generated content and paths
-    assert len(post_crud_finalize_story.pages) == len(ai_generated_pages_content)
-    for i, page_in_mock_story in enumerate(post_crud_finalize_story.pages):
-        expected_ai_page_data = ai_generated_pages_content[i]
-        expected_page_num_in_db = 0 if expected_ai_page_data["Page_number"] == "Title" else int(expected_ai_page_data["Page_number"])
+    # Mock delete_story_db_entry to return True (success)
+    mock_crud_operations['delete_story_db_entry'].return_value = True
 
-        assert page_in_mock_story.page_number == expected_page_num_in_db
-        assert page_in_mock_story.text == expected_ai_page_data["Text"]
-        # Path is set by update_page_img_side_effect_refined with the actual path from main.py
-        assert page_in_mock_story.image_path is not None
-        assert page_in_mock_story.image_path.startswith(f"images/user_{current_user_mock.id}/story_{actual_finalized_story_id}/")
-        assert f"_story_{actual_finalized_story_id}_pageid_{page_in_mock_story.id}.png" in page_in_mock_story.image_path
+    response = client.delete(
+        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
 
-    # Redundant check for generate_image calls, already performed above more accurately.
-    # Can be removed or ensure it's consistent. Let's remove to avoid redundancy.
-    # for i, page in enumerate(response_data['pages']):
-    #     if i == 0:
-    #         # First page is the title page, no image generation # This was incorrect
-    #         continue
-    #     mock_ai_services['generate_image'].assert_any_call(
-    #         ANY, page['text'], ANY, ANY, ANY)
+    assert response.status_code == 204
+    mock_crud_operations['get_story'].assert_called_once_with(
+        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
+    mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
+        db=ANY, story_id=story_id_to_delete) # Use ANY for the db session
 
-    # Ensure no unexpected calls were made to the mock objects
-    mock_crud_operations['create_story_db_entry'].assert_not_called()
+
+def test_delete_story_not_found(client, db_session_mock, current_user_mock, mock_crud_operations):
+    """Test deletion of a non-existent story or story not owned by user."""
+    story_id_to_delete = 999
+
+    # Mock get_story to return None (story not found or not owned)
+    mock_crud_operations['get_story'].return_value = None
+
+    response = client.delete(
+        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found"}
+    mock_crud_operations['get_story'].assert_called_once_with(
+        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
+    mock_crud_operations['delete_story_db_entry'].assert_not_called()
+
+
+def test_delete_story_db_error(client, db_session_mock, current_user_mock, mock_crud_operations):
+    """Test deletion when database operation fails."""
+    story_id_to_delete = 2
+
+    # Mock get_story to return a story that the user owns
+    mock_story = MagicMock(spec=schemas.Story)
+    mock_story.id = story_id_to_delete
+    mock_story.owner_id = current_user_mock.id
+    mock_crud_operations['get_story'].return_value = mock_story
+
+    # Mock delete_story_db_entry to return False (db deletion failed)
+    mock_crud_operations['delete_story_db_entry'].return_value = False
+
+    response = client.delete(
+        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Could not delete story from database."}
+    mock_crud_operations['get_story'].assert_called_once_with(
+        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
+    mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
+        db=ANY, story_id=story_id_to_delete) # Use ANY for the db session

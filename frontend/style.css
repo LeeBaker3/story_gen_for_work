@@ -206,6 +206,60 @@ button[type="button"]:hover {
     background-color: #1e7e34;
 }
 
+/* New styles for secondary action buttons and story item actions */
+.action-button-secondary {
+    background-color: #007bff;
+    /* Consistent with primary buttons */
+    color: #FFFFFF;
+    border: none;
+    padding: 0.5rem 1rem;
+    /* Smaller padding */
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    /* Smaller font size */
+    font-weight: 700;
+    /* Consistent font weight */
+    transition: background-color 0.3s ease;
+    text-decoration: none;
+    /* In case it's an <a> styled as a button */
+    display: inline-block;
+    /* Behaves like a button */
+    text-align: center;
+}
+
+.action-button-secondary:hover {
+    background-color: #0056b3;
+    /* Consistent hover effect */
+    color: #FFFFFF;
+    /* Ensure text color remains on hover */
+}
+
+/* Specific style for delete buttons */
+.delete-button.action-button-secondary {
+    /* Apply secondary styles then override background */
+    background-color: #dc3545;
+    /* Red for delete/danger */
+}
+
+.delete-button.action-button-secondary:hover {
+    background-color: #c82333;
+    /* Darker red on hover */
+}
+
+/* Styling for the container of story item action buttons */
+.story-item-actions {
+    margin-top: 1rem;
+    /* Space above the buttons */
+    display: flex;
+    /* Align buttons in a row */
+    flex-wrap: wrap;
+    /* Allow buttons to wrap on smaller screens */
+    gap: 0.5rem;
+    /* Space between buttons */
+}
+
+/* End of new styles */
 
 .modern-fieldset {
     border: 1px solid #444;
@@ -345,7 +399,8 @@ button[type="button"]:hover {
     /* White background for pages */
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     /* Subtle shadow for depth */
-    color: #333; /* Added default dark text color for page previews */
+    color: #333;
+    /* Added default dark text color for page previews */
 }
 
 .story-title-page-preview {
@@ -354,7 +409,8 @@ button[type="button"]:hover {
     text-align: center;
     /* Center content on title page */
     margin-bottom: 20px;
-    color: #333; /* Ensure title page text is dark */
+    color: #333;
+    /* Ensure title page text is dark */
 }
 
 .title-page-story-title {
@@ -379,7 +435,8 @@ button[type="button"]:hover {
 .story-content-page-preview h4 {
     /* Page number heading for content pages */
     font-size: 1.4em;
-    color: #444; /* Darker color for page numbers */
+    color: #444;
+    /* Darker color for page numbers */
     margin-bottom: 10px;
     border-bottom: 1px solid #eee;
     padding-bottom: 5px;
@@ -393,8 +450,10 @@ button[type="button"]:hover {
     display: block;
     margin-top: 15px;
     margin-bottom: 15px;
-    margin-left: auto; /* Center image */
-    margin-right: auto; /* Center image */
+    margin-left: auto;
+    /* Center image */
+    margin-right: auto;
+    /* Center image */
     border-radius: 4px;
 }
 

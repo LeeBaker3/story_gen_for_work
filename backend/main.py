@@ -180,6 +180,63 @@ async def update_story_title_endpoint(
     return updated_story
 
 
+@app.delete("/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_story_endpoint(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    app_logger.info(
+        f"User {current_user.username} attempting to delete story ID: {story_id}")
+    db_story = crud.get_story(db, story_id=story_id)
+
+    if not db_story:
+        error_logger.warning(
+            f"Story with ID {story_id} not found for deletion attempt by user {current_user.username}.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    if db_story.owner_id != current_user.id:
+        error_logger.warning(
+            f"User {current_user.username} attempted to delete unauthorized story {story_id}.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to delete this story")
+
+    # Attempt to delete associated images first (optional, depends on desired behavior)
+    # This is a simplified example; more robust error handling and path construction might be needed.
+    # Consider moving image deletion logic into the crud.delete_story_db_entry function.
+    story_image_folder_on_disk = os.path.join(
+        "data", "images", f"user_{current_user.id}", f"story_{story_id}")
+    if os.path.exists(story_image_folder_on_disk):
+        try:
+            # shutil.rmtree(story_image_folder_on_disk) # More thorough, but requires import shutil
+            # For now, let's assume we only delete files if the folder might contain other things or for simplicity
+            # This part needs careful implementation based on how images are stored and if subfolders exist.
+            # For now, we will rely on the CRUD operation to handle DB consistency.
+            # Physical file deletion can be complex and might be handled by a background task or specific utility.
+            app_logger.info(
+                f"Image folder found for story {story_id}: {story_image_folder_on_disk}. Deferring physical file deletion.")
+        except Exception as e:
+            error_logger.error(
+                f"Error trying to delete image folder {story_image_folder_on_disk} for story {story_id}: {e}")
+            # Decide if this should prevent story deletion from DB or just log.
+
+    deleted_successfully = crud.delete_story_db_entry(db=db, story_id=story_id)
+
+    if not deleted_successfully:
+        error_logger.error(
+            f"Failed to delete story {story_id} from database for user {current_user.username}, though initial checks passed.")
+        # crud.delete_story_db_entry should ideally raise an exception if it fails internally after checks.
+        # If it returns False, it implies a condition not caught by pre-checks (e.g. DB error during delete)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Could not delete story from database.")
+
+    app_logger.info(
+        f"Story ID {story_id} successfully deleted by user {current_user.username}.")
+    # No content is returned for a 204 response, so no need for 'return' with a body.
+    return  # FastAPI will handle the 204 response
+
+
 @app.post("/stories/drafts/", response_model=schemas.Story)
 async def create_story_draft_endpoint(
     story_input: schemas.StoryCreate,
@@ -352,10 +409,10 @@ async def create_new_story(
                         f"Missing reference image for character: {char_detail_input.name}. Generating now.")
                     try:
                         updated_char_info_dict = ai_services.generate_character_reference_image(
-                            character=char_detail_input, # Pass the Pydantic model
+                            character=char_detail_input,  # Pass the Pydantic model
                             user_id=current_user.id,
                             story_id=db_story.id,
-                            image_style_enum=story_input.image_style # Use story's image style
+                            image_style_enum=story_input.image_style  # Use story's image style
                         )
                         updated_main_characters.append(updated_char_info_dict)
                         app_logger.info(

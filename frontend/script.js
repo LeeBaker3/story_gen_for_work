@@ -70,30 +70,36 @@ document.addEventListener('DOMContentLoaded', function () {
                 entry.remove();
                 console.log(`[resetFormAndState] Removed character entry ${index + 1}.`);
             } else { // Reset fields of the first character entry
-                const nameInput = entry.querySelector('input[id^="char-name-"]');
+                const firstCharacterEntry = characterEntries[0]; // Get the first entry directly
+
+                const nameInput = firstCharacterEntry.querySelector('#char-name-1');
                 if (nameInput) nameInput.value = '';
-
-                const ageInput = entry.querySelector('input[id^="char-age-"]');
+                const ageInput = firstCharacterEntry.querySelector('#char-age-1');
                 if (ageInput) ageInput.value = '';
-
-                const genderInput = entry.querySelector('input[id^="char-gender-"]');
+                const genderInput = firstCharacterEntry.querySelector('#char-gender-1');
                 if (genderInput) genderInput.value = '';
-
-                const physicalTextarea = entry.querySelector('textarea[id^="char-physical-appearance-"]');
+                const physicalTextarea = firstCharacterEntry.querySelector('#char-physical-appearance-1');
                 if (physicalTextarea) physicalTextarea.value = '';
-
-                const clothingTextarea = entry.querySelector('textarea[id^="char-clothing-style-"]');
-                if (clothingTextarea) clothingTextarea.value = '';
-
-                const traitsTextarea = entry.querySelector('textarea[id^="char-key-traits-"]');
+                const clothingInput = firstCharacterEntry.querySelector('#char-clothing-style-1');
+                if (clothingInput) clothingInput.value = '';
+                const traitsTextarea = firstCharacterEntry.querySelector('#char-key-traits-1');
                 if (traitsTextarea) traitsTextarea.value = '';
 
-                // Ensure details are hidden for the first character
-                const detailsDiv = entry.querySelector('div[id^="char-details-"]');
-                const toggleButton = entry.querySelector('button[id^="char-details-toggle-"]');
-                if (detailsDiv) detailsDiv.style.display = 'none';
-                if (toggleButton) toggleButton.textContent = 'Show Details';
-                console.log('[resetFormAndState] Reset fields for first character entry.');
+                // Use document.getElementById for elements known by unique ID for the first character
+                const detailsDiv = document.getElementById('char-details-1');
+                const toggleButton = document.getElementById('char-details-toggle-1');
+
+                if (detailsDiv) {
+                    detailsDiv.style.display = 'none';
+                } else {
+                    console.warn('[resetFormAndState] First character details div (#char-details-1) not found using getElementById.');
+                }
+                if (toggleButton) {
+                    toggleButton.textContent = 'Show Details';
+                } else {
+                    console.warn('[resetFormAndState] First character toggle button (#char-details-toggle-1) not found using getElementById.');
+                }
+                console.log('[resetFormAndState] Reset fields and state for first character entry.');
             }
         });
         characterCount = 1; // Reset character count
@@ -129,14 +135,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     // --- INITIALIZATION ---
-    initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle'));
+    // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
     updateNav(!!authToken);
     if (!!authToken) {
         showSection(storyCreationSection);
         populateGenreDropdown(); // Populate genres on load if logged in
         // Add first character entry if not already present by HTML
         if (document.querySelectorAll('#main-characters-fieldset .character-entry').length === 0) {
-            addCharacterEntry();
+            // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
+            // The first character is expected to be in the HTML or handled by reset.
+            // For now, let's assume resetFormAndState or initial HTML handles the first one.
+        } else {
+            // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
+            // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
+            // if (firstCharToggle) {
+            //     initializeCharacterDetailsToggle(firstCharToggle);
+            // }
         }
     } else {
         showSection(authSection);
@@ -149,33 +163,6 @@ document.addEventListener('DOMContentLoaded', function () {
     function hideSpinner() {
         if (spinner) spinner.style.display = 'none';
     }
-    // Function to initialize a character details toggle
-    function initializeCharacterDetailsToggle(toggleButton) {
-        if (!toggleButton) return;
-        const charNum = toggleButton.id.split('-').pop();
-        const detailsDiv = document.getElementById(`char-details-${charNum}`);
-        if (!detailsDiv) return;
-
-        // Set initial state based on whether details are visible or not
-        // This assumes details are hidden by default via CSS or inline style
-        if (detailsDiv.style.display === 'block') {
-            toggleButton.textContent = 'Hide Details';
-        } else {
-            detailsDiv.style.display = 'none'; // Ensure it's hidden if not 'block'
-            toggleButton.textContent = 'Show Details';
-        }
-
-        toggleButton.addEventListener('click', () => {
-            if (detailsDiv.style.display === 'none') {
-                detailsDiv.style.display = 'block';
-                toggleButton.textContent = 'Hide Details';
-            } else {
-                detailsDiv.style.display = 'none';
-                toggleButton.textContent = 'Show Details';
-            }
-        });
-    }
-
     // Function to add a new character entry to the form
     function addCharacterEntry() {
         console.log("'Add Character' button clicked. addCharacterEntry function started.");
@@ -191,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function () {
         newCharacterEntry.classList.add('character-entry');
         newCharacterEntry.innerHTML = `
             <hr>
-            <h4>Character ${characterCount} <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}">Show Details</button></h4>
+            <h4>Character ${characterCount} <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}">Show Details</button></h4>
             <div class="form-group">
                 <label for="char-name-${characterCount}">Name:</label>
                 <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" required>
@@ -220,12 +207,6 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         `;
         fieldset.appendChild(newCharacterEntry);
-
-        // Initialize the toggle for the new character entry
-        const newToggle = newCharacterEntry.querySelector('.character-details-toggle');
-        if (newToggle) {
-            initializeCharacterDetailsToggle(newToggle);
-        }
     }
 
     // Event listener for the "Add Another Character" button
@@ -463,7 +444,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (exportPdfButton) {
             const shouldShowButton = story.pages && story.pages.length > 0;
             console.log('[displayStory] Condition (story.pages && story.pages.length > 0):', shouldShowButton);
-            exportPdfButton.style.display = shouldShowButton ? 'block' : 'none';
+            exportPdfButton.style.display = shouldShowButton ? 'inline-block' : 'none'; // Changed to inline-block
+            exportPdfButton.classList.add('action-button-secondary'); // Add class for styling
             console.log('[displayStory] exportPdfButton display set to:', exportPdfButton.style.display);
         } else {
             console.error('[displayStory] exportPdfButton element is NULL or undefined!');
@@ -711,6 +693,98 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // --- END POPULATE DYNAMIC FORM ELEMENTS (Placeholder for correct positioning) ---
+    // --- STORY ACTION FUNCTIONS (View/Edit, Template, Delete) ---
+    async function viewOrEditStory(storyId, isDraft) {
+        console.log(`[viewOrEditStory] Called with storyId: ${storyId}, isDraft: ${isDraft}`);
+        showSpinner();
+        try {
+            let storyData;
+            if (isDraft) {
+                console.log(`[viewOrEditStory] Fetching draft story ID: ${storyId}`);
+                storyData = await apiRequest(`/stories/drafts/${storyId}`);
+                if (storyData) {
+                    populateCreateFormWithStoryData(storyData, true); // true for isEditingDraft
+                    showSection(storyCreationSection);
+                } else {
+                    displayMessage('Could not load draft details.', 'error');
+                }
+            } else {
+                console.log(`[viewOrEditStory] Fetching finalized story ID: ${storyId}`);
+                storyData = await apiRequest(`/stories/${storyId}`);
+                if (storyData) {
+                    showSection(storyPreviewSection);
+                    displayStory(storyData);
+                } else {
+                    displayMessage('Could not load story details.', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('[viewOrEditStory] Error:', error);
+            // displayMessage is usually handled by apiRequest
+            if (!messageArea.textContent.includes('Failed') && !messageArea.textContent.includes('error')) {
+                displayMessage(`Error loading story: ${error.message}`, 'error');
+            }
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    async function useStoryAsTemplate(storyId) {
+        console.log(`[useStoryAsTemplate] Called with storyId: ${storyId}`);
+        showSpinner();
+        try {
+            // Fetch the story data (can be draft or finalized, endpoint should give input params)
+            // We use /stories/{story_id} as it returns the full story object including input params.
+            // If it was a draft, its input params are what we want.
+            // If it was a full story, its input params are also what we want.
+            const storyData = await apiRequest(`/stories/${storyId}`);
+            if (storyData) {
+                populateCreateFormWithStoryData(storyData, false); // false for isEditingDraft, it's a template
+                showSection(storyCreationSection);
+                // currentStoryId will be set to null by populateCreateFormWithStoryData when not editing draft
+                displayMessage(`Form populated using "${storyData.title || 'Selected Story'}" as a template. This will create a new story.`, 'info');
+            } else {
+                displayMessage('Could not load story data to use as template.', 'error');
+            }
+        } catch (error) {
+            console.error('[useStoryAsTemplate] Error:', error);
+            if (!messageArea.textContent.includes('Failed') && !messageArea.textContent.includes('error')) {
+                displayMessage(`Error using story as template: ${error.message}`, 'error');
+            }
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    async function deleteStory(storyId, listItemElement) {
+        console.log(`[deleteStory] Called with storyId: ${storyId}`);
+        showSpinner();
+        try {
+            await apiRequest(`/stories/${storyId}`, 'DELETE');
+            displayMessage('Story deleted successfully.', 'success');
+            if (listItemElement) {
+                listItemElement.remove();
+            }
+            // If the deleted story was being previewed, clear the preview
+            if (currentStoryId === storyId) {
+                storyPreviewContent.innerHTML = '<p>The story you were viewing has been deleted.</p>';
+                if (exportPdfButton) exportPdfButton.style.display = 'none';
+                currentStoryId = null;
+            }
+            // Optionally, refresh the list if other stories might be affected or for consistency
+            // await loadAndDisplayUserStories(); // Uncomment if a full refresh is desired
+        } catch (error) {
+            console.error('[deleteStory] Error:', error);
+            // displayMessage is usually handled by apiRequest
+            if (!messageArea.textContent.includes('Failed') && !messageArea.textContent.includes('error')) {
+                displayMessage(`Error deleting story: ${error.message}`, 'error');
+            }
+        } finally {
+            hideSpinner();
+        }
+    }
+
     // Event listeners for switching between login and signup views
     if (showSignupLink) {
         showSignupLink.addEventListener('click', (e) => {
@@ -744,32 +818,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (navCreateStory) {
         navCreateStory.addEventListener('click', () => {
             showSection(storyCreationSection);
-            storyCreationForm.reset();
-            currentStoryId = null;
-            currentStoryIsDraft = false; // Reset draft state
-            if (generateStoryButton) {
-                generateStoryButton.textContent = 'Generate Story'; // Reset button text
-            }
-            // Clear dynamic characters, leave the first one
-            const characterEntries = document.querySelectorAll('#main-characters-fieldset .character-entry');
-            characterEntries.forEach((entry, index) => {
-                if (index > 0) { // Keep the first entry (index 0)
-                    entry.remove();
-                }
-            });
-            characterCount = 1; // Reset character count
-            // Ensure the first character's details toggle is correctly initialized if it was hidden
-            const firstCharToggle = document.querySelector('.character-details-toggle');
-            if (firstCharToggle) {
-                const firstCharDetails = document.getElementById('char-details-1');
-                if (firstCharDetails) {
-                    // Assuming default is expanded or handled by initializeCharacterDetailsToggle
-                    // firstCharDetails.style.display = 'none'; 
-                    // firstCharToggle.textContent = 'Show Details'; 
-                }
-            }
-            document.getElementById('story-title').value = ''; // Clear title explicitly
-            exportPdfButton.style.display = 'none';
+            resetFormAndState();
         });
     }
 
@@ -878,7 +927,7 @@ document.addEventListener('DOMContentLoaded', function () {
             genre: document.getElementById('story-genre').value, // Corrected ID
             story_outline: document.getElementById('story-outline').value, // Corrected ID
             main_characters: mainCharacters,
-            num_pages: numPagesAsInt, 
+            num_pages: numPagesAsInt,
             tone: document.getElementById('story-tone').value, // Corrected ID
             setting: document.getElementById('story-setting').value, // Corrected ID
             word_to_picture_ratio: document.getElementById('story-word-to-picture-ratio').value, // Corrected ID
@@ -975,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 payload = { story_input: storyData };
                 endpoint = '/stories/';
                 method = 'POST';
-                currentStoryId = null; 
+                currentStoryId = null;
                 currentStoryIsDraft = false;
             } else {
                 console.log('[FormSubmit] Creating a new story from scratch.');
@@ -1016,7 +1065,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                     currentStoryId = result.id;
-                    currentStoryIsDraft = false; 
+                    currentStoryIsDraft = false;
                     console.log('[FormSubmit] Story generation successful. Current story ID:', currentStoryId, 'Is Draft:', currentStoryIsDraft);
                     // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 7 - State updated >>>>>');
                 } else {
@@ -1029,8 +1078,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - ERROR IN API REQUEST CALL OR SUBSEQUENT HANDLING >>>>>', error);
                 console.error('[FormSubmit] Error during story generation process:', error);
                 // apiRequest usually displays a message on failure. This is a fallback or for more context.
-                if (!messageArea.textContent.includes('Failed') && 
-                    !messageArea.textContent.includes('error') && 
+                if (!messageArea.textContent.includes('Failed') &&
+                    !messageArea.textContent.includes('error') &&
                     !messageArea.textContent.includes('Error generating story')) {
                     displayMessage(`Error generating story: ${error.message || 'Unknown error'}. Please check console.`, 'error');
                 }
@@ -1044,128 +1093,88 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // --- STORY BROWSING ---
-    async function loadAndDisplayUserStories() {
+    async function loadAndDisplayUserStories(includeDrafts = true) {
+        showSpinner();
         if (!userStoriesList) {
-            console.error("[loadAndDisplayUserStories] userStoriesList element not found.");
-            displayMessage("Cannot display stories area.", "error");
+            console.error('[loadAndDisplayUserStories] userStoriesList element not found.');
+            displayMessage('Cannot display stories: List area missing.', 'error');
+            hideSpinner();
             return;
         }
-        userStoriesList.innerHTML = ''; // Clear previous list
-        showSpinner();
-        displayMessage("Loading your stories...", "info");
+        userStoriesList.innerHTML = ''; // Clear previous stories
 
         try {
-            // Backend now returns drafts by default, and they are ordered by created_at desc.
-            // The 'include_drafts=true' is the default on backend, so no query param needed here for that.
-            const stories = await apiRequest('/stories/');
+            const stories = await apiRequest(`/stories/?include_drafts=${includeDrafts}&skip=0&limit=100`);
             if (stories && stories.length > 0) {
-                const ul = document.createElement('ul');
-                ul.classList.add('stories-list');
                 stories.forEach(story => {
-                    const li = document.createElement('li');
-                    li.classList.add('story-item');
+                    const listItem = document.createElement('li');
+                    listItem.classList.add('story-item');
+                    listItem.dataset.storyId = story.id;
+
+                    const title = document.createElement('h3');
+                    title.textContent = story.title || 'Untitled Story';
                     if (story.is_draft) {
-                        li.classList.add('story-item-draft');
+                        title.textContent += ' (Draft)';
+                    }
+                    listItem.appendChild(title);
+
+                    const date = document.createElement('p');
+                    date.classList.add('story-date');
+                    date.textContent = `Last updated: ${formatDate(story.updated_at || story.created_at)}`;
+                    listItem.appendChild(date);
+
+                    if (story.story_outline) {
+                        const snippet = document.createElement('p');
+                        snippet.classList.add('story-snippet');
+                        snippet.textContent = story.story_outline.substring(0, 150) + (story.story_outline.length > 150 ? '...' : '');
+                        listItem.appendChild(snippet);
                     }
 
-                    const titleDiv = document.createElement('div');
-                    titleDiv.classList.add('story-item-title');
-                    titleDiv.textContent = story.title || "Untitled Story";
-                    if (story.is_draft) {
-                        const draftLabel = document.createElement('span');
-                        draftLabel.textContent = ' (Draft)';
-                        draftLabel.classList.add('draft-label');
-                        titleDiv.appendChild(draftLabel);
-                    }
+                    // Action buttons container
+                    const actionsContainer = document.createElement('div');
+                    actionsContainer.classList.add('story-item-actions');
 
-                    const dateDiv = document.createElement('div');
-                    dateDiv.classList.add('story-item-date');
-                    // Display generated_at if it's not a draft and available, otherwise created_at
-                    let dateToDisplay = story.created_at;
-                    let dateLabel = "Created:";
-                    if (!story.is_draft && story.generated_at) {
-                        dateToDisplay = story.generated_at;
-                        dateLabel = "Generated:";
-                    } else if (story.is_draft && story.updated_at) { // Assuming updated_at might be available for drafts
-                        dateToDisplay = story.updated_at;
-                        dateLabel = "Last Saved:";
-                    } else {
-                        dateToDisplay = story.created_at;
-                        dateLabel = "Created:";
-                    }
-                    dateDiv.textContent = `${dateLabel} ${formatDate(dateToDisplay)}`;
+                    // View Story Button
+                    const viewButton = document.createElement('button');
+                    viewButton.textContent = story.is_draft ? 'Edit Draft' : 'View Story';
+                    viewButton.classList.add('action-button-secondary'); // Apply new class
+                    viewButton.addEventListener('click', (e) => {
+                        e.stopPropagation(); // Prevent triggering click on listItem
+                        viewOrEditStory(story.id, story.is_draft);
+                    });
+                    actionsContainer.appendChild(viewButton);
 
-                    const buttonsDiv = document.createElement('div');
-                    buttonsDiv.classList.add('story-item-buttons');
-
-                    if (story.is_draft) {
-                        const editDraftButton = document.createElement('button');
-                        editDraftButton.textContent = "Edit Draft";
-                        editDraftButton.classList.add('button-small', 'button-primary');
-                        editDraftButton.addEventListener('click', () => {
-                            // Populate form with draft data for editing
-                            populateCreateFormWithStoryData(story, true); // true for isEditingDraft
-                            showSection(storyCreationSection);
-                        });
-                        buttonsDiv.appendChild(editDraftButton);
-                    } else {
-                        const viewButton = document.createElement('button');
-                        viewButton.textContent = "View Story";
-                        viewButton.classList.add('button-small');
-                        viewButton.addEventListener('click', async () => {
-                            displayMessage(`Loading story '${story.title}'...`, "info");
-                            showSpinner();
-                            try {
-                                const fullStory = await apiRequest(`/stories/${story.id}`);
-                                if (fullStory) {
-                                    showSection(storyPreviewSection);
-                                    displayStory(fullStory);
-                                    displayMessage("Story loaded.", "success");
-                                } else {
-                                    displayMessage("Could not load story details.", "error");
-                                }
-                            } catch (err) {
-                                console.error("[ViewStoryClick] Error loading story details:", err);
-                                // displayMessage is handled by apiRequest
-                            } finally {
-                                hideSpinner();
-                            }
-                        });
-                        buttonsDiv.appendChild(viewButton);
-                    }
-
+                    // Use as Template Button
                     const useAsTemplateButton = document.createElement('button');
-                    useAsTemplateButton.textContent = "Use as Template";
-                    useAsTemplateButton.classList.add('button-small', 'button-secondary');
-                    useAsTemplateButton.style.marginLeft = '10px';
-                    useAsTemplateButton.addEventListener('click', async () => {
-                        // Fetch full story details before populating, as list might be partial
-                        displayMessage(`Loading template from '${story.title}'...`, "info");
-                        showSpinner();
-                        try {
-                            const fullStoryForTemplate = await apiRequest(`/stories/${story.id}`);
-                            if (fullStoryForTemplate) {
-                                populateCreateFormWithStoryData(fullStoryForTemplate, false); // false for isEditingDraft
-                                showSection(storyCreationSection);
-                                displayMessage(`Form populated with template from "${fullStoryForTemplate.title}". Remember to give your new story a unique title.`, 'success');
-                            } else {
-                                displayMessage("Could not load story details for template.", "error");
-                            }
-                        } catch (err) {
-                            console.error("[UseAsTemplateClick] Error loading story for template:", err);
-                        } finally {
-                            hideSpinner();
+                    useAsTemplateButton.textContent = 'Use as Template';
+                    useAsTemplateButton.classList.add('action-button-secondary'); // Apply new class
+                    useAsTemplateButton.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        useStoryAsTemplate(story.id);
+                    });
+                    actionsContainer.appendChild(useAsTemplateButton);
+
+                    // Delete Story Button
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.classList.add('action-button-secondary', 'delete-button'); // Apply new classes
+                    deleteButton.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`Are you sure you want to delete "${story.title || 'this story'}"? This cannot be undone.`)) {
+                            await deleteStory(story.id, listItem);
                         }
                     });
-                    buttonsDiv.appendChild(useAsTemplateButton);
+                    actionsContainer.appendChild(deleteButton);
 
-                    li.appendChild(titleDiv);
-                    li.appendChild(dateDiv);
-                    li.appendChild(buttonsDiv); // Add buttons container
-                    ul.appendChild(li);
+                    listItem.appendChild(actionsContainer);
+
+                    // Click on list item to view/edit
+                    listItem.addEventListener('click', () => {
+                        viewOrEditStory(story.id, story.is_draft);
+                    });
+
+                    userStoriesList.appendChild(listItem);
                 });
-                userStoriesList.appendChild(ul);
-                displayMessage(stories.length > 0 ? "Stories loaded." : "No stories found.", stories.length > 0 ? "success" : "info");
             } else {
                 userStoriesList.innerHTML = '<p>You haven\'t created any stories yet.</p>';
                 displayMessage("No stories found.", "info");
@@ -1250,66 +1259,61 @@ document.addEventListener('DOMContentLoaded', function () {
     function populateCreateFormWithStoryData(storyData, isEditingDraft = false) { // Added isEditingDraft
         console.log("[populateCreateFormWithStoryData] Populating form. isEditingDraft:", isEditingDraft, "Story:", storyData);
 
-        // Call the global reset function first to clear the form and basic state
         resetFormAndState();
-        // resetFormAndState will set currentStoryId = null and currentStoryIsDraft = false.
-        // We need to override this if we are editing a draft or using a template.
 
         document.getElementById('story-title').value = storyData.title || '';
         document.getElementById('story-genre').value = storyData.genre || '';
         document.getElementById('story-outline').value = storyData.story_outline || '';
-        document.getElementById('story-num-pages').value = storyData.num_pages || 5; // Default to 5 if not set
+        document.getElementById('story-num-pages').value = storyData.num_pages || 5;
         document.getElementById('story-tone').value = storyData.tone || '';
         document.getElementById('story-setting').value = storyData.setting || '';
         document.getElementById('story-word-to-picture-ratio').value = storyData.word_to_picture_ratio || 'One image per page';
         document.getElementById('story-text-density').value = storyData.text_density || 'Concise (~30-50 words)';
         document.getElementById('story-image-style').value = storyData.image_style || 'Default';
 
-        // Clear existing characters (resetFormAndState already does this, but good to be sure for characterCount)
         const fieldset = document.getElementById('main-characters-fieldset');
         const existingEntries = fieldset.querySelectorAll('.character-entry');
         existingEntries.forEach((entry, index) => {
-            if (index > 0) entry.remove(); // Remove all but the first
+            if (index > 0) entry.remove();
         });
-        characterCount = 0; // Will be incremented by addCharacterEntry
+        characterCount = 0;
 
         if (storyData.main_characters && storyData.main_characters.length > 0) {
             storyData.main_characters.forEach((char, index) => {
-                if (index > 0) { // If more than one character, add new entries
-                    addCharacterEntry(); // This increments characterCount
+                if (index > 0) {
+                    addCharacterEntry();
                 } else {
-                    characterCount = 1; // Ensure first character is counted
+                    characterCount = 1;
                 }
-                // Populate the (newly added or existing first) character entry
                 document.getElementById(`char-name-${characterCount}`).value = char.name || '';
-
                 const ageEl = document.getElementById(`char-age-${characterCount}`);
                 if (ageEl) ageEl.value = char.age || '';
-
                 const genderEl = document.getElementById(`char-gender-${characterCount}`);
                 if (genderEl) genderEl.value = char.gender || '';
-
                 const physicalEl = document.getElementById(`char-physical-appearance-${characterCount}`);
                 if (physicalEl) physicalEl.value = char.physical_appearance || '';
-
                 const clothingEl = document.getElementById(`char-clothing-style-${characterCount}`);
                 if (clothingEl) clothingEl.value = char.clothing_style || '';
-
                 const traitsEl = document.getElementById(`char-key-traits-${characterCount}`);
                 if (traitsEl) traitsEl.value = char.key_traits || '';
 
-                // Ensure details are hidden initially for all populated characters
                 const detailsDiv = document.getElementById(`char-details-${characterCount}`);
-                const toggleButton = document.getElementById(`char-details-toggle-${characterCount}`);
+                const toggleButton = document.getElementById(`char-details-toggle-${characterCount}`); // Changed from querySelector to getElementById
                 if (detailsDiv) detailsDiv.style.display = 'none';
-                if (toggleButton) toggleButton.textContent = 'Show Details';
+                if (toggleButton) {
+                    toggleButton.textContent = 'Show Details';
+                    // REMOVED: initializeCharacterDetailsToggle(toggleButton); 
+                }
             });
         } else {
-            // If no characters in storyData, ensure at least one blank character entry exists
-            if (characterCount === 0) { // Should be 1 after reset, but as a safeguard
-                addCharacterEntry(); // This sets characterCount to 1
+            characterCount = 1;
+            const firstCharToggle = document.getElementById('char-details-toggle-1'); // Changed from querySelector to getElementById
+            const firstCharDetails = document.getElementById('char-details-1');
+            if (firstCharDetails) firstCharDetails.style.display = 'none';
+            if (firstCharToggle) {
+                firstCharToggle.textContent = 'Show Details';
+                // REMOVED: initializeCharacterDetailsToggle(firstCharToggle);
             }
-            // Ensure fields of the first character entry are blank (resetFormAndState should handle this)
         }
 
         if (isEditingDraft) {
@@ -1332,5 +1336,154 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log("[populateCreateFormWithStoryData] Form population complete. currentStoryId:", currentStoryId, "currentStoryIsDraft:", currentStoryIsDraft);
     }
 
-    // Removed the local resetFormAndState function from here.
+    // REMOVED: The local initializeCharacterDetailsToggle function comment block
+    /*
+    function initializeCharacterDetailsToggle(characterEntryDiv, characterIndex) { ... }
+    */
+
+    // Event delegation for toggling character details (This should be the only one active)
+    const mainCharactersFieldset = document.getElementById('main-characters-fieldset');
+    if (mainCharactersFieldset) {
+        mainCharactersFieldset.addEventListener('click', function (event) {
+            if (event.target.classList.contains('character-details-toggle')) {
+                console.log('[Toggle Click] Button clicked:', event.target, 'ID:', event.target.id);
+                const targetId = event.target.dataset.target;
+                console.log('[Toggle Click] Data-target ID:', targetId);
+                const detailsDiv = document.getElementById(targetId);
+                console.log('[Toggle Click] Details div found:', detailsDiv);
+
+                if (detailsDiv) {
+                    const isHidden = window.getComputedStyle(detailsDiv).display === 'none';
+                    console.log(`[Toggle Click] Details div (${targetId}) isHidden (computed): ${isHidden}, current style.display: '${detailsDiv.style.display}'`);
+                    detailsDiv.style.display = isHidden ? 'block' : 'none';
+                    event.target.textContent = isHidden ? 'Hide Details' : 'Show Details';
+                    console.log(`[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${event.target.textContent}'`);
+                } else {
+                    console.error('[Toggle Click] Details div not found for targetId:', targetId);
+                }
+            }
+        });
+    } else {
+        console.error("CRITICAL: main-characters-fieldset not found for event delegation!");
+    }
+
+    // --- DEBUGGING / DEVELOPMENT HELPERS ---
+    // This section can be used to add temporary debugging aids or to expose certain functions/variables
+    // for testing in the browser console. Remember to remove or disable in production.
+
+    // Expose API base URL for debugging
+    window.__API_BASE_URL__ = API_BASE_URL;
+
+    // Expose auth token management for debugging
+    window.__setAuthToken__ = function (token) {
+        authToken = token;
+        localStorage.setItem('authToken', token);
+        updateNav(!!token);
+        console.log('Auth token set for debugging:', token);
+    };
+
+    window.__clearAuthToken__ = function () {
+        authToken = null;
+        localStorage.removeItem('authToken');
+        updateNav(false);
+        console.log('Auth token cleared for debugging.');
+    };
+
+    // Expose reset function for manual triggering if needed
+    window.__resetFormAndState__ = resetFormAndState;
+
+    // Expose displayMessage for manual use in debugging
+    window.__displayMessage__ = displayMessage;
+
+    // Expose updateNav for manual testing
+    window.__updateNav__ = updateNav;
+
+    // Expose apiRequest for manual testing
+    window.__apiRequest__ = apiRequest;
+
+    // Expose specific functions for story operations
+    window.__viewOrEditStory__ = viewOrEditStory;
+    window.__useStoryAsTemplate__ = useStoryAsTemplate;
+    window.__deleteStory__ = deleteStory;
+
+    // Expose function to load and display user stories
+    window.__loadAndDisplayUserStories__ = loadAndDisplayUserStories;
+
+    // Expose function to populate genre dropdown
+    window.__populateGenreDropdown__ = populateGenreDropdown;
+
+    // Expose spinner control for debugging
+    window.__showSpinner__ = showSpinner;
+    window.__hideSpinner__ = hideSpinner;
+
+    // Expose character entry functions
+    window.__addCharacterEntry__ = addCharacterEntry;
+
+    // Expose story data retrieval function
+    window.__getStoryDataFromForm__ = getStoryDataFromForm;
+
+    // Expose story title update function
+    window.__updateStoryTitle__ = updateStoryTitle;
+
+    // Expose PDF export function
+    window.__exportPdf__ = async () => {
+        if (!currentStoryId) {
+            displayMessage('No story selected or story ID is missing. Cannot export PDF.', 'error');
+            return;
+        }
+
+        displayMessage('Exporting PDF... Please wait.', 'info');
+        showSpinner();
+
+        try {
+            const token = localStorage.getItem('authToken');
+            const response = await fetch(`${API_BASE_URL}/stories/${currentStoryId}/pdf`, { // Changed endpoint to /pdf
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                let errorDetail = "Unknown error";
+                try {
+                    const errorData = await response.json();
+                    errorDetail = errorData.detail || JSON.stringify(errorData);
+                } catch (e) {
+                    errorDetail = await response.text();
+                }
+                throw new Error(`PDF export failed: ${response.status} ${response.statusText}. Detail: ${errorDetail}`);
+            }
+
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('content-disposition');
+            let filename = 'story.pdf'; // Default filename
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                if (filenameMatch && filenameMatch.length > 1) {
+                    filename = filenameMatch[1];
+                }
+            }
+
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            displayMessage('PDF exported successfully!', 'success');
+
+        } catch (error) {
+            console.error('[PDFExport] Error exporting PDF:', error);
+            displayMessage(`Error exporting PDF: ${error.message}`, 'error');
+        } finally {
+            hideSpinner();
+        }
+    };
+
+    // --- END DEBUGGING / DEVELOPMENT HELPERS ---
 });
