@@ -192,6 +192,13 @@ def get_stories_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 1
     return query.order_by(Story.created_at.desc()).offset(skip).limit(limit).all()
 
 
+def get_story_draft(db: Session, story_id: int, user_id: int) -> Optional[Story]:
+    """
+    Retrieves a specific story draft by its ID for a given user.
+    """
+    return db.query(Story).filter(Story.id == story_id, Story.owner_id == user_id, Story.is_draft == True).first()
+
+
 def get_story(db: Session, story_id: int):
     return db.query(Story).filter(Story.id == story_id).first()
 

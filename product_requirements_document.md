@@ -19,6 +19,7 @@ The Story Generator Web App is a web-based application that allows users to gene
         *   Main characters (name, personality, background).
         *   Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide DALL·E for consistent character depiction throughout the story.
         *   Number of pages.
+        *   Option to select a writing style for the story (e.g., narrative, descriptive, poetic, humorous, formal).
         *   Option to adjust word-to-picture ratio (e.g., one image every X words/paragraphs, or one image per page as default).
         *   Option to select an image style for story illustrations (e.g., cartoon, watercolor, photorealistic).
     *   Additional optional fields (tone, setting, etc.).
@@ -36,6 +37,10 @@ The Story Generator Web App is a web-based application that allows users to gene
     *   Accessible only to users with admin privileges.
     *   Interface for managing application-wide settings and dynamic content.
     *   Functionality to manage dropdown list items (e.g., genres, image styles).
+    *   Interface for User Management (activate, deactivate, delete users).
+    *   Interface for Content Moderation (review and remove stories).
+    *   Interface for System Monitoring (view basic health, usage stats, logs).
+    *   Interface for Application Configuration (e.g., API Keys, maintenance mode, broadcast messages).
 
 # 3. Technical Requirements
 
@@ -54,11 +59,18 @@ The Story Generator Web App is a web-based application that allows users to gene
     *   Generates and stores character reference images based on detailed user input, to be used in subsequent DALL·E prompts for consistency.
     *   Supports different selectable image styles for DALL·E generation, with styles potentially managed dynamically.
     *   Manages adjustable word-to-picture ratios for story layout.
+    *   Supports different selectable writing styles for ChatGPT, with styles potentially managed dynamically.
     *   Implements a secure 'Forgot Password' mechanism (e.g., token-based).
     *   Implements role-based access control (RBAC) to differentiate between regular users and admins.
     *   Provides CRUD endpoints for managing dynamic list content (e.g., genres, image styles) accessible only by admins.
     *   Handles user-defined story titles, allowing for creation and updates.
     *   Generates a cover image for the title page using DALL·E 3, based on the story title, themes, and character descriptions.
+    *   Securely stores and manages API keys (e.g., OpenAI API Key), accessible/modifiable only by admins.
+    *   Provides mechanisms to ensure data integrity when dynamic list items (e.g., genres, styles) are modified or deleted by an admin. This includes strategies like soft deletes, preventing deletion of in-use items, or indicating usage to the admin.
+    *   Provides endpoints for admins to manage users (view, activate, deactivate, delete).
+    *   Provides endpoints for admins to moderate content (list all stories, delete stories).
+    *   Provides endpoints for admins to view system statistics and access application logs.
+    *   Provides endpoints for admins to manage application configurations (e.g., API keys, maintenance mode) and send broadcast messages.
 
 ## 3.2 Frontend
 *   Technologies: HTML, CSS (site-wide), JavaScript
@@ -66,20 +78,28 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   Form validation and dynamic content updates.
 *   Interface for detailed character attribute input.
 *   Controls for selecting image style and word-to-picture ratio.
+*   Controls for selecting writing style.
 *   User flow and forms for 'Forgot Password' process.
 
 ## 3.3 Database
 *   Database Type: SQLite
 *   Entities:
-    *   Users (username, password hash, email, role (e.g., 'user', 'admin'))
+    *   Users (username, password hash, email, role (e.g., 'user', 'admin'), is_active)
     *   Stories (title, outline, genre, metadata)
     *   Pages (story_id, page_number, text, image_description, image_path)
-    *   DynamicList (list_name (e.g., 'genres', 'image_styles'))
-    *   DynamicListItem (list_id, item_value, item_label, is_active)
+    *   DynamicList (list_name (e.g., 'genres', 'image_styles', 'writing_styles'))
+    *   DynamicListItem (list_id, item_value, item_label, is_active, sort_order)
+    *   APISettings (service_name, api_key, last_updated_by, last_updated_at)
+    *   ApplicationConfig (setting_name, setting_value, description)
+    *   BroadcastMessages (message_id, content, created_at, created_by, is_active)
 *   Features:
     *   Stories are searchable by title.
     *   Users can edit and re-export stories.
     *   Image files are stored locally and linked in the DB.
+    *   Strategies for handling stories linked to modified/deleted `DynamicListItem` values:
+        *   Retain original value string in the `Stories` table if a linked `DynamicListItem` is deactivated or its label changes.
+        *   Prevent hard deletion of `DynamicListItem` if it's referenced by any story; use an `is_active` flag instead (soft delete).
+        *   Admin interface should indicate if a `DynamicListItem` is in use before allowing deactivation or modification.
 
 ## 3.4 Logging & Error Handling
 *   Separate local log files.
@@ -118,6 +138,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   **FR-STORY-03:** Users can define detailed character attributes for consistent image generation, including upfront reference images. (Previously FR12)
 *   **FR-STORY-04:** Users can adjust the ratio of words to pictures per page. (Previously FR13)
 *   **FR-STORY-05:** Users can select a visual style for the story's illustrations. (Previously FR14)
+*   **FR-STORY-XX:** Users can select a writing style for the story. (New Requirement)
 *   **FR-STORY-06:** Edit Story Title: Users can edit the title of a generated story after its creation. (Previously FR20 - Implemented)
 *   **FR-STORY-07:** Dedicated Title Page: Each story will begin with a dedicated title page. (Previously FR21 - Implemented)
 *   **FR-STORY-08:** Cover Image on Title Page: The title page will feature a prominent cover image relevant to the story's theme or main character. (Previously FR22 - Implemented)
@@ -143,6 +164,15 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   **FR-ADM-04:** System Monitoring (Admin): Admins can view basic system health and usage statistics. (Previously FR19 - new context)
 *   **FR-ADM-05:** Manage Dynamic UI Content and System Behavior: Admins can manage content for dynamic UI elements (e.g., image styles, genres) and configure system behaviors such as the mapping between application image styles and OpenAI API style parameters (`vivid`/`natural`) through the admin panel. (Previously original FR18, expanded)
 *   **FR-ADM-06:** Populate Dropdowns from DB: Dropdown content for story creation (e.g., image styles, genres) is populated from the database and manageable by admins. (Previously original FR19)
+*   **FR-ADM-07: Application Configuration Management (Admin):** Admins can manage global application settings, including API keys (e.g., OpenAI API Key) and site-wide operational parameters (e.g., maintenance mode) through the admin panel.
+*   **FR-ADM-08: Detailed Logging Access (Admin):** Admins can view and filter application logs (e.g., app.log, api.log, error.log) through the admin panel for troubleshooting.
+*   **FR-ADM-09: Broadcast Messaging (Admin):** Admins can create, view, and activate/deactivate broadcast messages to be displayed to users (e.g., for announcements or maintenance notifications).
+*   **FR-ADM-10: Enhanced Story Statistics & Analytics (Admin):** Admins can view detailed statistics and analytics regarding story creation (e.g., number of stories, popular genres/styles) and API usage (e.g., number of calls, token estimates if possible).
+*   **FR-ADM-11: Data Integrity for Dynamic Content (System/Admin):** The system will implement strategies to handle data integrity when dynamic list items (e.g., genres, image styles) are modified or deleted by an admin. This includes:
+    *   Indicating in the admin panel if a dynamic list item is currently in use by existing stories.
+    *   Implementing "soft deletes" (marking items as `is_active = false` but retaining them for historical data integrity). Hard deletes of in-use items should be prevented.
+    *   Ensuring stories continue to display their originally selected values (e.g., genre name) even if the corresponding list item is later deactivated or its label changed. The story itself should store the value string, not just a foreign key, or have a clear mechanism to retrieve the historical value.
+    *   Providing admin tools or considerations for migrating existing story data if a list item's value is critically changed (e.g., correcting a significant spelling error in a genre that should be reflected everywhere).
 
 ## 4.7 Testing
 *   **FR-TEST-01:** Unit Tests: Implement comprehensive unit tests for all backend modules (CRUD operations, AI service interactions, API endpoints). (Previously FR10)
@@ -242,6 +272,9 @@ This section tracks the major milestones and completed work items.
 ### 9.6.8 Use Story as Template (FR-STORY-09) - *Implemented Q2 2025*
 ### 9.6.9 Save Story Draft (FR-STORY-10) - *Implemented Q2 2025*
 ### 9.6.10 Reusable Characters (FR-STORY-11) - *Pending*
+### 9.6.11 Frontend Interaction and Story Management Enhancements (Completed Q2 2025)
+*   **Fix "Show Details" Button for Main Character:** Resolved issues with the "Show Details" button for the first character in the story creation form (`frontend/index.html`, `frontend/script.js`). This involved correcting HTML attributes and refining JavaScript functions to ensure the toggle functionality works as expected for the main character.
+*   **Implement Delete Story Functionality:** Added a `DELETE /stories/{story_id}` endpoint in `backend/main.py` and corresponding frontend logic in `frontend/script.js` to allow users to delete their stories. This includes UI elements (e.g., a delete button in the "My Stories" list) and confirmation prompts. Associated tests were added in `backend/tests/test_main.py`.
 
 ## 9.7 Testing & Quality Assurance
 *   Unit Tests for Backend (FR-TEST-01) - *Pending*

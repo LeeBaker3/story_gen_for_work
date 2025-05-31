@@ -537,7 +537,7 @@ def test_delete_story_success(client, db_session_mock, current_user_mock, mock_c
     mock_crud_operations['get_story'].assert_called_once_with(
         ANY, story_id=story_id_to_delete)  # Use ANY for the db session
     mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
-        db=ANY, story_id=story_id_to_delete) # Use ANY for the db session
+        db=ANY, story_id=story_id_to_delete)  # Use ANY for the db session
 
 
 def test_delete_story_not_found(client, db_session_mock, current_user_mock, mock_crud_operations):
@@ -579,4 +579,55 @@ def test_delete_story_db_error(client, db_session_mock, current_user_mock, mock_
     mock_crud_operations['get_story'].assert_called_once_with(
         ANY, story_id=story_id_to_delete)  # Use ANY for the db session
     mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
-        db=ANY, story_id=story_id_to_delete) # Use ANY for the db session
+        db=ANY, story_id=story_id_to_delete)  # Use ANY for the db session
+
+# --- Tests for GET /stories/drafts/{story_id} Endpoint ---
+
+
+def test_read_story_draft_success(client, db_session_mock, current_user_mock, mock_crud_operations):
+    """Test successfully fetching an existing draft for the current user."""
+    draft_id = 1
+    mock_draft_story = schemas.Story(
+        id=draft_id,
+        owner_id=current_user_mock.id,
+        title="Test Draft",
+        genre=schemas.StoryGenre.SCI_FI,
+        story_outline="A cool sci-fi draft.",
+        main_characters=[],
+        num_pages=1,
+        is_draft=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        pages=[]
+    )
+
+    with patch('backend.crud.get_story_draft') as mock_get_draft:
+        mock_get_draft.return_value = mock_draft_story
+
+        response = client.get(
+            f"/stories/drafts/{draft_id}", headers={"X-Token": "testtoken"})
+
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data['id'] == draft_id
+        assert response_data['title'] == "Test Draft"
+        assert response_data['is_draft'] is True
+        assert response_data['owner_id'] == current_user_mock.id
+        mock_get_draft.assert_called_once_with(
+            ANY, story_id=draft_id, user_id=current_user_mock.id)
+
+
+def test_read_story_draft_not_found(client, db_session_mock, current_user_mock, mock_crud_operations):
+    """Test fetching a draft that does not exist or does not belong to the user."""
+    non_existent_draft_id = 999
+
+    with patch('backend.crud.get_story_draft') as mock_get_draft:
+        mock_get_draft.return_value = None  # Simulate draft not found
+
+        response = client.get(
+            f"/stories/drafts/{non_existent_draft_id}", headers={"X-Token": "testtoken"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Draft not found"}
+        mock_get_draft.assert_called_once_with(
+            ANY, story_id=non_existent_draft_id, user_id=current_user_mock.id)

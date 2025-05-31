@@ -634,3 +634,26 @@ async def export_story_as_pdf(
             f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to generate PDF: {e}")
+
+
+# Dependency for getting current user
+async def get_current_active_user(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    # Add any checks for active status if necessary, e.g., user.disabled
+    if not current_user:  # Or any other active check
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+# Endpoint to get a specific story draft by ID
+
+
+@app.get("/stories/drafts/{story_id}", response_model=schemas.Story)
+async def read_story_draft(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(get_current_active_user)
+):
+    db_story_draft = crud.get_story_draft(
+        db, story_id=story_id, user_id=current_user.id)
+    if db_story_draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return db_story_draft
