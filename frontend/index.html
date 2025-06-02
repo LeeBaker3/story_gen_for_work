@@ -19,6 +19,7 @@
                 <button id="nav-login-signup">Login / Sign Up</button>
                 <button id="nav-create-story" style="display:none;">Create New Story</button>
                 <button id="nav-browse-stories" style="display:none;">My Stories</button>
+                <button id="nav-admin-panel" style="display:none;">Admin Panel</button> <!-- Added Admin Panel Link -->
                 <button id="nav-logout" style="display:none;">Logout</button>
             </div>
         </nav>
@@ -185,6 +186,42 @@
             <p id="api-message"></p>
             <div id="loading-spinner" style="display:none;">Loading...</div> <!-- Spinner element -->
         </section>
+
+        <!-- Admin Panel Section -->
+        <div id="adminPanelContainer" style="display: none; margin-top: 20px;">
+            <h2>Admin Panel</h2>
+            <div id="adminUserManagementSection">
+                <h3>User Management</h3>
+                <table id="adminUserTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminUserTableBody">
+                        <!-- User data will be populated here. Example row:
+                        <tr>
+                            <td>1</td>
+                            <td>testuser</td>
+                            <td>test@example.com</td>
+                            <td>user</td>
+                            <td>true</td>
+                            <td>
+                                <button class="admin-action-button admin-edit-user">Edit</button>
+                                <button class="admin-action-button admin-delete-user">Delete</button>
+                            </td>
+                        </tr>
+                        -->
+                    </tbody>
+                </table>
+            </div>
+            <!-- Other admin sections can be added here later -->
+        </div>
 
     </main>
 

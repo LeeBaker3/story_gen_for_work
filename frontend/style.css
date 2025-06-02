@@ -590,3 +590,84 @@ footer {
     border-radius: 4px;
     border: 1px solid #333;
 }
+
+/* Admin Panel Table Styles */
+#adminUserTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background-color: #2A2A2A;
+    /* Dark background for the table */
+}
+
+#adminUserTable th,
+#adminUserTable td {
+    border: 1px solid #444;
+    /* Darker borders */
+    padding: 0.75rem;
+    text-align: left;
+    color: #E0E0E0;
+    /* Light text for table content */
+}
+
+#adminUserTable th {
+    background-color: #333;
+    /* Slightly darker header for table */
+    color: #00A9FF;
+    /* Accent color for table headers */
+    font-weight: 700;
+}
+
+#adminUserTable tbody tr:nth-child(odd) {
+    background-color: #2C2C2C;
+    /* Slightly different for odd rows */
+}
+
+#adminUserTable tbody tr:hover {
+    background-color: #383838;
+    /* Hover effect for rows */
+}
+
+/* Admin Action Buttons */
+.admin-action-button {
+    background-color: #007bff;
+    /* Primary button blue */
+    color: #FFFFFF;
+    border: none;
+    padding: 0.5rem 1rem;
+    /* Consistent padding */
+    border-radius: 5px;
+    /* Consistent border radius */
+    cursor: pointer;
+    font-size: 0.9rem;
+    /* Consistent font size */
+    font-weight: 700;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    margin-right: 0.5rem;
+    /* Space between buttons */
+}
+
+.admin-action-button:hover {
+    background-color: #0056b3;
+    /* Darker blue on hover */
+    transform: translateY(-1px);
+}
+
+.admin-action-button:active {
+    transform: translateY(0);
+}
+
+/* Specific style for admin delete buttons */
+.admin-delete-user {
+    /* Changed from .admin-delete-button to be more specific if needed */
+    background-color: #dc3545;
+    /* Red for delete/danger */
+}
+
+.admin-delete-user:hover {
+    background-color: #c82333;
+    /* Darker red on hover */
+}
+
+
+/* Footer */

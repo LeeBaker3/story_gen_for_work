@@ -22,8 +22,15 @@ def get_user_by_username(db: Session, username: str):
 
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = pwd_context.hash(user.password)
-    db_user = User(username=user.username, email=user.email,
-                   hashed_password=hashed_password)  # Added user.email
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        # Ensure role is set, default to 'user'
+        role=user.role if user.role else 'user',
+        # Ensure is_active is set, default to True
+        is_active=user.is_active if user.is_active is not None else True
+    )  # Added user.email
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -254,3 +261,61 @@ def update_page_image_path(db: Session, page_id: int, image_path: str) -> Option
         db.refresh(db_page)
         return db_page
     return None
+
+# --- Admin User Management CRUD ---
+
+
+def get_users_admin(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    """
+    Retrieves a list of users for admin purposes.
+    """
+    return db.query(User).offset(skip).limit(limit).all()
+
+
+def get_user_admin(db: Session, user_id: int) -> Optional[User]:
+    """
+    Retrieves a single user by ID for admin purposes.
+    """
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def update_user_status_admin(db: Session, user_id: int, is_active: bool) -> Optional[User]:
+    """
+    Updates the is_active status of a user by admin.
+    """
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if db_user:
+        db_user.is_active = is_active
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    return None
+
+
+def update_user_role_admin(db: Session, user_id: int, role: str) -> Optional[User]:
+    """
+    Updates the role of a user by admin.
+    """
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if db_user:
+        # Add validation for role if necessary (e.g., ensure it's 'user' or 'admin')
+        db_user.role = role
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    return None
+
+
+def delete_user_admin(db: Session, user_id: int) -> bool:
+    """
+    Deletes a user by ID by admin.
+    Returns True if deletion was successful, False otherwise.
+    """
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if db_user:
+        # Consider implications: what happens to stories owned by this user?
+        # For now, direct delete. Add cascading or re-assignment logic if needed.
+        db.delete(db_user)
+        db.commit()
+        return True
+    return False

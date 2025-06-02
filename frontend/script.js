@@ -8,17 +8,19 @@ console.log("script.js file loaded and parsed by the browser.");
 
 document.addEventListener('DOMContentLoaded', function () {
     // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - DOMContentLoaded >>>>>');
-    // Variable declarations (ensure authToken is declared only once here)
+    // Variable declarations
     const navLoginSignup = document.getElementById('nav-login-signup');
     const navCreateStory = document.getElementById('nav-create-story');
     const navBrowseStories = document.getElementById('nav-browse-stories');
     const navLogout = document.getElementById('nav-logout');
+    const navAdminPanel = document.getElementById('nav-admin-panel');
 
     // Sections
     const authSection = document.getElementById('auth-section');
     const storyCreationSection = document.getElementById('story-creation-section');
     const storyPreviewSection = document.getElementById('story-preview-section');
     const browseStoriesSection = document.getElementById('browse-stories-section');
+    const adminPanelContainer = document.getElementById('adminPanelContainer'); // ENSURED DECLARATION
     const messageArea = document.getElementById('api-message');
 
     // Forms
@@ -33,10 +35,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Buttons
     const addCharacterButton = document.getElementById('add-character-button');
     const exportPdfButton = document.getElementById('export-pdf-button');
-    const generateStoryButton = document.getElementById('generate-story-button'); // Assuming this ID for the main submit button
+    const generateStoryButton = document.getElementById('generate-story-button');
     const saveDraftButton = document.getElementById('save-draft-button');
 
-    // Corrected: authToken declared once.
     let authToken = localStorage.getItem('authToken');
 
     // State variables for draft editing
@@ -46,6 +47,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Content Areas
     const storyPreviewContent = document.getElementById('story-preview-content');
     const userStoriesList = document.getElementById('user-stories-list');
+
+    // Admin panel specific elements
+    const adminUserTableBody = document.getElementById('adminUserTableBody'); // ENSURED DECLARATION (MOVED HERE)
 
     let characterCount = 1;
 
@@ -459,8 +463,9 @@ document.addEventListener('DOMContentLoaded', function () {
             messageArea.style.backgroundColor = 'transparent'; // Reset background
             messageArea.style.border = 'none'; // Reset border
         }
-        [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection].forEach(section => {
-            section.style.display = 'none';
+        // Ensure adminPanelContainer is part of this array
+        [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection, adminPanelContainer].forEach(section => {
+            if (section) section.style.display = 'none';
         });
         if (sectionToShow) {
             sectionToShow.style.display = 'block';
@@ -518,12 +523,33 @@ document.addEventListener('DOMContentLoaded', function () {
             navCreateStory.style.display = 'inline-block';
             navBrowseStories.style.display = 'inline-block';
             navLogout.style.display = 'inline-block';
+            // Show admin link only if user is admin
+            fetchAndSetUserRole(); // Call this to determine if admin link should be shown
         } else {
             navLoginSignup.style.display = 'inline-block';
             navCreateStory.style.display = 'none';
             navBrowseStories.style.display = 'none';
             navLogout.style.display = 'none';
+            if (navAdminPanel) navAdminPanel.style.display = 'none'; // Hide admin panel link on logout
             showSection(authSection);
+        }
+    }
+
+    async function fetchAndSetUserRole() {
+        if (!localStorage.getItem('authToken')) {
+            if (navAdminPanel) navAdminPanel.style.display = 'none';
+            return;
+        }
+        try {
+            const user = await apiRequest('/users/me/');
+            if (user && user.role === 'admin') {
+                if (navAdminPanel) navAdminPanel.style.display = 'inline-block';
+            } else {
+                if (navAdminPanel) navAdminPanel.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error fetching user details for role:', error);
+            if (navAdminPanel) navAdminPanel.style.display = 'none';
         }
     }
 
@@ -825,7 +851,19 @@ document.addEventListener('DOMContentLoaded', function () {
     if (navBrowseStories) {
         navBrowseStories.addEventListener('click', async () => {
             showSection(browseStoriesSection);
-            await loadAndDisplayUserStories(); // Fetches all (including drafts by default)
+            await loadAndDisplayUserStories();
+        });
+    }
+
+    if (navAdminPanel) {
+        navAdminPanel.addEventListener('click', async () => {
+            showSection(adminPanelContainer);
+            if (typeof loadAdminUsers === 'function' && adminUserTableBody) {
+                await loadAdminUsers();
+            } else {
+                console.error('Admin Panel Nav: loadAdminUsers function or adminUserTableBody element not available.');
+                displayMessage('Could not load admin panel content. See console.', 'error');
+            }
         });
     }
 
@@ -868,11 +906,26 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             const data = await response.json();
             authToken = data.access_token;
-            localStorage.setItem('authToken', authToken); // Persist token
+            localStorage.setItem('authToken', authToken);
             displayMessage('Login successful!', 'success');
             updateNav(true);
-            showSection(storyCreationSection); // Or browse stories
+
+            // Fetch user role after login to decide initial view
+            const user = await apiRequest('/users/me/');
+            if (user && user.role === 'admin') {
+                showSection(adminPanelContainer);
+                if (typeof loadAdminUsers === 'function' && adminUserTableBody) {
+                    await loadAdminUsers();
+                } else {
+                    console.error('Admin Login: loadAdminUsers function or adminUserTableBody element not available.');
+                    displayMessage('Logged in as admin, but panel content could not be loaded. See console.', 'error');
+                }
+            } else {
+                showSection(storyCreationSection);
+            }
             loginForm.reset();
+
+
         } catch (error) {
             displayMessage(error.message || 'Login failed.', 'error');
         }
@@ -1157,7 +1210,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Delete Story Button
                     const deleteButton = document.createElement('button');
                     deleteButton.textContent = 'Delete';
-                    deleteButton.classList.add('action-button-secondary', 'delete-button'); // Apply new classes
+                    deleteButton.classList.add('admin-action-button', 'admin-delete-user'); // MODIFIED: Apply new class for delete button
                     deleteButton.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         if (confirm(`Are you sure you want to delete "${story.title || 'this story'}"? This cannot be undone.`)) {
@@ -1250,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } finally {
                 hideSpinner();
             }
-        });
+        }); // This closes the event listener
     } else {
         console.error("Export PDF button not found during event listener setup.");
     }
@@ -1369,7 +1422,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- DEBUGGING / DEVELOPMENT HELPERS ---
     // This section can be used to add temporary debugging aids or to expose certain functions/variables
-    // for testing in the browser console. Remember to remove or disable in production.
+    // for testing in the browser. Remember to remove or disable in production.
 
     // Expose API base URL for debugging
     window.__API_BASE_URL__ = API_BASE_URL;
@@ -1485,5 +1538,117 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // --- END DEBUGGING / DEVELOPMENT HELPERS ---
+    // --- ADMIN PANEL FUNCTIONALITY ---
+    // IMPORTANT: 'const adminUserTableBody = ...;' should NOT be re-declared here.
+    // It is now declared at the top of the DOMContentLoaded scope.
+    // The functions below should use that single 'adminUserTableBody' variable.
+
+    async function loadAdminUsers() {
+        if (!adminUserTableBody) {
+            console.error('[loadAdminUsers] adminUserTableBody element variable is not set. Admin panel cannot load users.');
+            displayMessage('Admin panel error: User table UI element missing. Cannot load users.', 'error');
+            hideSpinner();
+            return;
+        }
+        showSpinner();
+        try {
+            const users = await apiRequest('/admin/users/');
+            adminUserTableBody.innerHTML = ''; // Clear existing users
+            if (users && users.length > 0) {
+                users.forEach(user => {
+                    const row = adminUserTableBody.insertRow();
+                    row.insertCell().textContent = user.id;
+                    row.insertCell().textContent = user.username;
+                    row.insertCell().textContent = user.email;
+
+                    const roleCell = row.insertCell();
+                    const roleSelect = document.createElement('select');
+                    roleSelect.id = `role-select-${user.id}`;
+                    // Corrected template literal
+                    roleSelect.innerHTML = `
+                        <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
+                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    `;
+                    roleSelect.addEventListener('change', () => updateUserRole(user.id, roleSelect.value));
+                    roleCell.appendChild(roleSelect);
+
+                    const activeCell = row.insertCell();
+                    const activeCheckbox = document.createElement('input');
+                    activeCheckbox.type = 'checkbox';
+                    // Corrected template literal and removed spaces from id
+                    activeCheckbox.id = `active-checkbox-${user.id}`;
+                    activeCheckbox.checked = user.is_active;
+                    activeCheckbox.addEventListener('change', () => updateUserStatus(user.id, activeCheckbox.checked));
+                    activeCell.appendChild(activeCheckbox);
+
+                    const actionsCell = row.insertCell();
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.classList.add('admin-action-button', 'admin-delete-user'); // MODIFIED: Apply new class for delete button
+                    deleteButton.addEventListener('click', () => deleteUserAdmin(user.id, row));
+                    actionsCell.appendChild(deleteButton);
+                });
+            } else {
+                adminUserTableBody.innerHTML = '<tr><td colspan="6">No users found.</td></tr>';
+            }
+        } catch (error) {
+            console.error('Error loading admin users:', error);
+            displayMessage('Failed to load users for admin panel.', 'error');
+            if (adminUserTableBody) adminUserTableBody.innerHTML = '<tr><td colspan="6">Error loading users.</td></tr>';
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    async function updateUserRole(userId, newRole) {
+        showSpinner();
+        try { // Corrected try-catch-finally structure
+            // Corrected API path by removing spaces and changed method to PUT
+            await apiRequest(`/admin/users/${userId}/role`, 'PUT', { role: newRole });
+            displayMessage(`User ${userId} role updated to ${newRole}.`, 'success');
+        } catch (error) {
+            console.error(`Error updating role for user ${userId}:`, error);
+            displayMessage(`Failed to update role for user ${userId}.`, 'error');
+            if (typeof loadAdminUsers === 'function') await loadAdminUsers(); // Refresh list on error
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    async function updateUserStatus(userId, isActive) {
+        showSpinner(); // Corrected: removed extra opening brace before this line
+        try { // Corrected try-catch-finally structure
+            // Changed method to PUT
+            await apiRequest(`/admin/users/${userId}/status`, 'PUT', { is_active: isActive });
+            displayMessage(`User ${userId} status updated to ${isActive ? 'active' : 'inactive'}.`, 'success');
+        } catch (error) {
+            console.error(`Error updating status for user ${userId}:`, error);
+            displayMessage(`Failed to update status for user ${userId}.`, 'error');
+            if (typeof loadAdminUsers === 'function') await loadAdminUsers(); // Refresh list on error
+        } finally {
+            hideSpinner();
+        }
+    }
+
+    async function deleteUserAdmin(userId, tableRow) {
+        if (!confirm(`Are you sure you want to delete user ${userId}? This action cannot be undone.`)) {
+            return;
+        }
+        showSpinner();
+        try {
+            await apiRequest(`/admin/users/${userId}`, 'DELETE');
+            displayMessage(`User ${userId} deleted successfully.`, 'success');
+            if (tableRow) {
+                tableRow.remove();
+            }
+        } catch (error) {
+            console.error(`Error deleting user ${userId}:`, error);
+            displayMessage(`Failed to delete user ${userId}.`, 'error');
+        } finally {
+            hideSpinner();
+        }
+    }
+    // --- END ADMIN PANEL FUNCTIONALITY ---
+
+    // Ensure all functions are defined before this closing }); for DOMContentLoaded
 });

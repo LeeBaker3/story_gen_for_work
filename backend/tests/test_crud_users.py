@@ -75,3 +75,45 @@ def test_create_user_duplicate_username(db_session: Session):
     users_count = db_session.query(User).filter(
         User.username == "duplicateuser").count()
     assert users_count == 1
+
+# Test User Creation with Role and Active Status
+
+
+def test_create_user_with_defaults(db_session: Session):
+    user_in = schemas.UserCreate(username="defaultuser", password="password")
+    db_user = crud.create_user(db=db_session, user=user_in)
+    assert db_user.username == "defaultuser"
+    assert db_user.role == "user"  # Default role
+    assert db_user.is_active is True  # Default active status
+    assert db_user.email is None  # Ensure email is None if not provided
+
+
+def test_create_user_with_specific_role_and_status(db_session: Session):
+    user_in = schemas.UserCreate(
+        username="adminuser",
+        password="adminpassword",
+        email="admin@example.com",
+        role="admin",
+        is_active=False
+    )
+    db_user = crud.create_user(db=db_session, user=user_in)
+    assert db_user.username == "adminuser"
+    assert db_user.email == "admin@example.com"
+    assert db_user.role == "admin"
+    assert db_user.is_active is False
+
+
+def test_create_user_role_is_none(db_session: Session):
+    # Explicitly set role to None, should default to "user"
+    user_in = schemas.UserCreate(
+        username="testroleNone", password="password", role=None)
+    db_user = crud.create_user(db=db_session, user=user_in)
+    assert db_user.role == "user"
+
+
+def test_create_user_is_active_is_none(db_session: Session):
+    # Explicitly set is_active to None, should default to True
+    user_in = schemas.UserCreate(
+        username="testactiveNone", password="password", is_active=None)
+    db_user = crud.create_user(db=db_session, user=user_in)
+    assert db_user.is_active is True

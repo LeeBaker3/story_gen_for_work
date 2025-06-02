@@ -143,7 +143,9 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
 
 class UserBase(BaseModel):
     username: str
-    email: Optional[str] = None  # Added email field
+    email: Optional[str] = None
+    is_active: Optional[bool] = True  # Default to True
+    role: Optional[str] = 'user'  # Default to 'user'
 
 
 class UserCreate(UserBase):
@@ -153,10 +155,23 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    # email is inherited from UserBase
-    stories: List[Story] = []
+    # stories: list[Story] = [] # Avoid circular dependency if Story schema also refers to User
 
-    model_config = ConfigDict(from_attributes=True)  # Replaced class Config
+    model_config = ConfigDict(from_attributes=True)  # Correctly indented
+
+
+class UserInDB(User):
+    hashed_password: str
+
+# For Admin User Management
+
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+
+class UserRoleUpdate(BaseModel):
+    role: str
 
 # Token Schemas for Authentication
 

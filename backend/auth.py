@@ -75,7 +75,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     # Add extensive logging here
     app_logger.info(
         f"GET_CURRENT_USER: Token received (first 10): {token[:10] if token else 'No token'}...")
@@ -117,6 +117,22 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Sessi
     app_logger.info(
         f"GET_CURRENT_USER: User \'{user.username}\' found and authenticated.")
     return user
+
+# Dependency to get current user, checking if active
+
+
+async def get_current_active_user(current_user: schemas.User = Depends(get_current_user)):
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+# Dependency for admin users
+
+
+async def get_current_admin_user(current_user: schemas.User = Depends(get_current_active_user)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return current_user
 
 
 def authenticate_user(db: Session, username: str, password: str):

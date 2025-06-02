@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Body  # Added Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
 # Added PlainTextResponse
-from fastapi.responses import StreamingResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles  # Added for static files
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -19,28 +19,43 @@ from .logging_config import app_logger, api_logger, error_logger
 
 # Drop all tables (for development purposes to apply schema changes)
 # IMPORTANT: This will delete all existing data. Remove or comment out for production.
-database.Base.metadata.drop_all(bind=database.engine)
+# database.Base.metadata.drop_all(bind=database.engine) # Commented out to prevent locking issues
 
 # Create database tables
 database.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
 
-
-@app.get("/genres/", response_model=List[schemas.StoryGenre])
-async def get_story_genres():
-    app_logger.info("Requested story genres list.")
-    sorted_genres = sorted([genre.value for genre in schemas.StoryGenre])
-    return sorted_genres
-
 # Mount static files directory for frontend
-app.mount("/static", StaticFiles(directory="frontend"), name="static_frontend")
+# Conditionally mount based on an environment variable
+RUN_ENV = os.environ.get("RUN_ENV")
+if RUN_ENV != "test":
+    # Attempt to mount the frontend directory. If it doesn't exist, log an error but continue.
+    # This is to prevent crashes if the backend is run in an environment where 'frontend' isn't present.
+    frontend_dir = "frontend"
+    if not os.path.exists(frontend_dir) or not os.path.isdir(frontend_dir):
+        app_logger.warning(
+            f"Frontend directory '{frontend_dir}' not found. Static files for frontend will not be served.")
+    else:
+        app.mount("/static", StaticFiles(directory=frontend_dir),
+                  name="static_frontend")
+        app_logger.info(
+            f"Mounted frontend static files from directory: {frontend_dir}")
 
-# Mount static files directory (for images)
-# This will serve files from the 'data' directory under the '/static_content' path
-# e.g., an image at data/images/user_1/story_1/foo.png will be accessible at /static_content/images/user_1/story_1/foo.png
-app.mount("/static_content", StaticFiles(directory="data"),
-          name="static_content")
+    # Mount static files directory (for images)
+    # This will serve files from the 'data' directory under the '/static_content' path
+    # e.g., an image at data/images/user_1/story_1/foo.png will be accessible at /static_content/images/user_1/story_1/foo.png
+    data_dir = "data"
+    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
+        app_logger.warning(
+            f"Data directory '{data_dir}' not found. Static content will not be served.")
+    else:
+        app.mount("/static_content", StaticFiles(directory=data_dir),
+                  name="static_content")
+        app_logger.info(f"Mounted static content from directory: {data_dir}")
+else:
+    app_logger.info(
+        "Skipping mounting of frontend and data static files in test environment (RUN_ENV=test).")
 
 # Dependency to get DB session
 
@@ -111,7 +126,103 @@ async def read_users_me(current_user: schemas.User = Depends(auth.get_current_ac
 
 @app.get("/admin/placeholder")
 async def admin_placeholder_endpoint(current_user: schemas.User = Depends(auth.get_current_admin_user)):
-    return PlainTextResponse(f"Welcome admin user: {current_user.username}")
+    return PlainTextResponse("This is a placeholder for the admin dashboard.", media_type="text/plain")
+
+# --- Admin User Management Endpoints ---
+
+
+@app.get("/admin/users", response_model=List[schemas.User], tags=["Admin - User Management"])
+def list_users_admin(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(
+        auth.get_current_admin_user)  # Ensures only admin access
+):
+    """
+    Admin: Retrieve a list of all users.
+    """
+    users = crud.get_users_admin(db, skip=skip, limit=limit)
+    return users
+
+
+@app.get("/admin/users/{user_id}", response_model=schemas.User, tags=["Admin - User Management"])
+def get_user_admin(
+    user_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_admin_user)
+):
+    """
+    Admin: Retrieve a specific user by ID.
+    """
+    db_user = crud.get_user_admin(db, user_id=user_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+@app.put("/admin/users/{user_id}/status", response_model=schemas.User, tags=["Admin - User Management"])
+def set_user_status_admin(
+    user_id: int,
+    user_status: schemas.UserStatusUpdate,  # Pydantic model for is_active
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_admin_user)
+):
+    """
+    Admin: Activate or deactivate a user.
+    """
+    db_user = crud.update_user_status_admin(
+        db, user_id=user_id, is_active=user_status.is_active)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+@app.put("/admin/users/{user_id}/role", response_model=schemas.User, tags=["Admin - User Management"])
+def set_user_role_admin(
+    user_id: int,
+    user_role: schemas.UserRoleUpdate,  # Pydantic model for role
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_admin_user)
+):
+    """
+
+        Admin: Change a user's role (e.g., to 'admin' or 'user').
+    """
+    # Add validation for role if necessary (e.g., ensure it's 'user' or 'admin')
+    if user_role.role not in ["user", "admin"]:
+        raise HTTPException(
+            status_code=400, detail="Invalid role specified. Must be 'user' or 'admin'.")
+
+    # Prevent admin from changing their own role
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=403, detail="Admin users cannot change their own role.")
+
+    db_user = crud.update_user_role_admin(
+        db, user_id=user_id, role=user_role.role)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+@app.delete("/admin/users/{user_id}", status_code=204, tags=["Admin - User Management"])
+def delete_user_admin_endpoint(  # Renamed to avoid conflict with crud function
+    user_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_admin_user)
+):
+    """
+    Admin: Delete a user.
+    """
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=403, detail="Admin users cannot delete themselves.")
+
+    success = crud.delete_user_admin(db, user_id=user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return JSONResponse(status_code=204, content=None)  # No content for 204
 
 
 @app.get("/stories/", response_model=List[schemas.Story])
