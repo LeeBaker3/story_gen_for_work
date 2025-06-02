@@ -1,6 +1,6 @@
 # 1. Purpose
 
-The Story Generator Web App is a web-based application that allows users to generate custom illustrated stories using AI. It leverages the OpenAI ChatGPT API for story generation and DALL·E 3 for generating corresponding illustrations. Users can log in, input story parameters, preview, edit, and export stories as PDFs.
+The Story Generator Web App is a web-based application that allows users to generate custom illustrated stories using AI. It leverages the OpenAI ChatGPT API for story generation and an AI image generation model for generating corresponding illustrations. Users can log in, input story parameters, preview, edit, and export stories as PDFs.
 
 # 2. Features and Functionality
 
@@ -17,7 +17,7 @@ The Story Generator Web App is a web-based application that allows users to gene
         *   Story Title (Optional. If left blank, a title will be AI-generated. Can be edited later).
         *   Story outline.
         *   Main characters (name, personality, background).
-        *   Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide DALL·E for consistent character depiction throughout the story.
+        *   Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide the AI image generation model for consistent character depiction throughout the story.
         *   Number of pages.
         *   Option to select a writing style for the story (e.g., narrative, descriptive, poetic, humorous, formal).
         *   Option to adjust word-to-picture ratio (e.g., one image every X words/paragraphs, or one image per page as default).
@@ -48,23 +48,23 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   Framework: Python FastAPI
 *   OpenAI APIs:
     *   ChatGPT API: Returns story content in structured JSON format.
-    *   DALL·E 3 API: Generates images based on page-specific prompts.
+    *   AI Image Generation API (e.g., OpenAI's image API): Generates images based on page-specific prompts.
 *   Functionality:
     *   Accepts user inputs (including an optional story title) and sends prompts to ChatGPT.
     *   If no title is provided by the user, generates a suitable story title based on the outline and other parameters.
     *   Parses and stores story (including title), pages (with a dedicated title page as the first page), and image metadata in a SQLite database.
-    *   Generates a cover image for the title page using DALL·E 3, based on the final story title, overall themes, and main character descriptions.
+    *   Generates a cover image for the title page using the AI image generation model, based on the final story title, overall themes, and main character descriptions.
     *   Generates PDF combining story text and locally stored images.
     *   Provides an endpoint to retrieve a list of stories for the authenticated user.
-    *   Generates and stores character reference images based on detailed user input, to be used in subsequent DALL·E prompts for consistency.
-    *   Supports different selectable image styles for DALL·E generation, with styles potentially managed dynamically.
+    *   Generates and stores character reference images based on detailed user input, to be used in subsequent image generation prompts for consistency.
+    *   Supports different selectable image styles for AI image generation, with styles potentially managed dynamically.
     *   Manages adjustable word-to-picture ratios for story layout.
     *   Supports different selectable writing styles for ChatGPT, with styles potentially managed dynamically.
     *   Implements a secure 'Forgot Password' mechanism (e.g., token-based).
     *   Implements role-based access control (RBAC) to differentiate between regular users and admins.
     *   Provides CRUD endpoints for managing dynamic list content (e.g., genres, image styles) accessible only by admins.
     *   Handles user-defined story titles, allowing for creation and updates.
-    *   Generates a cover image for the title page using DALL·E 3, based on the story title, themes, and character descriptions.
+    *   Generates a cover image for the title page using the AI image generation model, based on the story title, themes, and character descriptions.
     *   Securely stores and manages API keys (e.g., OpenAI API Key), accessible/modifiable only by admins.
     *   Provides mechanisms to ensure data integrity when dynamic list items (e.g., genres, styles) are modified or deleted by an admin. This includes strategies like soft deletes, preventing deletion of in-use items, or indicating usage to the admin.
     *   Provides endpoints for admins to manage users (view, activate, deactivate, delete).
@@ -105,7 +105,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 *   Separate local log files.
 *   Logged actions:
     *   User login/logout, story creation, edits, and exports.
-    *   All API requests/responses (ChatGPT, DALL·E).
+    *   All API requests/responses (ChatGPT, AI Image Generation).
     *   Error logs (failed API calls, DB issues, image failures).
 *   Graceful failure messages for:
     *   API timeouts/failures.
@@ -115,7 +115,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 # 4. Functional Requirements
 
 ## 4.1 Core Application & Backend
-*   **FR-CORE-01:** Story and image data are generated using ChatGPT and DALL·E and stored in SQLite. (Previously FR3)
+*   **FR-CORE-01:** Story and image data are generated using ChatGPT and an AI image generation model and stored in SQLite. (Previously FR3)
 *   **FR-CORE-02:** All images must be downloaded and stored locally. (Previously FR5)
 *   **FR-CORE-03:** Logging captures all key system and user activities. (Previously FR8)
 *   **FR-CORE-04:** The app must run locally with a fully functioning backend and frontend. (Previously FR9)
@@ -149,7 +149,7 @@ The Story Generator Web App is a web-based application that allows users to gene
 ## 4.5 AI Model Integration
 *   **FR-AI-01:** JSON format from ChatGPT includes title, pages, and image prompts with keys: Title, Page, Image_description. (Previously FR7)
 *   **FR-AI-02:** Update AI Model Dependencies: (Previously FRXX)
-    *   Upgrade the image generation model from DALL-E 3 to a newer version (e.g., "GPT Image 1" or similar, based on availability and API compatibility).
+    *   Upgrade the image generation model from the current version (e.g., DALL-E 3) to a newer version (e.g., "GPT Image 1" or similar, based on availability and API compatibility).
     *   Upgrade the text generation model from GPT-4 to a newer, more capable version (e.g. like "GPT-4.1", based on availability and API compatibility).
 *   **FR-AI-03: Configurable Image Generation Style Mapping:**
     *   The mapping between the application's defined `ImageStyle` (e.g., `CARTOON`, `PHOTOREALISTIC`, `FANTASY_ART`) and the OpenAI Image API's `style` parameter (which accepts `vivid` or `natural`) shall be configurable by an administrator.
@@ -230,11 +230,11 @@ This section tracks the major milestones and completed work items.
 *   Addressed and resolved multiple backend Python errors, including:
     *   Initial 401 Unauthorized issues during login (enhanced logging in `auth.py`, `main.py` to diagnose).
     *   OpenAI API `APIRemovedInV1` errors (resolved by clearing `__pycache__`).
-    *   `bcrypt` version conflict (`AttributeError: module 'bcrypt' has no attribute '__about__'`) (resolved by `pip uninstall/install` of specific versions and updating `requirements.txt`).
+    *   `bcrypt` version conflict (`AttributeError: module \'bcrypt\' has no attribute \'__about__\'`) (resolved by `pip uninstall/install` of specific versions and updating `requirements.txt`).
     *   Python `ImportError` due to incorrect Uvicorn execution command (corrected command provided).
     *   `ValueError: OPENAI_API_KEY not found` due to misplaced `.env` file (moved `.env` to project root).
 *   Improved backend logging in `ai_services.py` by replacing `print()` statements with structured logging for better traceability of API calls and errors.
-*   Enhanced DALL·E error diagnosis by adding full prompt logging in `backend/ai_services.py` when image generation API errors occur.
+*   Enhanced AI image generation error diagnosis by adding full prompt logging in `backend/ai_services.py` when image generation API errors occur.
 *   Resolved JavaScript error "Can't find variable: resetFormAndState" in `frontend/script.js` by ensuring proper function scope and definition, improving form stability.
 *   Corrected story finalization payload structure in `frontend/script.js` (addressing 422 Unprocessable Content errors) to ensure successful creation and finalization of stories, including those initiated from drafts (related to FR-STORY-10).
 *   Improved user experience after story generation: users now remain on the story preview page instead of being immediately redirected to the story creation form.
@@ -262,7 +262,7 @@ This section tracks the major milestones and completed work items.
 ### 9.6.1 Detailed Character Creation (FR-STORY-03)
 *   UI for inputting detailed character attributes (age, gender, physical appearance, clothing style, key traits) - **Completed Q2 2025**
 *   Backend processing of detailed character attributes for story generation prompts - **Completed Q2 2025**
-*   Generation of upfront character reference images to guide DALL·E for consistent character depiction - **Completed Q2 2025** (Logic implemented to generate images if missing during draft finalization. Addressed `TypeError` in `ai_services.py` related to `model` kwarg. Test cases updated.)
+*   Generation of upfront character reference images to guide the AI image generation model for consistent character depiction - **Completed Q2 2025** (Logic implemented to generate images if missing during draft finalization. Addressed `TypeError` in `ai_services.py` related to `model` kwarg. Test cases updated.)
 ### 9.6.2 Adjustable Word-to-Picture Ratio (FR-STORY-04) - *Pending*
 ### 9.6.3 Selectable Image Styles (FR-STORY-05) - *Completed Q2 2025*
 ### 9.6.4 "Forgot Password" Functionality (FR-AUTH-04) - *Pending*

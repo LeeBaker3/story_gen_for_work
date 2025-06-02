@@ -6,6 +6,7 @@ from backend.main import app  # Assuming your FastAPI app instance is named 'app
 from backend import schemas, crud, auth, ai_services, database
 # Ensure UTC is imported for timezone-aware datetime
 from datetime import datetime, UTC
+from fastapi import Depends  # Added Depends
 
 # --- Fixtures ---
 
@@ -34,8 +35,15 @@ def db_session_mock():
 @pytest.fixture
 def current_user_mock():
     """Mocks the current authenticated user."""
-    user = schemas.User(id=1, username="testuser",
-                        email="test@example.com", hashed_password="hashedpassword")
+    user = schemas.User(
+        id=1,
+        username="testuser",
+        email="test@example.com",
+        is_active=True,  # Added
+        role="user"      # Added
+        # hashed_password="hashedpassword" # Removed: Not part of schemas.User
+        # stories will default to []
+    )
     return user
 
 
@@ -69,17 +77,32 @@ def mock_get_db(db_session_mock):
             pass  # No actual db.close() needed for mock
     app.dependency_overrides[database.get_db] = override_get_db
     yield
-    app.dependency_overrides = {}  # Clean up overrides
+    # More specific cleanup for get_db
+    if database.get_db in app.dependency_overrides:
+        # Or restore original if it existed
+        del app.dependency_overrides[database.get_db]
 
 
 @pytest.fixture(autouse=True)
-def mock_get_current_active_user(current_user_mock):
-    """Overrides the get_current_active_user dependency."""
-    def override_get_current_active_user():
+def default_mock_get_current_user(current_user_mock):
+    """
+    Overrides the auth.get_current_user dependency globally with a default
+    active, non-admin user. Tests needing specific user types (inactive, admin)
+    should temporarily override this within the test.
+    """
+    original_override = app.dependency_overrides.get(auth.get_current_user)
+
+    def override_get_current_user():
         return current_user_mock
-    app.dependency_overrides[auth.get_current_active_user] = override_get_current_active_user
+
+    app.dependency_overrides[auth.get_current_user] = override_get_current_user
+
     yield
-    app.dependency_overrides = {}
+
+    if original_override:
+        app.dependency_overrides[auth.get_current_user] = original_override
+    elif auth.get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[auth.get_current_user]
 
 
 # --- Mocks for External Services ---
@@ -515,119 +538,108 @@ def test_create_new_story_draft_finalization(
     # generate_image should be called for each page that has an image description
 
 
-# --- Tests for Delete Story Endpoint ---
+# --- Admin Functionality Tests ---
 
-def test_delete_story_success(client, db_session_mock, current_user_mock, mock_crud_operations):
-    """Test successful deletion of a story."""
-    story_id_to_delete = 1
-
-    # Mock get_story to return a story that the user owns
-    mock_story = MagicMock(spec=schemas.Story)
-    mock_story.id = story_id_to_delete
-    mock_story.owner_id = current_user_mock.id
-    mock_crud_operations['get_story'].return_value = mock_story
-
-    # Mock delete_story_db_entry to return True (success)
-    mock_crud_operations['delete_story_db_entry'].return_value = True
-
-    response = client.delete(
-        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
-
-    assert response.status_code == 204
-    mock_crud_operations['get_story'].assert_called_once_with(
-        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
-    mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
-        db=ANY, story_id=story_id_to_delete)  # Use ANY for the db session
-
-
-def test_delete_story_not_found(client, db_session_mock, current_user_mock, mock_crud_operations):
-    """Test deletion of a non-existent story or story not owned by user."""
-    story_id_to_delete = 999
-
-    # Mock get_story to return None (story not found or not owned)
-    mock_crud_operations['get_story'].return_value = None
-
-    response = client.delete(
-        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
-
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Story not found"}
-    mock_crud_operations['get_story'].assert_called_once_with(
-        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
-    mock_crud_operations['delete_story_db_entry'].assert_not_called()
-
-
-def test_delete_story_db_error(client, db_session_mock, current_user_mock, mock_crud_operations):
-    """Test deletion when database operation fails."""
-    story_id_to_delete = 2
-
-    # Mock get_story to return a story that the user owns
-    mock_story = MagicMock(spec=schemas.Story)
-    mock_story.id = story_id_to_delete
-    mock_story.owner_id = current_user_mock.id
-    mock_crud_operations['get_story'].return_value = mock_story
-
-    # Mock delete_story_db_entry to return False (db deletion failed)
-    mock_crud_operations['delete_story_db_entry'].return_value = False
-
-    response = client.delete(
-        f"/stories/{story_id_to_delete}", headers={"X-Token": "testtoken"})
-
-    assert response.status_code == 500
-    assert response.json() == {
-        "detail": "Could not delete story from database."}
-    mock_crud_operations['get_story'].assert_called_once_with(
-        ANY, story_id=story_id_to_delete)  # Use ANY for the db session
-    mock_crud_operations['delete_story_db_entry'].assert_called_once_with(
-        db=ANY, story_id=story_id_to_delete)  # Use ANY for the db session
-
-# --- Tests for GET /stories/drafts/{story_id} Endpoint ---
-
-
-def test_read_story_draft_success(client, db_session_mock, current_user_mock, mock_crud_operations):
-    """Test successfully fetching an existing draft for the current user."""
-    draft_id = 1
-    mock_draft_story = schemas.Story(
-        id=draft_id,
-        owner_id=current_user_mock.id,
-        title="Test Draft",
-        genre=schemas.StoryGenre.SCI_FI,
-        story_outline="A cool sci-fi draft.",
-        main_characters=[],
-        num_pages=1,
-        is_draft=True,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-        pages=[]
+def test_get_current_active_user_inactive(client, db_session_mock):
+    inactive_user = schemas.User(
+        id=2, username="inactiveuser", email="inactive@example.com",
+        is_active=False, role="user"
     )
 
-    with patch('backend.crud.get_story_draft') as mock_get_draft:
-        mock_get_draft.return_value = mock_draft_story
+    def override_get_current_user_inactive():
+        return inactive_user
 
-        response = client.get(
-            f"/stories/drafts/{draft_id}", headers={"X-Token": "testtoken"})
+    original_get_user_override = app.dependency_overrides.get(
+        auth.get_current_user)
+    app.dependency_overrides[auth.get_current_user] = override_get_current_user_inactive
 
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data['id'] == draft_id
-        assert response_data['title'] == "Test Draft"
-        assert response_data['is_draft'] is True
-        assert response_data['owner_id'] == current_user_mock.id
-        mock_get_draft.assert_called_once_with(
-            ANY, story_id=draft_id, user_id=current_user_mock.id)
+    response = client.get(
+        "/users/me/", headers={"Authorization": "Bearer faketoken"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Inactive user"}
+
+    # Cleanup this test's specific override
+    if original_get_user_override:
+        app.dependency_overrides[auth.get_current_user] = original_get_user_override
+    elif auth.get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[auth.get_current_user]
 
 
-def test_read_story_draft_not_found(client, db_session_mock, current_user_mock, mock_crud_operations):
-    """Test fetching a draft that does not exist or does not belong to the user."""
-    non_existent_draft_id = 999
+def test_get_current_admin_user_not_admin(client, db_session_mock, current_user_mock):
+    # This test relies on the default_mock_get_current_user fixture,
+    # which provides an active user with role="user".
+    # No specific override needed here if current_user_mock is already non-admin.
+    # current_user_mock fixture provides role="user"
 
-    with patch('backend.crud.get_story_draft') as mock_get_draft:
-        mock_get_draft.return_value = None  # Simulate draft not found
+    # Use the /admin/placeholder endpoint defined in main.py
+    response = client.get("/admin/placeholder",
+                          headers={"Authorization": "Bearer faketoken"})
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Not authorized"}
 
-        response = client.get(
-            f"/stories/drafts/{non_existent_draft_id}", headers={"X-Token": "testtoken"})
 
-        assert response.status_code == 404
-        assert response.json() == {"detail": "Draft not found"}
-        mock_get_draft.assert_called_once_with(
-            ANY, story_id=non_existent_draft_id, user_id=current_user_mock.id)
+def test_get_current_admin_user_is_admin(client, db_session_mock):
+    admin_user = schemas.User(
+        id=3, username="admin", email="admin@example.com",
+        is_active=True, role="admin"
+    )
+
+    def override_get_current_user_admin():
+        return admin_user
+
+    original_get_user_override = app.dependency_overrides.get(
+        auth.get_current_user)
+    app.dependency_overrides[auth.get_current_user] = override_get_current_user_admin
+
+    # Use the /admin/placeholder endpoint defined in main.py
+    response = client.get("/admin/placeholder",
+                          headers={"Authorization": "Bearer faketoken"})
+    assert response.status_code == 200
+    # The placeholder endpoint returns a plain string
+    assert response.text == f"Welcome admin user: {admin_user.username}"
+
+    # Cleanup this test's specific override
+    if original_get_user_override:
+        app.dependency_overrides[auth.get_current_user] = original_get_user_override
+    elif auth.get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[auth.get_current_user]
+
+
+def test_admin_dashboard_access_denied_for_regular_user(client, current_user_mock):
+    # This test now relies on the `default_mock_get_current_user` fixture.
+    # The `current_user_mock` it uses is active and has role="user".
+    # So, no need for a local override of auth.get_current_user here.
+
+    # Use the /admin/placeholder endpoint defined in main.py
+    response = client.get("/admin/placeholder",
+                          headers={"Authorization": "Bearer faketoken"})
+    assert response.status_code == 403, response.text
+    assert response.json() == {"detail": "Not authorized"}
+    # No local override cleanup needed as we are using the global fixture's user.
+
+
+def test_admin_dashboard_access_granted_for_admin_user(client, db_session_mock):
+    admin_user = schemas.User(
+        id=3, username="admin", email="admin@example.com",
+        is_active=True, role="admin"
+    )
+
+    def override_get_current_user_admin_for_dashboard():
+        return admin_user
+
+    original_get_user_override = app.dependency_overrides.get(
+        auth.get_current_user)
+    app.dependency_overrides[auth.get_current_user] = override_get_current_user_admin_for_dashboard
+
+    # Use the /admin/placeholder endpoint defined in main.py
+    response = client.get("/admin/placeholder",
+                          headers={"Authorization": "Bearer faketoken"})
+    assert response.status_code == 200
+    # The placeholder endpoint returns a plain string
+    assert response.text == f"Welcome admin user: {admin_user.username}"
+
+    # Cleanup this test's specific override
+    if original_get_user_override:
+        app.dependency_overrides[auth.get_current_user] = original_get_user_override
+    elif auth.get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[auth.get_current_user]

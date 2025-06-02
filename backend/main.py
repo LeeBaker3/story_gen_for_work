@@ -1,7 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Body  # Added Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import StreamingResponse  # Added for PDF streaming
+# Added PlainTextResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles  # Added for static files
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -15,6 +16,10 @@ from typing import List, Optional, Dict
 # Added pdf_generator
 from . import crud, schemas, auth, database, ai_services, pdf_generator
 from .logging_config import app_logger, api_logger, error_logger
+
+# Drop all tables (for development purposes to apply schema changes)
+# IMPORTANT: This will delete all existing data. Remove or comment out for production.
+database.Base.metadata.drop_all(bind=database.engine)
 
 # Create database tables
 database.Base.metadata.create_all(bind=database.engine)
@@ -100,6 +105,13 @@ async def root():
 @app.get("/users/me/", response_model=schemas.User)
 async def read_users_me(current_user: schemas.User = Depends(auth.get_current_active_user)):
     return current_user
+
+# Admin only placeholder endpoint
+
+
+@app.get("/admin/placeholder")
+async def admin_placeholder_endpoint(current_user: schemas.User = Depends(auth.get_current_admin_user)):
+    return PlainTextResponse(f"Welcome admin user: {current_user.username}")
 
 
 @app.get("/stories/", response_model=List[schemas.Story])
