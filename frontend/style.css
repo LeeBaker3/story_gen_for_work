@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
 
+body, html {
+    background: #18191a !important;
+}
+
 body {
     font-family: 'Roboto', sans-serif;
     margin: 0;
@@ -64,6 +68,7 @@ main {
     /* Max width for content */
     margin: 2rem auto;
     /* Center content */
+    background: #18191a !important;
 }
 
 section {
@@ -657,17 +662,231 @@ footer {
     transform: translateY(0);
 }
 
-/* Specific style for admin delete buttons */
-.admin-delete-user {
-    /* Changed from .admin-delete-button to be more specific if needed */
-    background-color: #dc3545;
-    /* Red for delete/danger */
+/* Ensure admin action buttons are always visible and spaced */
+.admin-action-button {
+    display: inline-block;
+    margin-right: 0.5rem;
+    margin-bottom: 0.2rem;
 }
 
-.admin-delete-user:hover {
-    background-color: #c82333;
-    /* Darker red on hover */
+/* Make the edit button blue and visible */
+.admin-edit-user {
+    background-color: #007bff;
+    color: #fff;
 }
 
+.admin-edit-user:hover {
+    background-color: #0056b3;
+}
 
-/* Footer */
+/* Highlight the row being edited */
+#adminUserTable tr.editing {
+    background-color: #222e3c !important;
+    box-shadow: 0 0 8px #007bff44;
+}
+
+/* Admin Tabs */
+.admin-tabs {
+    margin-bottom: 1em;
+}
+
+.admin-tab-button {
+    padding: 0.5em 1.5em;
+    margin-right: 0.5em;
+    border: none;
+    background: #eee;
+    cursor: pointer;
+    border-radius: 4px 4px 0 0;
+    font-weight: bold;
+}
+
+.admin-tab-button.active {
+    background: #d0e6ff;
+    color: #1a3a5e;
+}
+
+.admin-tab-content {
+    border: 1px solid #d0e6ff;
+    border-radius: 0 0 6px 6px;
+    padding: 1em;
+    background: transparent !important;
+}
+
+/* Dynamic Lists */
+.dynamic-list-block {
+    margin-bottom: 2em;
+    padding: 1em;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.dynamic-list-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0.5em;
+}
+
+.dynamic-list-items-table th,
+.dynamic-list-items-table td {
+    border: 1px solid #d0e6ff;
+    padding: 0.4em 0.7em;
+    text-align: left;
+}
+
+.dynamic-list-items-table th {
+    background: #eaf4ff;
+}
+
+.add-dynamic-list-item-btn {
+    margin-top: 0.5em;
+    padding: 0.3em 1em;
+    background: #4a90e2;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.add-dynamic-list-item-btn:hover {
+    background: #357ab8;
+}
+
+.edit-dynamic-list-item-btn,
+.delete-dynamic-list-item-btn {
+    margin-right: 0.5em;
+    padding: 0.2em 0.7em;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.edit-dynamic-list-item-btn {
+    background: #f5c542;
+    color: #333;
+}
+
+.delete-dynamic-list-item-btn {
+    background: #e94e4e;
+    color: #fff;
+}
+
+.delete-dynamic-list-item-btn[disabled] {
+    background: #aaa;
+    cursor: not-allowed;
+}
+
+#adminPanelContainer {
+    background: #23272f !important;
+    color: #e5eaf2 !important;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    padding: 32px 28px;
+    margin-top: 32px;
+}
+
+/* --- FORCE DARK BACKGROUND FOR ADMIN PANEL AND PARENT CONTAINERS --- */
+body, html {
+    background: #18191a !important;
+}
+main {
+    background: #18191a !important;
+}
+#adminPanelContainer {
+    background: #23272f !important;
+    color: #e5eaf2 !important;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    padding: 32px 28px;
+    margin-top: 32px;
+}
+.admin-tab-content {
+    background: transparent !important;
+}
+
+/* --- UNIFIED ADMIN PANEL STYLES --- */
+#adminUserManagementSection, #adminDynamicListsSection {
+    background: #23272f !important;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    padding: 2rem 2.5rem;
+    margin-bottom: 2rem;
+    color: #e5eaf2;
+    border: 2px solid #4f8cff;
+}
+
+#adminUserTable {
+    background: #23272f !important;
+    color: #e5eaf2 !important;
+    border-radius: 10px;
+    border: 1.5px solid #4f8cff;
+    box-shadow: 0 2px 8px #000a;
+    margin-bottom: 2rem;
+}
+#adminUserTable th {
+    background: #23272f !important;
+    color: #4f8cff !important;
+    font-weight: 700;
+    border-bottom: 2px solid #4f8cff;
+}
+#adminUserTable td {
+    background: #23272f !important;
+    color: #e5eaf2 !important;
+    border-bottom: 1px solid #333;
+}
+#adminUserTable tr:last-child td {
+    border-bottom: none;
+}
+#adminUserTable tbody tr:hover {
+    background: #2c3440 !important;
+}
+
+/* Dynamic List Table Format */
+.dynamic-list-block {
+    background: #23272f !important;
+    border: 2px solid #4f8cff !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px #000a;
+    padding: 2rem 2.5rem !important;
+    margin-bottom: 2rem !important;
+}
+.dynamic-list-items {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+}
+.dynamic-list-items li {
+    display: table-row;
+    background: #23272f !important;
+    color: #e5eaf2 !important;
+    border-bottom: 1px solid #333;
+}
+.dynamic-list-items li:last-child {
+    border-bottom: none;
+}
+.dynamic-list-items span {
+    display: table-cell;
+    padding: 0.75rem 0.5rem;
+    vertical-align: middle;
+}
+.dynamic-list-items .admin-action-button {
+    margin-right: 0.5rem;
+}
+.dynamic-list-items .admin-action-button:last-child {
+    margin-right: 0;
+}
+.dynamic-list-items div {
+    display: table-cell;
+    text-align: right;
+    vertical-align: middle;
+}
+.add-dynamic-list-item-btn {
+    background: #4f8cff !important;
+    color: #fff !important;
+    border-radius: 5px;
+    font-weight: 600;
+    margin-top: 1rem;
+}
+.add-dynamic-list-item-btn:hover {
+    background: #2563eb !important;
+}
