@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from . import schemas
-from .database import User, Story, Page
+# Added DynamicList, DynamicListItem
+from .database import User, Story, Page, DynamicList, DynamicListItem
 from passlib.context import CryptContext
 from typing import List, Optional
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
@@ -319,3 +320,185 @@ def delete_user_admin(db: Session, user_id: int) -> bool:
         db.commit()
         return True
     return False
+
+# --- Dynamic List CRUD (FR-ADM-05) ---
+
+
+def create_dynamic_list(db: Session, dynamic_list: schemas.DynamicListCreate) -> DynamicList:
+    db_dynamic_list = DynamicList(**dynamic_list.model_dump())
+    db.add(db_dynamic_list)
+    db.commit()
+    db.refresh(db_dynamic_list)
+    return db_dynamic_list
+
+
+def get_dynamic_list(db: Session, list_name: str) -> Optional[DynamicList]:
+    return db.query(DynamicList).filter(DynamicList.list_name == list_name).first()
+
+
+def get_dynamic_lists(db: Session, skip: int = 0, limit: int = 100) -> List[DynamicList]:
+    # Added order_by
+    return db.query(DynamicList).order_by(DynamicList.list_name).offset(skip).limit(limit).all()
+
+
+def update_dynamic_list(db: Session, list_name: str, dynamic_list_update: schemas.DynamicListUpdate) -> Optional[DynamicList]:
+    db_list = get_dynamic_list(db, list_name)
+    if db_list:
+        update_data = dynamic_list_update.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_list, key, value)
+        db_list.updated_at = datetime.now(
+            timezone.utc)  # Ensure timezone aware
+        db.commit()
+        db.refresh(db_list)
+    return db_list
+
+
+def delete_dynamic_list(db: Session, list_name: str) -> bool:
+    db_list = get_dynamic_list(db, list_name)
+    if db_list:
+        # Cascading delete for items is handled by the relationship setting in database.py
+        db.delete(db_list)
+        db.commit()
+        return True
+    return False
+
+# --- Dynamic List Item CRUD (FR-ADM-05) ---
+
+
+def create_dynamic_list_item(db: Session, item: schemas.DynamicListItemCreate) -> DynamicListItem:
+    parent_list = get_dynamic_list(db, item.list_name)
+    if not parent_list:
+        # For API layer to catch
+        raise ValueError(f"Parent list '{item.list_name}' does not exist.")
+
+    # Check for uniqueness of item_value within the list
+    existing_item = db.query(DynamicListItem).filter(
+        DynamicListItem.list_name == item.list_name,
+        DynamicListItem.item_value == item.item_value
+    ).first()
+    if existing_item:
+        raise ValueError(
+            f"Item with value '{item.item_value}' already exists in list '{item.list_name}'.")
+
+    db_item = DynamicListItem(**item.model_dump())
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+def get_dynamic_list_item(db: Session, item_id: int) -> Optional[DynamicListItem]:
+    return db.query(DynamicListItem).filter(DynamicListItem.id == item_id).first()
+
+
+def get_dynamic_list_items(
+    db: Session,
+    list_name: str,
+    skip: int = 0,
+    limit: int = 100,
+    only_active: Optional[bool] = None
+) -> List[DynamicListItem]:
+    query = db.query(DynamicListItem).filter(
+        DynamicListItem.list_name == list_name)
+    if only_active is not None:
+        query = query.filter(DynamicListItem.is_active == only_active)
+    return query.order_by(DynamicListItem.sort_order, DynamicListItem.item_label).offset(skip).limit(limit).all()
+
+
+def get_active_dynamic_list_items(db: Session, list_name: str, skip: int = 0, limit: int = 1000) -> List[DynamicListItem]:
+    """Gets all active items for a list, sorted."""
+    return db.query(DynamicListItem)\
+        .filter(DynamicListItem.list_name == list_name, DynamicListItem.is_active == True)\
+        .order_by(DynamicListItem.sort_order, DynamicListItem.item_label)\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+
+
+def update_dynamic_list_item(db: Session, item_id: int, item_update: schemas.DynamicListItemUpdate) -> Optional[DynamicListItem]:
+    db_item = get_dynamic_list_item(db, item_id)
+    if db_item:
+        update_data = item_update.model_dump(exclude_unset=True)
+
+        # If item_value is being changed, check for uniqueness within the list
+        if 'item_value' in update_data and update_data['item_value'] != db_item.item_value:
+            existing_item_with_new_value = db.query(DynamicListItem).filter(
+                DynamicListItem.list_name == db_item.list_name,
+                DynamicListItem.item_value == update_data['item_value'],
+                DynamicListItem.id != item_id  # Exclude the current item itself
+            ).first()
+            if existing_item_with_new_value:
+                raise ValueError(
+                    f"Another item with value '{update_data['item_value']}' already exists in list '{db_item.list_name}'.")
+
+        for key, value in update_data.items():
+            setattr(db_item, key, value)
+        db_item.updated_at = datetime.now(
+            timezone.utc)  # Ensure timezone aware
+        db.commit()
+        db.refresh(db_item)
+    return db_item
+
+
+def delete_dynamic_list_item(db: Session, item_id: int) -> bool:
+    # Before deleting, ensure it's not in use (this check might be better at API layer for user feedback)
+    # if is_dynamic_list_item_in_use(db, item_id):
+    #     raise ValueError("Cannot delete item: it is currently in use.") # Or return a specific status/message
+
+    db_item = get_dynamic_list_item(db, item_id)
+    if db_item:
+        db.delete(db_item)
+        db.commit()
+        return True
+    return False
+
+
+def is_dynamic_list_item_in_use(db: Session, item_id: int) -> dict:
+    """
+    Checks if a DynamicListItem is referenced in any existing Stories.
+    Returns a dictionary: {"is_in_use": bool, "details": List[str]}
+    """
+    item = get_dynamic_list_item(db, item_id)
+    if not item:
+        return {"is_in_use": False, "details": ["Item not found."]}
+
+    usage_details = []
+
+    # Check usage in Story.genre
+    if item.list_name == "genres":  # Assuming "genres" is a dynamic list name
+        stories_using_genre = db.query(Story.id, Story.title).filter(
+            Story.genre == item.item_value).all()
+        if stories_using_genre:
+            usage_details.append(
+                f"Genre in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_genre])}")
+
+    # Check usage in Story.image_style
+    if item.list_name == "image_styles":  # Assuming "image_styles" is a dynamic list name
+        stories_using_style = db.query(Story.id, Story.title).filter(
+            Story.image_style == item.item_value).all()
+        if stories_using_style:
+            usage_details.append(
+                f"Image Style in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_style])}")
+
+    # Check usage in Story.word_to_picture_ratio (if managed by dynamic list)
+    # This field currently uses an Enum, but if it were dynamic:
+    # if item.list_name == "word_to_picture_ratios":
+    #     stories_using_ratio = db.query(Story.id, Story.title).filter(Story.word_to_picture_ratio == item.item_value).all()
+    #     if stories_using_ratio:
+    #         usage_details.append(f"Word/Picture Ratio in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_ratio])}")
+
+    # Check usage in Story.text_density (if managed by dynamic list)
+    # This field currently uses an Enum, but if it were dynamic:
+    # if item.list_name == "text_densities":
+    #     stories_using_density = db.query(Story.id, Story.title).filter(Story.text_density == item.item_value).all()
+    #     if stories_using_density:
+    #         usage_details.append(f"Text Density in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_density])}")
+
+    # Add more checks here for other dynamic lists and how they are used in the Story model
+    # or other models (e.g., User preferences, Application settings if they use dynamic list items).
+
+    if usage_details:
+        return {"is_in_use": True, "details": usage_details}
+
+    return {"is_in_use": False, "details": ["Not found in any known story fields."]}

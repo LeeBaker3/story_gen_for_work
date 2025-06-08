@@ -90,17 +90,27 @@ def test_create_user_with_defaults(db_session: Session):
 
 def test_create_user_with_specific_role_and_status(db_session: Session):
     user_in = schemas.UserCreate(
-        username="adminuser",
+        username="adminuser_specific_test",  # Changed username for clarity
         password="adminpassword",
-        email="admin@example.com",
+        email="testadmin@example.com",  # Changed email to avoid conflict
         role="admin",
         is_active=False
     )
     db_user = crud.create_user(db=db_session, user=user_in)
-    assert db_user.username == "adminuser"
-    assert db_user.email == "admin@example.com"
+    assert db_user is not None
+    assert db_user.username == "adminuser_specific_test"
+    assert db_user.email == "testadmin@example.com"
     assert db_user.role == "admin"
     assert db_user.is_active is False
+
+    # Verify password (optional, as it's hashed)
+    # This requires a verification function, e.g., from auth.py if available and suitable
+    # from backend.auth import verify_password # Assuming verify_password exists
+    # assert verify_password("adminpassword", db_user.hashed_password)
+
+    # Clean up (optional, if db is not reset per test, but db_session fixture should handle it)
+    # db_session.delete(db_user)
+    # db_session.commit()
 
 
 def test_create_user_role_is_none(db_session: Session):

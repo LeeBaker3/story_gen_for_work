@@ -3,6 +3,11 @@ from typing import List, Optional
 from enum import Enum  # Added for StoryGenre
 from datetime import datetime  # Ensure datetime is imported
 
+
+class UserRole(str, Enum):  # Added UserRole Enum
+    ADMIN = "admin"
+    USER = "user"
+
 # Story Genre Enum (New)
 
 
@@ -183,3 +188,58 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+# Dynamic List Schemas (FR-ADM-05)
+
+
+class DynamicListItemBase(BaseModel):
+    item_value: str
+    item_label: str
+    is_active: bool = True
+    sort_order: int = 0
+    # For things like OpenAI style mapping
+    additional_config: Optional[dict] = None
+
+
+class DynamicListItemCreate(DynamicListItemBase):
+    list_name: str  # Must be provided when creating an item
+
+
+class DynamicListItemUpdate(BaseModel):
+    item_value: Optional[str] = None
+    item_label: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+    additional_config: Optional[dict] = None
+
+
+class DynamicListItem(DynamicListItemBase):
+    id: int
+    list_name: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DynamicListBase(BaseModel):
+    list_name: str
+    description: Optional[str] = None
+
+
+class DynamicListCreate(DynamicListBase):
+    pass
+
+
+class DynamicListUpdate(BaseModel):
+    description: Optional[str] = None
+
+
+class DynamicList(DynamicListBase):
+    # items: List[DynamicListItem] = [] # This is loaded via a separate endpoint if needed for full detail
+    created_at: datetime
+    updated_at: datetime
+    # Include items when fetching a full list object
+    items: List[DynamicListItem] = []
+
+    model_config = ConfigDict(from_attributes=True)
