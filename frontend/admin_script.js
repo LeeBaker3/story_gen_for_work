@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function loadAdminSection(sectionName) {
-        displayAdminMessage(""); 
+        displayAdminMessage("");
         adminViewPanel.innerHTML = `<p>Loading ${sectionName.replace(/-/g, ' ')}...</p>`;
 
         switch (sectionName) {
@@ -151,13 +151,13 @@ document.addEventListener("DOMContentLoaded", function () {
             <div id="dynamic-list-items-container" class="table-responsive-container"></div>
         </div>
     `;
-    
+
         setupDynamicContentTabs();
-        await populateListsForManagement(); 
+        await populateListsForManagement();
         await populateListSelectorForItems();
 
         document.getElementById('add-new-list-btn').addEventListener('click', () => showAddEditDynamicListModal());
-        
+
         const addNewItemBtn = document.getElementById('add-new-item-btn');
         addNewItemBtn.addEventListener('click', () => {
             const selectedList = document.getElementById('select-list-for-items').value;
@@ -264,12 +264,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('dynamic-list-items-container');
         container.innerHTML = `<p>Loading items for <strong>${escapeHTML(listName)}</strong>...</p>`;
         try {
-            const items = await apiRequest(`/admin/dynamic-lists/${listName}/items?only_active=false`, "GET");
+            // Fetch all items by omitting the only_active parameter
+            const items = await apiRequest(`/admin/dynamic-lists/${listName}/items`, "GET");
+            
+            console.log(`Response for ${listName} items:`, items); 
+
             if (!items || items.length === 0) {
                 container.innerHTML = `<p>No items found for list: ${escapeHTML(listName)}. You can add one!</p>`;
                 return;
             }
-            
+
             let tableHTML = `
                 <table>
                     <thead>
@@ -287,12 +291,12 @@ document.addEventListener("DOMContentLoaded", function () {
                     <tbody>
             `;
 
-            const usagePromises = items.map(item => 
+            const usagePromises = items.map(item =>
                 apiRequest(`/admin/dynamic-list-items/${item.id}/in-use`, "GET")
                     .then(usageInfo => ({ itemId: item.id, isInUse: usageInfo.is_in_use }))
                     .catch(err => {
                         console.warn(`Could not fetch in-use status for item ${item.id}`, err);
-                        return { itemId: item.id, isInUse: false }; 
+                        return { itemId: item.id, isInUse: false };
                     })
             );
             const usageResults = await Promise.all(usagePromises);
@@ -333,7 +337,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // MODAL for Dynamic List (Add/Edit)
-    function showAddEditDynamicListModal(listName = null) { 
+    function showAddEditDynamicListModal(listName = null) {
         const isEdit = listName !== null;
         let currentDescription = '';
 
@@ -379,7 +383,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     document.getElementById(modalId).remove();
                 });
         }
-        
+
         form.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
@@ -390,7 +394,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             try {
                 if (isEdit) {
-                    await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description }); 
+                    await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description });
                     displayAdminMessage(`List '${listName}' updated.`, 'success');
                 } else {
                     await apiRequest("/admin/dynamic-lists/", 'POST', data);
@@ -431,21 +435,21 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
         }
-        
+
         const itemValue = isEdit ? itemData.item_value : '';
         const itemLabel = isEdit ? itemData.item_label : '';
         const isActive = isEdit ? itemData.is_active : true;
         const sortOrder = isEdit ? itemData.sort_order : 0;
-        
+
         let additionalConfigString = '';
-        let openAIStyle = 'vivid'; 
+        let openAIStyle = 'vivid';
         if (isEdit && itemData.additional_config) {
             if (currentListName === 'image_styles' && itemData.additional_config.openai_style) {
                 openAIStyle = itemData.additional_config.openai_style;
-                const otherConfigs = {...itemData.additional_config};
+                const otherConfigs = { ...itemData.additional_config };
                 delete otherConfigs.openai_style;
                 if (Object.keys(otherConfigs).length > 0) {
-                     additionalConfigString = JSON.stringify(otherConfigs, null, 2);
+                    additionalConfigString = JSON.stringify(otherConfigs, null, 2);
                 }
             } else {
                 additionalConfigString = JSON.stringify(itemData.additional_config, null, 2);
@@ -515,14 +519,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
             } else {
-                additionalConfig = {}; 
+                additionalConfig = {};
             }
 
             if (currentListName === 'image_styles') {
                 additionalConfig.openai_style = formData.get('item_openai_style');
             }
             if (Object.keys(additionalConfig).length === 0) {
-                additionalConfig = null; 
+                additionalConfig = null;
             }
 
             const data = {
@@ -557,11 +561,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Expose functions to global scope for inline onclick handlers
     window.adminScript = {
-        toggleUserStatus: async function(userId, newStatus) {
+        toggleUserStatus: async function (userId, newStatus) {
             try {
                 await apiRequest(`/admin/users/${userId}/status`, 'PUT', { is_active: newStatus });
                 displayAdminMessage(`User ${userId} status updated successfully.`, 'success');
-                loadUserManagement(); 
+                loadUserManagement();
             } catch (error) {
                 console.error("Error updating user status:", error);
                 displayAdminMessage("Failed to update user status: " + error.message, "error");
@@ -576,12 +580,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 await apiRequest(`/admin/dynamic-lists/${listName}`, 'DELETE');
                 displayAdminMessage(`List '${listName}' deleted successfully.`, 'success');
                 await populateListsForManagement();
-                await populateListSelectorForItems(); 
-                document.getElementById('dynamic-list-items-container').innerHTML = ''; 
+                await populateListSelectorForItems();
+                document.getElementById('dynamic-list-items-container').innerHTML = '';
                 const listSelector = document.getElementById('select-list-for-items');
                 if (listSelector.value === listName) {
                     listSelector.value = "";
-                     document.getElementById('add-new-item-btn').style.display = 'none';
+                    document.getElementById('add-new-item-btn').style.display = 'none';
                 }
             } catch (error) {
                 console.error("Error deleting list:", error);
@@ -600,10 +604,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 if (!confirm(`Are you sure you want to delete item ID ${itemId}? This cannot be undone.`)) return;
-                
+
                 await apiRequest(`/admin/dynamic-list-items/${itemId}`, 'DELETE');
                 displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success');
-                await loadItemsForSelectedList(listName); 
+                await loadItemsForSelectedList(listName);
             } catch (error) {
                 console.error("Error deleting item:", error);
                 displayAdminMessage("Failed to delete item: " + error.message, "error");
@@ -616,18 +620,18 @@ document.addEventListener("DOMContentLoaded", function () {
                     displayAdminMessage(`Error: Item ID ${itemId} not found for status update.`, "error");
                     return;
                 }
-                
+
                 const updatePayload = {
                     item_value: itemData.item_value,
                     item_label: itemData.item_label,
                     sort_order: itemData.sort_order,
-                    is_active: newStatus, 
+                    is_active: newStatus,
                     additional_config: itemData.additional_config
                 };
 
                 await apiRequest(`/admin/dynamic-list-items/${itemId}`, 'PUT', updatePayload);
                 displayAdminMessage(`Item ID ${itemId} status updated to ${newStatus ? 'active' : 'inactive'}.`, 'success');
-                await loadItemsForSelectedList(listName); 
+                await loadItemsForSelectedList(listName);
             } catch (error) {
                 console.error("Error updating item status:", error);
                 displayAdminMessage("Failed to update item status: " + error.message, "error");
@@ -665,7 +669,7 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     }
 
     const response = await fetch(API_BASE_URL + endpoint, config);
-    
+
     if (!response.ok) {
         let errorData;
         try {
@@ -675,27 +679,27 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
             errorData = { message: response.statusText, detail: response.statusText };
         }
         const error = new Error(`API request failed: ${response.status}`);
-        error.response = errorData; 
+        error.response = errorData;
         error.status = response.status;
         console.error(`API Error (${method} ${endpoint}):`, errorData);
         throw error;
     }
     if (response.status === 204) { // No Content
-        return null; 
+        return null;
     }
     return response.json();
 }
 
-function displayAdminMessage(message, type = 'info') { 
+function displayAdminMessage(message, type = 'info') {
     const messageArea = document.getElementById('admin-message-area');
     if (!messageArea) return;
     messageArea.textContent = message;
-    
+
     messageArea.className = 'admin-message'; // Reset classes
     if (type) {
         messageArea.classList.add(type); // e.g., 'success', 'error', 'warning', 'info'
     }
-    
+
     // Ensure styles for these classes are in admin_style.css
     // .admin-message.success { color: green; background-color: #e6ffed; border: 1px solid #b7ebc9; }
     // .admin-message.error { color: red; background-color: #ffe6e6; border: 1px solid #ffb3b3; }

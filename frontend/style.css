@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
 
-body, html {
+body,
+html {
     background: #18191a !important;
 }
 
@@ -76,10 +77,11 @@ nav button:active {
     text-decoration: none;
     cursor: pointer;
     transition: background 0.2s, color 0.2s;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
-.nav-button:hover, .nav-button:focus {
+.nav-button:hover,
+.nav-button:focus {
     background-color: #0056b3;
     color: #fff !important;
     text-decoration: none;
@@ -803,35 +805,40 @@ footer {
     background: #23272f !important;
     color: #e5eaf2 !important;
     border-radius: 16px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
     padding: 32px 28px;
     margin-top: 32px;
 }
 
 /* --- FORCE DARK BACKGROUND FOR ADMIN PANEL AND PARENT CONTAINERS --- */
-body, html {
+body,
+html {
     background: #18191a !important;
 }
+
 main {
     background: #18191a !important;
 }
+
 #adminPanelContainer {
     background: #23272f !important;
     color: #e5eaf2 !important;
     border-radius: 16px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
     padding: 32px 28px;
     margin-top: 32px;
 }
+
 .admin-tab-content {
     background: transparent !important;
 }
 
 /* --- UNIFIED ADMIN PANEL STYLES --- */
-#adminUserManagementSection, #adminDynamicListsSection {
+#adminUserManagementSection,
+#adminDynamicListsSection {
     background: #23272f !important;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
     padding: 2rem 2.5rem;
     margin-bottom: 2rem;
     color: #e5eaf2;
@@ -846,20 +853,24 @@ main {
     box-shadow: 0 2px 8px #000a;
     margin-bottom: 2rem;
 }
+
 #adminUserTable th {
     background: #23272f !important;
     color: #4f8cff !important;
     font-weight: 700;
     border-bottom: 2px solid #4f8cff;
 }
+
 #adminUserTable td {
     background: #23272f !important;
     color: #e5eaf2 !important;
     border-bottom: 1px solid #333;
 }
+
 #adminUserTable tr:last-child td {
     border-bottom: none;
 }
+
 #adminUserTable tbody tr:hover {
     background: #2c3440 !important;
 }
@@ -873,36 +884,44 @@ main {
     padding: 2rem 2.5rem !important;
     margin-bottom: 2rem !important;
 }
+
 .dynamic-list-items {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 1rem;
 }
+
 .dynamic-list-items li {
     display: table-row;
     background: #23272f !important;
     color: #e5eaf2 !important;
     border-bottom: 1px solid #333;
 }
+
 .dynamic-list-items li:last-child {
     border-bottom: none;
 }
+
 .dynamic-list-items span {
     display: table-cell;
     padding: 0.75rem 0.5rem;
     vertical-align: middle;
 }
+
 .dynamic-list-items .admin-action-button {
     margin-right: 0.5rem;
 }
+
 .dynamic-list-items .admin-action-button:last-child {
     margin-right: 0;
 }
+
 .dynamic-list-items div {
     display: table-cell;
     text-align: right;
     vertical-align: middle;
 }
+
 .add-dynamic-list-item-btn {
     background: #4f8cff !important;
     color: #fff !important;

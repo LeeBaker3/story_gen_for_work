@@ -1862,8 +1862,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 const prevRole = row.getAttribute("data-orig-role") || "";
                 const prevActive = row.getAttribute("data-orig-active") === "true";
                 // Get new values
-               
-               
+
+
                 const emailInput = row.children[2].querySelector("input");
                 const email = emailInput ? emailInput.value.trim() : prevEmail;
                 const roleSelect = row.children[3].querySelector("select");
@@ -2021,7 +2021,7 @@ document.addEventListener("DOMContentLoaded", function () {
             lists.forEach(list => loadDynamicListItems(list.list_name));
             // Attach add item event listeners
             document.querySelectorAll('.add-dynamic-list-item-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
+                btn.addEventListener('click', function () {
                     const listName = btn.getAttribute('data-list');
                     showAddItemInput(listName);
                 });
@@ -2070,7 +2070,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- ADMIN: SHOW ADD ITEM INPUT ---
-    window.showAddItemInput = function(listName) {
+    window.showAddItemInput = function (listName) {
         const itemsDiv = document.getElementById(`dynamicListItems_${listName}`);
         if (!itemsDiv || itemsDiv.querySelector('.add-item-form')) return;
         const form = document.createElement('form');
@@ -2078,7 +2078,7 @@ document.addEventListener("DOMContentLoaded", function () {
         form.innerHTML = `<input type="text" placeholder="Item Value" style="padding:6px 10px;border-radius:4px;border:1px solid #bbb;width:30%;margin-right:8px;" required> <input type="text" placeholder="Item Label" style="padding:6px 10px;border-radius:4px;border:1px solid #bbb;width:30%;margin-right:8px;" required> <button type="submit" class="action-button-primary">Add</button> <button type="button" class="action-button-secondary cancel-add-item">Cancel</button>`;
         itemsDiv.prepend(form);
         form.querySelector('input').focus();
-        form.addEventListener('submit', async function(e) {
+        form.addEventListener('submit', async function (e) {
             e.preventDefault();
             const value = form.querySelectorAll('input')[0].value.trim();
             const label = form.querySelectorAll('input')[1].value.trim();
@@ -2097,7 +2097,7 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // --- ADMIN: SHOW EDIT ITEM INPUT ---
-    window.showEditItemInput = function(listName, itemId) {
+    window.showEditItemInput = function (listName, itemId) {
         const itemsDiv = document.getElementById(`dynamicListItems_${listName}`);
         if (!itemsDiv) return;
         const li = itemsDiv.querySelector(`button[data-id="${itemId}"]`).closest('li');
@@ -2110,7 +2110,7 @@ document.addEventListener("DOMContentLoaded", function () {
         li.innerHTML = '';
         li.appendChild(form);
         form.querySelector('input').focus();
-        form.addEventListener('submit', async function(e) {
+        form.addEventListener('submit', async function (e) {
             e.preventDefault();
             const value = form.querySelectorAll('input')[0].value.trim();
             const label = form.querySelectorAll('input')[1].value.trim();
@@ -2129,7 +2129,7 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // --- ADMIN: DELETE DYNAMIC LIST ITEM ---
-    window.deleteDynamicListItem = async function(listName, itemId) {
+    window.deleteDynamicListItem = async function (listName, itemId) {
         if (!confirm('Are you sure you want to delete this item?')) return;
         try {
             await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE');
@@ -2141,7 +2141,7 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     // --- ADMIN: TOGGLE ACTIVE/INACTIVE ---
-    window.toggleDynamicListItemActive = async function(listName, itemId, isActive) {
+    window.toggleDynamicListItemActive = async function (listName, itemId, isActive) {
         try {
             await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'PUT', { is_active: !isActive });
             displayMessage('Item status updated!', 'success');

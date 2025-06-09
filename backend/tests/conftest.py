@@ -11,8 +11,8 @@ import pytest
 # Ensure all models are imported so Base.metadata is fully populated
 # User here is the model
 from backend.database import Base, User, Story, Page, DynamicList, DynamicListItem
-from backend.database import get_db as database_get_db # Alias for database.get_db
-from backend.main import app, get_db as main_get_db # Import app's get_db and alias
+from backend.database import get_db as database_get_db  # Alias for database.get_db
+from backend.main import app, get_db as main_get_db  # Import app's get_db and alias
 import sys  # Add sys import
 from pathlib import Path  # Add pathlib import
 
@@ -151,7 +151,8 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     """
     # Store original overrides to restore them later
     original_main_get_db_override = app.dependency_overrides.get(main_get_db)
-    original_database_get_db_override = app.dependency_overrides.get(database_get_db)
+    original_database_get_db_override = app.dependency_overrides.get(
+        database_get_db)
 
     # Override main.get_db (used by routes in main.py like the public one)
     app.dependency_overrides[main_get_db] = lambda: db_session
