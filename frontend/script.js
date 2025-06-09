@@ -1045,23 +1045,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    if (navAdminPanel) {
-        navAdminPanel.addEventListener("click", async () => {
-            showSection(adminPanelContainer);
-            if (typeof loadAdminUsers === "function" && adminUserTableBody) {
-                await loadAdminUsers();
-            } else {
-                console.error(
-                    "Admin Panel Nav: loadAdminUsers function or adminUserTableBody element not available.",
-                );
-                displayMessage(
-                    "Could not load admin panel content. See console.",
-                    "error",
-                );
-            }
-        });
-    }
-
     // --- AUTHENTICATION ---
     signupForm.addEventListener("submit", async (e) => {
         e.preventDefault();

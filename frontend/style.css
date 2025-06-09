@@ -62,6 +62,29 @@ nav button:active {
     transform: translateY(0);
 }
 
+/* Navigation button style for both <button> and <a> */
+.nav-button {
+    display: inline-block;
+    background-color: #007bff;
+    color: #fff !important;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 8px 10px 0;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.nav-button:hover, .nav-button:focus {
+    background-color: #0056b3;
+    color: #fff !important;
+    text-decoration: none;
+}
+
 main {
     padding: 2rem;
     max-width: 900px;
@@ -886,7 +909,4 @@ main {
     border-radius: 5px;
     font-weight: 600;
     margin-top: 1rem;
-}
-.add-dynamic-list-item-btn:hover {
-    background: #2563eb !important;
 }

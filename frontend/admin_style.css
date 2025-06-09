@@ -70,6 +70,31 @@ header nav a:hover {
     margin-bottom: 15px;
     border-radius: 4px;
     text-align: center;
+    display: none; /* Hidden by default, shown by JS */
+}
+
+.admin-message.success {
+    color: #155724;
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+
+.admin-message.error {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+}
+
+.admin-message.warning {
+    color: #856404;
+    background-color: #fff3cd;
+    border-color: #ffeeba;
+}
+
+.admin-message.info {
+    color: #0c5460;
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
 }
 
 /* Styling for tables that might be used in admin sections */
@@ -90,9 +115,16 @@ th {
     background-color: #f0f0f0;
 }
 
+/* Ensure responsive container for tables */
+.table-responsive-container {
+    overflow-x: auto;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
 button,
 .admin-button {
-    background-color: #007bff;
+    background-color: #007bff; /* Primary Blue */
     color: white;
     border: none;
     padding: 8px 15px;
@@ -108,7 +140,7 @@ button:hover,
 }
 
 .admin-button-danger {
-    background-color: #dc3545;
+    background-color: #dc3545; /* Danger Red */
 }
 
 .admin-button-danger:hover {
@@ -116,13 +148,58 @@ button:hover,
 }
 
 .admin-button-secondary {
-    background-color: #6c757d;
+    background-color: #6c757d; /* Secondary Gray */
 }
 
 .admin-button-secondary:hover {
     background-color: #545b62;
 }
 
+.admin-button-success { /* Added for activate buttons */
+    background-color: #28a745; 
+}
+
+.admin-button-success:hover {
+    background-color: #1e7e34;
+}
+
+
+/* Tabs for Dynamic Content */
+.tabs {
+    display: flex;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #ddd;
+}
+
+.tab-link {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border: none;
+    background-color: transparent;
+    margin-right: 5px;
+    border-bottom: 2px solid transparent; /* For active state */
+    color: #007bff; /* Match primary button color for consistency */
+}
+
+.tab-link:hover {
+    background-color: #f0f0f0;
+    border-bottom-color: #ccc; /* Subtle hover effect */
+}
+
+.tab-link.active {
+    font-weight: bold;
+    border-bottom-color: #007bff; /* Active tab indicator */
+    color: #0056b3; /* Darker shade for active tab text */
+}
+
+.tab-content {
+    display: none; /* Hidden by default */
+    padding-top: 1rem;
+}
+
+.tab-content.active {
+    display: block; /* Show active tab content */
+}
 
 footer {
     text-align: center;
