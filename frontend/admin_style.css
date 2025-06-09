@@ -1,51 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
 /* Admin Panel Specific Styles - admin_style.css */
-body {
-    font-family: sans-serif;
+body,
+html {
+    /* Ensure html also gets the base styles */
+    background-color: #121212 !important;
+    /* Dark background from main app */
+    color: #E0E0E0;
+    /* Light text from main app */
+    font-family: 'Roboto', sans-serif;
     margin: 0;
-    background-color: #f4f4f4;
-    color: #333;
+    line-height: 1.6;
 }
 
 header {
-    background-color: #333;
-    color: white;
-    padding: 1rem;
+    background-color: #1F1F1F;
+    /* Slightly lighter dark shade for header from main app */
+    color: #FFFFFF;
+    padding: 1.5rem 1rem;
+    /* Match main app header padding */
     text-align: center;
+    /* Ensures h1 inside is centered if it's block/inline-block */
+    border-bottom: 1px solid #333;
+    /* Match main app header border */
 }
 
+/* This rule targets the h1 specifically in admin.html if it's inside the header */
+header h1 {
+    margin: 0;
+    font-size: 2rem;
+    /* Match main app header h1 */
+    font-weight: 700;
+    /* Match main app header h1 */
+    color: #FFFFFF;
+    /* Ensure title is white */
+    text-align: center;
+    /* Explicitly center the Admin Panel title */
+}
+
+
 header nav a {
-    color: white;
+    color: #E0E0E0;
+    /* Lighter text for nav links */
     margin: 0 15px;
     text-decoration: none;
+    font-weight: 400;
 }
 
 header nav a:hover {
     text-decoration: underline;
+    color: #00A9FF;
+    /* Accent color on hover */
 }
 
 #admin-main-content {
     /* display: flex; */
     /* REMOVED to allow message area to be block above */
     margin-top: 1rem;
+    /* Keep some space from header */
     position: relative;
-    /* Added for potential future absolute positioning within */
 }
 
-/* NEW: Wrapper for sidebar and view panel to sit below the message area */
 #admin-content-wrapper {
     display: flex;
 }
 
 #admin-sidebar {
-    width: 200px;
-    background-color: #e9e9e9;
-    padding: 1rem;
-    min-height: calc(100vh - 100px);
-    /* Adjust based on header/footer */
+    width: 230px;
+    /* Slightly wider for better spacing */
+    background-color: #1F1F1F;
+    /* Darker background for sidebar */
+    padding: 1.5rem;
+    min-height: calc(100vh - 93px);
+    /* Adjusted for header height (padding + font size approx) */
+    border-right: 1px solid #333;
 }
 
 #admin-sidebar h2 {
+    /* "Navigation" title */
     margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+    color: #00A9FF;
+    /* Accent color for sidebar heading */
+    text-align: left;
+    /* Keep sidebar navigation title left-aligned */
 }
 
 #admin-sidebar ul {
@@ -55,78 +94,127 @@ header nav a:hover {
 
 #admin-sidebar ul li a {
     display: block;
-    padding: 0.5rem 0;
-    color: #333;
+    padding: 0.75rem 0.5rem;
+    /* Increased padding */
+    color: #B0B0B0;
+    /* Lighter grey for links */
     text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-#admin-sidebar ul li a:hover,
+#admin-sidebar ul li a:hover {
+    font-weight: normal;
+    /* Keep font weight consistent */
+    color: #FFFFFF;
+    background-color: #2a2a2a;
+    /* Subtle hover background */
+}
+
 #admin-sidebar ul li a.active {
     font-weight: bold;
-    color: #007bff;
+    color: #00A9FF;
+    /* Accent color for active link */
+    background-color: #2c3e50;
+    /* Darker blueish background for active */
 }
 
 #admin-view-panel {
     flex-grow: 1;
-    padding: 1rem;
-    background-color: white;
-    /* margin-left: 1rem; */
-    /* Removed, handled by flex container */
+    padding: 2rem;
+    /* Increased padding */
+    background-color: #18191a;
+    /* Main content area background from main app */
 }
+
+/* Styling for h1 titles within the admin view panel (e.g., "User Management") */
+#admin-view-panel>h1 {
+    /* Target direct children h1 of the view panel */
+    color: #00A9FF;
+    /* Accent color for headings */
+    text-align: center;
+    /* Center align titles */
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-size: 1.8rem;
+    /* Match main app section h2 */
+}
+
+/* General styling for other headings if needed, can be more specific */
+#admin-view-panel h2,
+#admin-view-panel h3 {
+    color: #E0E0E0;
+    /* Default light text for other subheadings */
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
 
 #admin-message-area {
-    padding: 10px;
-    margin: 0 1rem 15px 1rem;
-    /* Adjusted margin to fit within main content area */
-    border-radius: 4px;
+    padding: 1rem;
+    /* Increased padding */
+    margin: 0 1rem 1.5rem 1rem;
+    /* (top right bottom left) */
+    border-radius: 5px;
+    /* Match main app */
     text-align: center;
     display: none;
-    /* Hidden by default, shown by JS */
-    /* Removed width: 200px; and float: left; */
-    /* position: fixed; top: 70px; left: 1rem; z-index: 1001; */
-    /* Alternative fixed positioning */
+    border: 1px solid transparent;
+    /* Base border */
+    font-weight: 500;
 }
 
+/* Dark theme friendly message colors */
 .admin-message.success {
-    color: #155724;
-    background-color: #d4edda;
-    border-color: #c3e6cb;
+    color: #d4edda;
+    background-color: #1e4620;
+    border-color: #2a6430;
 }
 
 .admin-message.error {
-    color: #721c24;
-    background-color: #f8d7da;
-    border-color: #f5c6cb;
+    color: #f8d7da;
+    background-color: #5a1d1d;
+    border-color: #721c24;
 }
 
 .admin-message.warning {
-    color: #856404;
-    background-color: #fff3cd;
-    border-color: #ffeeba;
+    color: #fff3cd;
+    background-color: #5e4d03;
+    border-color: #856404;
 }
 
 .admin-message.info {
-    color: #0c5460;
-    background-color: #d1ecf1;
-    border-color: #bee5eb;
+    color: #d1ecf1;
+    background-color: #0f3c4d;
+    border-color: #0c5460;
 }
 
-/* Styling for tables that might be used in admin sections */
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 1.5rem;
+    /* Increased margin */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    /* Slightly more pronounced shadow for dark theme */
+    color: #E0E0E0;
+    /* Light text for table content */
 }
 
 th,
 td {
-    border: 1px solid #ddd;
-    padding: 8px;
+    border: 1px solid #333;
+    /* Darker border */
+    padding: 0.75rem;
+    /* Increased padding */
     text-align: left;
 }
 
 th {
-    background-color: #f0f0f0;
+    background-color: #1F1F1F;
+    /* Dark background for table headers */
+    color: #00A9FF;
+    /* Accent color for table header text */
+    font-weight: 700;
 }
 
 /* Ensure responsive container for tables */
@@ -134,24 +222,39 @@ th {
     overflow-x: auto;
     margin-top: 1rem;
     margin-bottom: 1rem;
+    background-color: #1F1F1F;
+    /* Add background to container if table is smaller */
+    border-radius: 5px;
+    padding: 0.5rem;
+    /* Add some padding around the table within container */
 }
 
 button,
 .admin-button {
     background-color: #007bff;
-    /* Primary Blue */
-    color: white;
+    /* Primary Blue from main app */
+    color: #FFFFFF;
     border: none;
-    padding: 8px 15px;
-    border-radius: 4px;
+    padding: 0.75rem 1.5rem;
+    /* Match main app button padding */
+    border-radius: 5px;
+    /* Match main app button radius */
     cursor: pointer;
     font-size: 0.9rem;
+    /* Match main app button font size */
+    font-weight: 700;
+    /* Match main app button font weight */
     margin: 5px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    /* Match main app */
 }
 
 button:hover,
 .admin-button:hover {
     background-color: #0056b3;
+    /* Darker shade on hover from main app */
+    transform: translateY(-2px);
+    /* Match main app */
 }
 
 .admin-button-danger {
@@ -161,6 +264,7 @@ button:hover,
 
 .admin-button-danger:hover {
     background-color: #c82333;
+    transform: translateY(-2px);
 }
 
 .admin-button-secondary {
@@ -170,55 +274,67 @@ button:hover,
 
 .admin-button-secondary:hover {
     background-color: #545b62;
+    transform: translateY(-2px);
 }
 
 .admin-button-success {
-    /* Added for activate buttons */
     background-color: #28a745;
+    /* Green for success/add */
 }
 
 .admin-button-success:hover {
     background-color: #1e7e34;
+    transform: translateY(-2px);
 }
 
 
 /* Tabs for Dynamic Content */
 .tabs {
     display: flex;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid #ddd;
+    margin-bottom: 1.5rem;
+    /* Increased margin */
+    border-bottom: 1px solid #333;
+    /* Darker border */
 }
 
 .tab-link {
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1.25rem;
+    /* Adjusted padding */
     cursor: pointer;
     border: none;
     background-color: transparent;
-    margin-right: 5px;
-    border-bottom: 2px solid transparent;
-    /* For active state */
-    color: #007bff;
-    /* Match primary button color for consistency */
+    margin-right: 8px;
+    /* Increased margin */
+    border-bottom: 3px solid transparent;
+    /* Thicker border for active state */
+    color: #B0B0B0;
+    /* Lighter grey for tab links */
+    font-weight: 500;
+    transition: color 0.2s ease, border-bottom-color 0.2s ease;
 }
 
 .tab-link:hover {
-    background-color: #f0f0f0;
-    border-bottom-color: #ccc;
-    /* Subtle hover effect */
+    background-color: transparent;
+    /* No background change on hover */
+    border-bottom-color: #444;
+    /* Subtle hover effect for border */
+    color: #E0E0E0;
+    /* Lighter text on hover */
 }
 
 .tab-link.active {
     font-weight: bold;
-    border-bottom-color: #007bff;
-    /* Active tab indicator */
-    color: #0056b3;
-    /* Darker shade for active tab text */
+    border-bottom-color: #00A9FF;
+    /* Accent color for active tab indicator */
+    color: #00A9FF;
+    /* Accent color for active tab text */
 }
 
 .tab-content {
     display: none;
     /* Hidden by default */
-    padding-top: 1rem;
+    padding-top: 1.5rem;
+    /* Increased padding */
 }
 
 .tab-content.active {
@@ -227,21 +343,30 @@ button:hover,
 }
 
 footer {
+    /* Assuming a footer might be added, styled like main app */
     text-align: center;
-    padding: 1rem;
-    background-color: #333;
-    color: white;
+    padding: 1.5rem 1rem;
+    background-color: #1F1F1F;
+    color: #B0B0B0;
+    /* Lighter grey for footer text */
     margin-top: 2rem;
+    border-top: 1px solid #333;
 }
 
 /* Basic form styling */
-.admin-form .form-group {
-    margin-bottom: 1rem;
-}
-
 .admin-form label {
+    /* More specific selector */
     display: block;
     margin-bottom: 0.5rem;
+    font-weight: 700;
+    color: #B0B0B0;
+    /* Lighter grey for labels from main app */
+}
+
+.admin-form .form-group {
+    /* Ensure form groups have spacing */
+    margin-bottom: 1.2rem;
+    /* Match main app form gap */
 }
 
 .admin-form input[type="text"],
@@ -251,59 +376,156 @@ footer {
 .admin-form select,
 .admin-form textarea {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 0.8rem;
+    /* Match main app input padding */
+    border: 1px solid #333;
+    /* Darker border */
+    background-color: #2A2A2A;
+    /* Dark input background from main app */
+    color: #E0E0E0;
+    /* Light input text from main app */
+    border-radius: 5px;
+    /* Match main app input radius */
     box-sizing: border-box;
-    /* Important for width 100% */
+    font-size: 1rem;
+}
+
+.admin-form input[type="text"]:focus,
+.admin-form input[type="number"]:focus,
+.admin-form input[type="email"]:focus,
+.admin-form input[type="password"]:focus,
+.admin-form select:focus,
+.admin-form textarea:focus {
+    outline: none;
+    border-color: #007bff;
+    /* Highlight focus from main app */
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    /* Match main app focus shadow */
 }
 
 .admin-form textarea {
-    min-height: 80px;
+    min-height: 100px;
+    /* Slightly taller */
 }
+
+/* Checkbox styling for dark theme */
+.admin-form input[type="checkbox"] {
+    /* Scoped to admin forms */
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+    padding: 8px;
+    /* Adjust size */
+    border-radius: 3px;
+    display: inline-block;
+    position: relative;
+    vertical-align: middle;
+    cursor: pointer;
+    margin-right: 8px;
+    /* Space between checkbox and label text */
+}
+
+.admin-form input[type="checkbox"]:checked {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+.admin-form input[type="checkbox"]:checked::after {
+    content: '\2714';
+    /* Checkmark character */
+    font-size: 12px;
+    /* Adjust size of checkmark */
+    color: white;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    line-height: 1;
+    /* Ensure checkmark is centered */
+}
+
+.admin-form input[type="checkbox"]:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Ensure labels next to checkboxes are aligned well */
+.admin-form .form-group-checkbox {
+    display: flex;
+    align-items: center;
+}
+
+.admin-form .form-group-checkbox label {
+    margin-bottom: 0;
+    /* Remove bottom margin for inline label */
+    font-weight: normal;
+    /* Standard weight for checkbox labels */
+}
+
 
 .modal {
     display: none;
-    /* Hidden by default */
     position: fixed;
-    /* Stay in place */
     z-index: 1000;
-    /* Sit on top */
     left: 0;
     top: 0;
     width: 100%;
-    /* Full width */
     height: 100%;
-    /* Full height */
     overflow: auto;
-    /* Enable scroll if needed */
-    background-color: rgba(0, 0, 0, 0.4);
-    /* Black w/ opacity */
+    background-color: rgba(0, 0, 0, 0.7);
+    /* Darker overlay */
 }
 
 .modal-content {
-    background-color: #fefefe;
-    margin: 15% auto;
-    /* 15% from the top and centered */
-    padding: 20px;
-    border: 1px solid #888;
-    width: 80%;
-    /* Could be more or less, depending on screen size */
-    max-width: 500px;
-    border-radius: 5px;
+    background-color: #1F1F1F;
+    /* Dark background for modal */
+    margin: 10% auto;
+    /* Adjusted margin for better centering */
+    padding: 25px;
+    /* Increased padding */
+    border: 1px solid #333;
+    /* Darker border */
+    width: 90%;
+    /* Responsive width */
+    max-width: 550px;
+    /* Slightly wider max-width */
+    border-radius: 8px;
+    /* More rounded corners */
     position: relative;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    /* Stronger shadow */
+    color: #E0E0E0;
+    /* Light text for modal content */
+}
+
+.modal-content h2 {
+    /* Style for modal titles */
+    color: #00A9FF;
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    font-size: 1.6rem;
 }
 
 .close-button {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
+    color: #B0B0B0;
+    /* Lighter grey for close button */
+    position: absolute;
+    /* Position relative to modal-content */
+    top: 15px;
+    right: 20px;
+    font-size: 32px;
+    /* Larger close button */
     font-weight: bold;
+    line-height: 1;
+    transition: color 0.2s ease;
 }
 
 .close-button:hover,
 .close-button:focus {
-    color: black;
+    color: #FFFFFF;
+    /* White on hover/focus */
     text-decoration: none;
     cursor: pointer;
 }
