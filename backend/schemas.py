@@ -171,12 +171,13 @@ class UserInDB(User):
 # For Admin User Management
 
 
-class UserStatusUpdate(BaseModel):
-    is_active: bool
+class UserUpdateAdmin(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None  # Should be 'user' or 'admin'
+    is_active: Optional[bool] = None
 
-
-class UserRoleUpdate(BaseModel):
-    role: str
+    model_config = ConfigDict(from_attributes=True)
 
 # Token Schemas for Authentication
 

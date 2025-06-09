@@ -112,16 +112,16 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
         users.forEach(user => {
             tableHTML += `
-                <tr data-user-id="${user.id}">
+                <tr data-user-id=\"${user.id}\">
                     <td>${user.id}</td>
                     <td>${escapeHTML(user.username)}</td>
                     <td>${escapeHTML(user.email || 'N/A')}</td>
                     <td>${escapeHTML(user.role)}</td>
                     <td>
-                        <input type="checkbox" class="user-active-checkbox" data-user-id="${user.id}" ${user.is_active ? 'checked' : ''} title="${user.is_active ? 'User is active' : 'User is inactive'}">
+                        <input type=\"checkbox\" class=\"user-active-checkbox\" data-user-id=\"${user.id}\" ${user.is_active ? 'checked' : ''} title=\"${user.is_active ? 'User is active' : 'User is inactive'}\">
                     </td>
                     <td>
-                        <button class="admin-button-secondary user-edit-btn" data-user-id="${user.id}">Edit Role</button>
+                        <button class=\"admin-button-secondary user-edit-details-btn\" data-user-id=\"${user.id}\">Edit User</button>
                         </td>
                 </tr>
             `;
@@ -134,22 +134,111 @@ document.addEventListener("DOMContentLoaded", function () {
             checkbox.addEventListener('change', (event) => {
                 const userId = event.target.dataset.userId;
                 const isActive = event.target.checked;
-                window.adminScript.toggleUserStatus(parseInt(userId), isActive);
+                // Directly call the PUT /admin/users/{user_id} endpoint for status change
+                window.adminScript.updateUser(parseInt(userId), { is_active: isActive }, 'status');
             });
         });
 
-        container.querySelectorAll('.user-edit-btn').forEach(button => {
+        container.querySelectorAll('.user-edit-details-btn').forEach(button => {
             button.addEventListener('click', (event) => {
-                const userId = event.target.dataset.userId;
-                // Placeholder for edit role functionality - for now, just log
-                console.log(`Edit role for user ID: ${userId}`);
-                // Later, this could open a modal to change the user's role.
-                // For now, the request was about the active checkbox and item edit mode.
-                // We can implement showEditUserRoleModal(userId) here if needed.
-                displayAdminMessage(`Role editing for user ${userId} not fully implemented yet.`, 'info');
-
+                const userId = parseInt(event.target.dataset.userId);
+                showEditUserDetailsModal(userId);
             });
         });
+    }
+
+    // --- MODAL for User Details Edit ---
+    async function showEditUserDetailsModal(userId) {
+        const modalId = 'editUserDetailsModal';
+        const existingModal = document.getElementById(modalId);
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        let currentUserData;
+        try {
+            // Fetch the specific user's current details.
+            // Assuming /admin/users/ returns a list, find the user.
+            // A direct /admin/users/{user_id} GET endpoint would be more efficient if available.
+            const users = await apiRequest("/admin/users/", "GET");
+            currentUserData = users.find(u => u.id === userId);
+
+            if (!currentUserData) {
+                // As a fallback, try fetching the single user if the list doesn't contain them or direct endpoint exists
+                try {
+                    currentUserData = await apiRequest(`/admin/users/${userId}`, "GET");
+                } catch (singleFetchError) {
+                    console.warn(`Could not fetch user ${userId} individually, relying on list or failing. Error: ${singleFetchError.message}`);
+                }
+            }
+
+            if (!currentUserData) {
+                displayAdminMessage(`User with ID ${userId} not found for editing.`, "error");
+                return;
+            }
+        } catch (error) {
+            displayAdminMessage("Error fetching user data for editing: " + error.message, "error");
+            return;
+        }
+
+        const { username, email, role, is_active } = currentUserData;
+
+        let modalHTML = `
+            <div id=\"${modalId}\" class=\"modal\" style=\"display:block;\">
+                <div class=\"modal-content\">
+                    <span class=\"close-button\" onclick=\"document.getElementById(\'${modalId}\').remove();\">&times;</span>
+                    <h2>Edit User Details: ${escapeHTML(username)} (ID: ${userId})</h2>
+                    <form id=\"editUserDetailsForm\" class=\"admin-form\">
+                        <input type=\"hidden\" name=\"user_id\" value=\"${userId}\">
+                        <div class=\"form-group\">
+                            <label for=\"edit_username\">Username:</label>
+                            <input type=\"text\" id=\"edit_username\" name=\"username\" value=\"${escapeHTML(username)}\" class=\"admin-form-control\" required>
+                        </div>
+                        <div class=\"form-group\">
+                            <label for=\"edit_email\">Email:</label>
+                            <input type=\"email\" id=\"edit_email\" name=\"email\" value=\"${escapeHTML(email || '')}\" class=\"admin-form-control\">
+                        </div>
+                        <div class=\"form-group\">
+                            <label for=\"edit_user_role\">Role:</label>
+                            <select id=\"edit_user_role\" name=\"role\" class=\"admin-form-control\">
+                                <option value=\"user\" ${role === 'user' ? 'selected' : ''}>User</option>
+                                <option value=\"admin\" ${role === 'admin' ? 'selected' : ''}>Admin</option>
+                            </select>
+                        </div>
+                        <div class=\"form-group\">
+                            <label for=\"edit_is_active\" style=\"display: inline-block; margin-right: 10px;\">Is Active:</label>
+                            <input type=\"checkbox\" id=\"edit_is_active\" name=\"is_active\" ${is_active ? 'checked' : ''} style=\"width: auto; vertical-align: middle;\">
+                        </div>
+                        <button type=\"submit\" class=\"admin-button\">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        const form = document.getElementById('editUserDetailsForm');
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const updatedUsername = formData.get('username');
+            const updatedEmail = formData.get('email');
+            const updatedRole = formData.get('role');
+            const updatedIsActive = document.getElementById('edit_is_active').checked;
+
+            const payload = {};
+            if (updatedUsername !== username) payload.username = updatedUsername;
+            if (updatedEmail !== (email || '')) payload.email = updatedEmail; // Handle null email from server
+            if (updatedRole !== role) payload.role = updatedRole;
+            if (updatedIsActive !== is_active) payload.is_active = updatedIsActive;
+
+            if (Object.keys(payload).length === 0) {
+                displayAdminMessage("No changes detected.", "info");
+                document.getElementById(modalId).remove();
+                return;
+            }
+
+            window.adminScript.updateUser(userId, payload, 'details');
+        };
     }
 
     // --- Dynamic Content Management Section ---
@@ -585,31 +674,48 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Expose functions to global scope for inline onclick handlers
     window.adminScript = {
-        toggleUserStatus: async function (userId, newStatus) {
-            const checkbox = document.querySelector(`.user-active-checkbox[data-user-id="${userId}"]`);
+        updateUser: async function (userId, payload, updateType = 'details') { // updateType can be 'status' or 'details'
+            const modalId = 'editUserDetailsModal'; // Assuming this is the relevant modal for details
             try {
-                await apiRequest(`/admin/users/${userId}/status`, 'PUT', { is_active: newStatus });
-                displayAdminMessage(`User ${userId} status updated successfully.`, 'success');
-                // No need to call loadUserManagement() if the UI is already visually correct
-                // and the server confirmed the change.
-                // If newStatus is false, the checkbox is already unchecked.
-                // If newStatus is true, the checkbox is already checked.
-            } catch (error) {
-                console.error("Error updating user status:", error);
-                let userMessage = "Failed to update user status: " + error.message;
-                if (error.status === 403 && error.response && error.response.detail === "Admins cannot deactivate their own account.") {
-                    userMessage = "Error: Admins cannot deactivate their own account.";
-                    // Revert the checkbox state if it was an attempt to deactivate self
-                    if (checkbox && !newStatus) { // If tried to uncheck (deactivate)
-                        checkbox.checked = true;
-                    }
-                } else {
-                    // For other errors, also revert if possible, assuming the operation failed.
-                    if (checkbox) {
-                        checkbox.checked = !newStatus; // Revert to previous state
-                    }
+                await apiRequest(`/admin/users/${userId}`, 'PUT', payload);
+                displayAdminMessage(`User ${userId} ${updateType} updated successfully.`, 'success');
+                if (updateType === 'details' && document.getElementById(modalId)) {
+                    document.getElementById(modalId).remove();
                 }
-                displayAdminMessage(userMessage, "error");
+                await loadUserManagement(); // Refresh the user table
+            } catch (error) {
+                console.error(`Error updating user ${updateType}:`, error);
+                let errorDetail = error.message;
+                if (error.response && error.response.detail) {
+                    errorDetail = typeof error.response.detail === 'string' ? error.response.detail : JSON.stringify(error.response.detail);
+                }
+
+                if (updateType === 'details' && document.getElementById(modalId)) {
+                    const form = document.getElementById('editUserDetailsForm');
+                    const modalContent = form.closest('.modal-content');
+                    let errorDiv = modalContent.querySelector('.modal-error-message');
+                    if (!errorDiv) {
+                        errorDiv = document.createElement('div');
+                        errorDiv.className = 'modal-error-message admin-message error';
+                        errorDiv.style.marginTop = '10px';
+                        form.appendChild(errorDiv);
+                    }
+                    errorDiv.textContent = `Error: ${errorDetail}`;
+                } else if (updateType === 'status') { // Error for status toggle from checkbox
+                    displayAdminMessage(`Error updating status: ${errorDetail}`, "error");
+                    // Revert checkbox if it was a self-deactivation attempt or other critical error
+                    if (error.status === 403 && errorDetail.includes("deactivate their own account")) {
+                        // Checkbox already reverted by the browser, or we can force it
+                        const checkbox = document.querySelector(`.user-active-checkbox[data-user-id=\"${userId}\"]`);
+                        if (checkbox) checkbox.checked = true; // Force re-check
+                    } else if (error.status === 403 && errorDetail.includes("sole admin")) {
+                        const checkbox = document.querySelector(`.user-active-checkbox[data-user-id=\"${userId}\"]`);
+                        if (checkbox) checkbox.checked = true; // Revert if trying to deactivate sole admin
+                    }
+                    // For other errors, the table refresh will show the actual state.
+                } else {
+                    displayAdminMessage(`Error updating user: ${errorDetail}`, "error");
+                }
             }
         },
         editDynamicList: async (listName) => {

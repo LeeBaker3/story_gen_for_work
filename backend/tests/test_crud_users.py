@@ -127,3 +127,100 @@ def test_create_user_is_active_is_none(db_session: Session):
         username="testactiveNone", password="password", is_active=None)
     db_user = crud.create_user(db=db_session, user=user_in)
     assert db_user.is_active is True
+
+# Test Admin Update User
+
+
+def test_admin_update_user_all_fields(db_session: Session):
+    # 1. Create a user to update
+    user_to_update = crud.create_user(db_session, schemas.UserCreate(
+        username="user_to_update_all",
+        password="initialpass",
+        email="initial@example.com",
+        role="user",
+        is_active=True
+    ))
+    assert user_to_update is not None
+
+    # 2. Define the updates
+    update_data = schemas.UserUpdateAdmin(
+        username="updated_username_all",
+        email="updated_all@example.com",
+        role="admin",
+        is_active=False
+    )
+
+    # 3. Perform the update
+    updated_user = crud.admin_update_user(
+        db_session, user_id=user_to_update.id, user_update=update_data)
+    assert updated_user is not None
+
+    # 4. Verify the changes
+    assert updated_user.username == "updated_username_all"
+    assert updated_user.email == "updated_all@example.com"
+    assert updated_user.role == "admin"
+    assert updated_user.is_active is False
+    # Password should not be changed by this function
+    assert crud.pwd_context.verify("initialpass", updated_user.hashed_password)
+
+
+def test_admin_update_user_partial_fields(db_session: Session):
+    # 1. Create a user
+    user_to_update = crud.create_user(db_session, schemas.UserCreate(
+        username="user_to_update_partial",
+        password="initialpass_partial",
+        email="initial_partial@example.com",
+        role="user",
+        is_active=True
+    ))
+    assert user_to_update is not None
+
+    # 2. Define partial updates (only email and role)
+    update_data = schemas.UserUpdateAdmin(
+        email="updated_partial@example.com",
+        role="admin"
+    )
+
+    # 3. Perform the update
+    updated_user = crud.admin_update_user(
+        db_session, user_id=user_to_update.id, user_update=update_data)
+    assert updated_user is not None
+
+    # 4. Verify changes and non-changes
+    assert updated_user.username == "user_to_update_partial"  # Should not change
+    assert updated_user.email == "updated_partial@example.com"  # Should change
+    assert updated_user.role == "admin"  # Should change
+    assert updated_user.is_active is True  # Should not change
+
+
+def test_admin_update_user_no_changes(db_session: Session):
+    # 1. Create a user
+    user_to_update = crud.create_user(db_session, schemas.UserCreate(
+        username="user_no_change",
+        password="password_no_change",
+        email="no_change@example.com",
+        role="user",
+        is_active=True
+    ))
+    assert user_to_update is not None
+
+    # 2. Define an empty update (no fields provided)
+    update_data = schemas.UserUpdateAdmin()
+
+    # 3. Perform the update
+    updated_user = crud.admin_update_user(
+        db_session, user_id=user_to_update.id, user_update=update_data)
+    assert updated_user is not None
+
+    # 4. Verify no fields changed
+    assert updated_user.username == "user_no_change"
+    assert updated_user.email == "no_change@example.com"
+    assert updated_user.role == "user"
+    assert updated_user.is_active is True
+
+
+def test_admin_update_non_existent_user(db_session: Session):
+    update_data = schemas.UserUpdateAdmin(username="ghost_user")
+    updated_user = crud.admin_update_user(
+        db_session, user_id=999999, user_update=update_data)
+    assert updated_user is None

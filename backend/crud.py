@@ -37,6 +37,31 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.refresh(db_user)
     return db_user
 
+# Admin CRUD for Users
+
+
+def admin_get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    return db.query(User).offset(skip).limit(limit).all()
+
+
+def admin_update_user(db: Session, user_id: int, user_update: schemas.UserUpdateAdmin) -> Optional[User]:
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        return None
+
+    update_data = user_update.model_dump(exclude_unset=True)
+
+    for key, value in update_data.items():
+        # Basic validation for role, can be enhanced with Enums or more specific checks
+        if key == "role" and value not in ["user", "admin"]:
+            # Skip invalid role update or raise an error
+            continue
+        setattr(db_user, key, value)
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
 # Story CRUD
 # Modified to handle StoryCreate which doesn't have a title initially
 # The title will be populated after AI generation
