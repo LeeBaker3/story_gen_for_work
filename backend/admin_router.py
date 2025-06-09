@@ -214,4 +214,92 @@ def check_dynamic_list_item_in_use(
             status_code=404, detail=f"Dynamic list item with ID {item_id} not found"
         )
     in_use = crud.is_dynamic_list_item_in_use(db, item_id)
-    return {"in_use": in_use}
+    # Adjust based on what crud.is_dynamic_list_item_in_use returns.
+    # If it returns a dict like {"is_in_use": bool, "details": ...}, then just return that.
+    # If it returns a simple boolean:
+    if isinstance(in_use, bool):
+        return {"is_in_use": in_use}
+    elif isinstance(in_use, dict) and "is_in_use" in in_use:
+        # Return only the boolean for this specific endpoint contract if needed
+        return {"is_in_use": in_use["is_in_use"]}
+
+    # Fallback or error if the return type is unexpected
+    error_logger.error(
+        f"Unexpected return type from crud.is_dynamic_list_item_in_use for item {item_id}: {type(in_use)}")
+    raise HTTPException(
+        status_code=500, detail="Error checking item usage status.")
+
+
+# --- Admin User Management Router ---
+admin_user_router = APIRouter(
+    prefix="/admin/users",
+    tags=["Admin - User Management"],
+    dependencies=[Depends(get_current_admin_user)]
+)
+
+
+@admin_user_router.get("/", response_model=List[schemas.User])
+def admin_read_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve all users.
+    """
+    users = crud.get_users_admin(db, skip=skip, limit=limit)
+    return users
+
+
+@admin_user_router.put("/{user_id}/status", response_model=schemas.User)
+async def admin_update_user_status(
+    user_id: int,
+    # Assumes schemas.UserStatusUpdate exists
+    status_update: schemas.UserStatusUpdate,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user)
+):
+    """
+    Update a user's active status.
+    Prevents an admin from deactivating their own account.
+    """
+    app_logger.info(
+        f"Admin {current_admin.username} attempting to update status for user ID {user_id} to {status_update.is_active}")
+    if user_id == current_admin.id and not status_update.is_active:
+        error_logger.warning(
+            f"Admin {current_admin.username} (ID: {current_admin.id}) attempted to deactivate themselves.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins cannot deactivate their own account."
+        )
+
+    target_user = crud.get_user_admin(db, user_id=user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with ID {user_id} not found")
+
+    # Optional: Add a check to prevent deactivating the last active admin if you wish
+    # if target_user.role == "admin" and not status_update.is_active:
+    #     active_admins = db.query(database.User).filter(database.User.role == "admin", database.User.is_active == True).count()
+    #     if active_admins <= 1:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_403_FORBIDDEN,
+    #             detail="Cannot deactivate the last active admin account."
+    #         )
+
+    updated_user = crud.update_user_status_admin(
+        db, user_id=user_id, is_active=status_update.is_active)
+    if not updated_user:
+        # This case should ideally be caught by the target_user check, but as a safeguard:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with ID {user_id} not found during status update.")
+
+    app_logger.info(
+        f"User ID {user_id} status updated to {updated_user.is_active} by admin {current_admin.username}")
+    return updated_user
+
+# You will need to include admin_user_router in your main FastAPI app (e.g., in main.py)
+# Example for main.py:
+# from backend.admin_router import router as admin_dynamic_lists_router, admin_user_router
+# app.include_router(admin_dynamic_lists_router)
+# app.include_router(admin_user_router)

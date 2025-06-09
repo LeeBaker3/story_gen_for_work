@@ -16,24 +16,27 @@
     </header>
 
     <main id="admin-main-content">
-        <h1>Admin Panel</h1>
         <div id="admin-message-area"></div>
 
-        <aside id="admin-sidebar">
-            <h2>Navigation</h2>
-            <ul>
-                <li><a href="#" data-section="user-management">User Management</a></li>
-                <li><a href="#" data-section="dynamic-content">Dynamic Content</a></li>
-                <li><a href="#" data-section="content-moderation">Content Moderation</a></li>
-                <li><a href="#" data-section="system-monitoring">System Monitoring</a></li>
-                <li><a href="#" data-section="app-config">Application Config</a></li>
-            </ul>
-        </aside>
+        <h1>Admin Panel</h1>
 
-        <section id="admin-view-panel">
-            <!-- Content for selected admin section will be loaded here -->
-            <p>Select a section from the sidebar to get started.</p>
-        </section>
+        <div id="admin-content-wrapper">
+            <aside id="admin-sidebar">
+                <h2>Navigation</h2>
+                <ul>
+                    <li><a href="#" data-section="user-management">User Management</a></li>
+                    <li><a href="#" data-section="dynamic-content">Dynamic Content</a></li>
+                    <li><a href="#" data-section="content-moderation">Content Moderation</a></li>
+                    <li><a href="#" data-section="system-monitoring">System Monitoring</a></li>
+                    <li><a href="#" data-section="app-config">Application Config</a></li>
+                </ul>
+            </aside>
+
+            <section id="admin-view-panel">
+                <!-- Content for selected admin section will be loaded here -->
+                <p>Select a section from the sidebar to get started.</p>
+            </section>
+        </div>
     </main>
 
     <footer>

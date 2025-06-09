@@ -15,6 +15,8 @@ from typing import List, Optional, Dict
 
 # Added pdf_generator
 from . import crud, schemas, auth, database, ai_services, pdf_generator
+# Import routers from admin_router.py
+from .admin_router import router as admin_dynamic_lists_router, admin_user_router
 from .logging_config import app_logger, api_logger, error_logger
 
 # Drop all tables (for development purposes to apply schema changes)
@@ -25,6 +27,10 @@ from .logging_config import app_logger, api_logger, error_logger
 database.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
+
+# Include routers from admin_router.py
+app.include_router(admin_dynamic_lists_router)
+app.include_router(admin_user_router)
 
 # Mount static files directory for frontend
 # Conditionally mount based on an environment variable
@@ -128,102 +134,13 @@ async def read_users_me(current_user: schemas.User = Depends(auth.get_current_ac
 async def admin_placeholder_endpoint(current_user: schemas.User = Depends(auth.get_current_admin_user)):
     return PlainTextResponse("This is a placeholder for the admin dashboard.", media_type="text/plain")
 
-# --- Admin User Management Endpoints ---
-
-
-@app.get("/admin/users", response_model=List[schemas.User], tags=["Admin - User Management"])
-def list_users_admin(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(
-        auth.get_current_admin_user)  # Ensures only admin access
-):
-    """
-    Admin: Retrieve a list of all users.
-    """
-    users = crud.get_users_admin(db, skip=skip, limit=limit)
-    return users
-
-
-@app.get("/admin/users/{user_id}", response_model=schemas.User, tags=["Admin - User Management"])
-def get_user_admin(
-    user_id: int,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    """
-    Admin: Retrieve a specific user by ID.
-    """
-    db_user = crud.get_user_admin(db, user_id=user_id)
-    if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return db_user
-
-
-@app.put("/admin/users/{user_id}/status", response_model=schemas.User, tags=["Admin - User Management"])
-def set_user_status_admin(
-    user_id: int,
-    user_status: schemas.UserStatusUpdate,  # Pydantic model for is_active
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    """
-    Admin: Activate or deactivate a user.
-    """
-    db_user = crud.update_user_status_admin(
-        db, user_id=user_id, is_active=user_status.is_active)
-    if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return db_user
-
-
-@app.put("/admin/users/{user_id}/role", response_model=schemas.User, tags=["Admin - User Management"])
-def set_user_role_admin(
-    user_id: int,
-    user_role: schemas.UserRoleUpdate,  # Pydantic model for role
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    """
-
-        Admin: Change a user's role (e.g., to 'admin' or 'user').
-    """
-    # Add validation for role if necessary (e.g., ensure it's 'user' or 'admin')
-    if user_role.role not in ["user", "admin"]:
-        raise HTTPException(
-            status_code=400, detail="Invalid role specified. Must be 'user' or 'admin'.")
-
-    # Prevent admin from changing their own role
-    if current_user.id == user_id:
-        raise HTTPException(
-            status_code=403, detail="Admin users cannot change their own role.")
-
-    db_user = crud.update_user_role_admin(
-        db, user_id=user_id, role=user_role.role)
-    if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return db_user
-
-
-@app.delete("/admin/users/{user_id}", status_code=204, tags=["Admin - User Management"])
-def delete_user_admin_endpoint(  # Renamed to avoid conflict with crud function
-    user_id: int,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    """
-    Admin: Delete a user.
-    """
-    if current_user.id == user_id:
-        raise HTTPException(
-            status_code=403, detail="Admin users cannot delete themselves.")
-
-    success = crud.delete_user_admin(db, user_id=user_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="User not found")
-    return JSONResponse(status_code=204, content=None)  # No content for 204
-
+# --- Admin User Management Endpoints --- # REMOVE THIS SECTION
+# All routes previously under "/admin/users" and "/admin/dynamic-lists" and "/admin/dynamic-list-items"
+# are now handled by the routers imported from admin_router.py.
+# The following duplicated definitions will be removed:
+# @app.get("/admin/users", response_model=List[schemas.User], tags=["Admin - User Management"]) ...
+# ... all admin user management endpoints ...
+# @app.delete("/admin/users/{user_id}", status_code=204, tags=["Admin - User Management"]) ...
 
 @app.get("/stories/", response_model=List[schemas.Story])
 async def read_user_stories(
@@ -782,172 +699,15 @@ async def read_story_draft(
     return db_story_draft
 
 
-# --- Admin Endpoints for Dynamic Content Management (FR-ADM-05) ---
+# --- Admin Endpoints for Dynamic Content Management (FR-ADM-05) --- # REMOVE THIS SECTION
+# All routes previously under "/admin/users" and "/admin/dynamic-lists" and "/admin/dynamic-list-items"
+# are now handled by the routers imported from admin_router.py.
+# The following duplicated definitions will be removed:
+# # Dynamic Lists
+# @app.post("/admin/dynamic-lists/", response_model=schemas.DynamicList, tags=["Admin - Dynamic Content"]) ...
+# ... all admin dynamic list and dynamic list item endpoints ...
+# @app.get("/admin/dynamic-list-items/{item_id}/in-use", response_model=dict, tags=["Admin - Dynamic Content"]) ...
 
-# Dynamic Lists
-@app.post("/admin/dynamic-lists/", response_model=schemas.DynamicList, tags=["Admin - Dynamic Content"])
-def create_dynamic_list_endpoint(
-    dynamic_list_create: schemas.DynamicListCreate,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    existing_list = crud.get_dynamic_list(
-        db, list_name=dynamic_list_create.list_name)
-    if existing_list:
-        raise HTTPException(
-            status_code=400, detail=f"Dynamic list '{dynamic_list_create.list_name}' already exists.")
-    return crud.create_dynamic_list(db=db, dynamic_list=dynamic_list_create)
-
-
-@app.get("/admin/dynamic-lists/", response_model=List[schemas.DynamicList], tags=["Admin - Dynamic Content"])
-def get_all_dynamic_lists_endpoint(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    return crud.get_dynamic_lists(db, skip=skip, limit=limit)
-
-
-@app.get("/admin/dynamic-lists/{list_name}", response_model=schemas.DynamicList, tags=["Admin - Dynamic Content"])
-def get_dynamic_list_endpoint(
-    list_name: str,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    db_list = crud.get_dynamic_list(db, list_name=list_name)
-    if not db_list:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list '{list_name}' not found.")
-    return db_list
-
-
-@app.put("/admin/dynamic-lists/{list_name}", response_model=schemas.DynamicList, tags=["Admin - Dynamic Content"])
-def update_dynamic_list_endpoint(
-    list_name: str,
-    dynamic_list_update: schemas.DynamicListUpdate,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    updated_list = crud.update_dynamic_list(
-        db, list_name=list_name, dynamic_list_update=dynamic_list_update)
-    if not updated_list:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list '{list_name}' not found for update.")
-    return updated_list
-
-
-@app.delete("/admin/dynamic-lists/{list_name}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin - Dynamic Content"])
-def delete_dynamic_list_endpoint(
-    list_name: str,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    # Optional: Check if any items in the list are in use before deleting the whole list
-    # This might be complex if lists are long. Simpler to rely on item-level usage checks if an item is deleted.
-    success = crud.delete_dynamic_list(db, list_name=list_name)
-    if not success:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list '{list_name}' not found for deletion.")
-    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
-
-# Dynamic List Items
-
-
-@app.post("/admin/dynamic-list-items/", response_model=schemas.DynamicListItem, tags=["Admin - Dynamic Content"])
-def create_dynamic_list_item_endpoint(
-    item_create: schemas.DynamicListItemCreate,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    try:
-        return crud.create_dynamic_list_item(db=db, item=item_create)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/admin/dynamic-lists/{list_name}/items", response_model=List[schemas.DynamicListItem], tags=["Admin - Dynamic Content"])
-def get_all_items_for_list_endpoint(
-    list_name: str,
-    skip: int = 0,
-    limit: int = 100,
-    only_active: Optional[bool] = None,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    # Check if list exists first
-    db_list = crud.get_dynamic_list(db, list_name=list_name)
-    if not db_list:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list '{list_name}' not found.")
-    return crud.get_dynamic_list_items(db, list_name=list_name, skip=skip, limit=limit, only_active=only_active)
-
-
-@app.get("/admin/dynamic-list-items/{item_id}", response_model=schemas.DynamicListItem, tags=["Admin - Dynamic Content"])
-def get_dynamic_list_item_endpoint(
-    item_id: int,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    db_item = crud.get_dynamic_list_item(db, item_id=item_id)
-    if not db_item:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list item with ID {item_id} not found.")
-    return db_item
-
-
-@app.put("/admin/dynamic-list-items/{item_id}", response_model=schemas.DynamicListItem, tags=["Admin - Dynamic Content"])
-def update_dynamic_list_item_endpoint(
-    item_id: int,
-    item_update: schemas.DynamicListItemUpdate,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    try:
-        updated_item = crud.update_dynamic_list_item(
-            db, item_id=item_id, item_update=item_update)
-        if not updated_item:
-            raise HTTPException(
-                status_code=404, detail=f"Dynamic list item with ID {item_id} not found for update.")
-        return updated_item
-    except ValueError as e:  # Catch uniqueness constraint violations from CRUD
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.delete("/admin/dynamic-list-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin - Dynamic Content"])
-def delete_dynamic_list_item_endpoint(
-    item_id: int,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    # Check usage before deletion
-    usage_info = crud.is_dynamic_list_item_in_use(db, item_id)
-    if usage_info["is_in_use"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete item ID {item_id}. It is currently in use: {'; '.join(usage_info['details'])}"
-        )
-
-    success = crud.delete_dynamic_list_item(db, item_id=item_id)
-    if not success:
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list item with ID {item_id} not found for deletion.")
-    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
-
-
-@app.get("/admin/dynamic-list-items/{item_id}/in-use", response_model=dict, tags=["Admin - Dynamic Content"])
-def check_item_usage_endpoint(
-    item_id: int,
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_admin_user)
-):
-    """Admin: Check if a specific dynamic list item is currently in use."""
-    usage_info = crud.is_dynamic_list_item_in_use(db, item_id)
-    if not crud.get_dynamic_list_item(db, item_id) and not usage_info["is_in_use"]:
-        # If item doesn't exist and usage check also says not found (as it would)
-        raise HTTPException(
-            status_code=404, detail=f"Dynamic list item with ID {item_id} not found.")
-    return usage_info
 
 # --- Public Endpoints for Dynamic Content ---
 

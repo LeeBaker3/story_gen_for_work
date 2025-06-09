@@ -24,8 +24,16 @@ header nav a:hover {
 }
 
 #admin-main-content {
-    display: flex;
+    /* display: flex; */
+    /* REMOVED to allow message area to be block above */
     margin-top: 1rem;
+    position: relative;
+    /* Added for potential future absolute positioning within */
+}
+
+/* NEW: Wrapper for sidebar and view panel to sit below the message area */
+#admin-content-wrapper {
+    display: flex;
 }
 
 #admin-sidebar {
@@ -62,16 +70,21 @@ header nav a:hover {
     flex-grow: 1;
     padding: 1rem;
     background-color: white;
-    margin-left: 1rem;
+    /* margin-left: 1rem; */
+    /* Removed, handled by flex container */
 }
 
 #admin-message-area {
     padding: 10px;
-    margin-bottom: 15px;
+    margin: 0 1rem 15px 1rem;
+    /* Adjusted margin to fit within main content area */
     border-radius: 4px;
     text-align: center;
     display: none;
     /* Hidden by default, shown by JS */
+    /* Removed width: 200px; and float: left; */
+    /* position: fixed; top: 70px; left: 1rem; z-index: 1001; */
+    /* Alternative fixed positioning */
 }
 
 .admin-message.success {

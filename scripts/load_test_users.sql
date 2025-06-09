@@ -2,7 +2,7 @@
 -- Note: Replace '''$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''' with actual bcrypt password hashes.
 
 INSERT INTO users
-    (username, email, password_hash, role, is_active)
+    (username, email, hashed_password, role, is_active)
 VALUES
     ('testuser1', 'testuser1@example.com', '''$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''', 'user', 1),
     ('testuser2', 'testuser2@example.com', '''$2b$12$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''', 'user', 1),
