@@ -341,14 +341,23 @@ document.addEventListener("DOMContentLoaded", function () {
                         <td>${escapeHTML(list.list_name)}</td>
                         <td>${escapeHTML(list.description || 'N/A')}</td>
                         <td>
-                            <button class="admin-button-secondary" onclick="window.adminScript.editDynamicList('${escapeHTML(list.list_name)}')">Edit</button>
-                            <button class="admin-button-danger" onclick="window.adminScript.deleteDynamicList('${escapeHTML(list.list_name)}')">Delete</button>
+                            <button class="admin-button-secondary edit-dynamic-list-btn" data-list-name="${escapeHTML(list.list_name)}">Edit</button>
                         </td>
                     </tr>
                 `;
             });
             tableHTML += '</tbody></table>';
             container.innerHTML = tableHTML;
+
+            // Add event listeners for the new "Edit" buttons
+            container.querySelectorAll('.edit-dynamic-list-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const listName = e.target.dataset.listName;
+                    // This function will now handle edit and delete via modal
+                    showAddEditDynamicListModal(listName); // Corrected: Call local function directly
+                });
+            });
+
         } catch (error) {
             console.error("Error loading dynamic lists:", error);
             container.innerHTML = '<p class="error-message">Failed to load dynamic lists.</p>';
@@ -377,10 +386,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('dynamic-list-items-container');
         container.innerHTML = `<p>Loading items for <strong>${escapeHTML(listName)}</strong>...</p>`;
         try {
-            // Fetch all items by omitting the only_active parameter
             const items = await apiRequest(`/admin/dynamic-lists/${listName}/items`, "GET");
-
-            console.log(`Response for ${listName} items:`, items);
 
             if (!items || items.length === 0) {
                 container.innerHTML = `<p>No items found for list: ${escapeHTML(listName)}. You can add one!</p>`;
@@ -405,43 +411,49 @@ document.addEventListener("DOMContentLoaded", function () {
             `;
 
             const usagePromises = items.map(item =>
-                apiRequest(`/admin/dynamic-list-items/${item.id}/in-use`, "GET")
-                    .then(usageInfo => ({ itemId: item.id, isInUse: usageInfo.is_in_use }))
+                apiRequest(`/admin/dynamic-lists/items/${item.id}/in-use`, "GET") // Corrected path
+                    .then(usageInfo => ({ itemId: item.id, isInUse: usageInfo.is_in_use, details: usageInfo.details }))
                     .catch(err => {
                         console.warn(`Could not fetch in-use status for item ${item.id}`, err);
-                        return { itemId: item.id, isInUse: false };
+                        return { itemId: item.id, isInUse: false, details: [] }; // Default on error
                     })
             );
             const usageResults = await Promise.all(usagePromises);
             const usageMap = usageResults.reduce((map, current) => {
-                map[current.itemId] = current.isInUse;
+                map[current.itemId] = { isInUse: current.isInUse, details: current.details };
                 return map;
             }, {});
 
             items.forEach(item => {
-                const isInUse = usageMap[item.id] || false;
+                const usageInfo = usageMap[item.id] || { isInUse: false, details: [] };
+                const isInUse = usageInfo.isInUse;
                 tableHTML += `
-                    <tr>
+                    <tr data-item-id="${item.id}" data-list-name="${escapeHTML(listName)}">
                         <td>${item.id}</td>
                         <td>${escapeHTML(item.item_value)}</td>
                         <td>${escapeHTML(item.item_label)}</td>
-                        <td>
-                            <button class="admin-button-${item.is_active ? 'danger' : 'success'}" onclick="window.adminScript.toggleDynamicListItemActiveStatus(${item.id}, '${escapeHTML(listName)}', ${!item.is_active})">
-                                ${item.is_active ? 'Deactivate' : 'Activate'}
-                            </button>
-                        </td>
+                        <td>${item.is_active ? 'Yes' : 'No'}</td>
                         <td>${item.sort_order}</td>
-                        <td><input type="checkbox" ${isInUse ? 'checked' : ''} disabled></td>
+                        <td><input type="checkbox" ${isInUse ? 'checked' : ''} disabled title="${isInUse ? 'Item is in use' + (usageInfo.details.length > 0 ? ': ' + usageInfo.details.join(', ') : '') : 'Item is not in use'}"></td>
                         <td>${item.additional_config ? escapeHTML(JSON.stringify(item.additional_config)) : 'N/A'}</td>
-                        <td>
-                            <button class="admin-button-secondary" onclick="window.adminScript.editDynamicListItem(${item.id})">Edit</button>
-                            <button class="admin-button-danger" onclick="window.adminScript.deleteDynamicListItem(${item.id}, '${escapeHTML(listName)}')">Delete</button>
+                        <td class="actions-cell">
+                            <button class="admin-button-secondary edit-dynamic-list-item-btn" data-item-id="${item.id}">Edit</button>
                         </td>
                     </tr>
                 `;
             });
             tableHTML += '</tbody></table>';
             container.innerHTML = tableHTML;
+
+            // Add event listeners for the new "Edit" buttons
+            container.querySelectorAll('.edit-dynamic-list-item-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const itemId = parseInt(e.target.dataset.itemId);
+                    // This function now handles edit, delete, and active status within the modal
+                    window.adminScript.showAddEditDynamicListItemModal(itemId);
+                });
+            });
+
         } catch (error) {
             console.error(`Error loading items for list ${listName}:`, error);
             container.innerHTML = `<p class="error-message">Failed to load items for ${escapeHTML(listName)}.</p>`;
@@ -449,7 +461,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // MODAL for Dynamic List (Add/Edit)
+    // MODAL for Dynamic List (Add/Edit/Delete)
     function showAddEditDynamicListModal(listName = null) {
         const isEdit = listName !== null;
         let currentDescription = '';
@@ -460,21 +472,29 @@ document.addEventListener("DOMContentLoaded", function () {
             existingModal.remove();
         }
 
+        // Modal message area
+        const modalMessageId = `${modalId}-message-area`;
+
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
                     <span class="close-button" onclick="document.getElementById('${modalId}').remove();">&times;</span>
                     <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List</h2>
+                    <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListForm" class="admin-form">
                         <div class="form-group">
                             <label for="dl_list_name">List Name:</label>
-                            <input type="text" id="dl_list_name" name="list_name" value="${isEdit ? escapeHTML(listName) : ''}" ${isEdit ? 'readonly' : 'required'}>
+                            <input type="text" id="dl_list_name" name="list_name" value="${isEdit ? escapeHTML(listName) : ''}" ${isEdit ? 'readonly' : 'required'} class="admin-form-control">
                         </div>
                         <div class="form-group">
                             <label for="dl_description">Description (Optional):</label>
-                            <textarea id="dl_description" name="description">${isEdit ? escapeHTML(currentDescription) : ''}</textarea>
+                            <textarea id="dl_description" name="description" class="admin-form-control">${isEdit ? escapeHTML(currentDescription) : ''}</textarea>
                         </div>
-                        <button type="submit" class="admin-button">${isEdit ? 'Save Changes' : 'Create List'}</button>
+                        <div class="modal-actions">
+                            <button type="submit" id="saveDynamicListButton" class="admin-button">${isEdit ? 'Save Changes' : 'Create List'}</button>
+                            ${isEdit ? `<button type="button" id="deleteDynamicListButton" class="admin-button-danger">Delete List</button>` : ''}
+                            <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" onclick="document.getElementById('${modalId}').remove();">Cancel</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -483,6 +503,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const form = document.getElementById('dynamicListForm');
         const descriptionTextarea = document.getElementById('dl_description');
+        const modalMessageArea = document.getElementById(modalMessageId);
 
         if (isEdit) {
             apiRequest(`/admin/dynamic-lists/${listName}`, "GET")
@@ -492,33 +513,66 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
                 })
                 .catch(err => {
-                    displayAdminMessage('Error fetching list details for editing: ' + err.message, 'error');
-                    document.getElementById(modalId).remove();
+                    displayAdminMessage('Error fetching list details for editing: ' + err.message, 'error', modalId);
+                    // document.getElementById(modalId).remove(); // Keep modal open to show error
                 });
+
+            const deleteButton = document.getElementById('deleteDynamicListButton');
+            if (deleteButton) { // Ensure delete button exists (it should in edit mode)
+                deleteButton.addEventListener('click', async () => {
+                    if (!confirm(`Are you sure you want to delete the list "${escapeHTML(listName)}" and all its items? This cannot be undone.`)) return;
+                    try {
+                        await apiRequest(`/admin/dynamic-lists/${listName}`, 'DELETE');
+                        displayAdminMessage(`List '${escapeHTML(listName)}' deleted successfully.`, 'success'); // Global message
+                        document.getElementById(modalId).remove();
+                        await populateListsForManagement();
+                        await populateListSelectorForItems(); // Refresh selector in items tab
+                        // Clear items view if the deleted list was selected
+                        const listSelector = document.getElementById('select-list-for-items');
+                        if (listSelector.value === listName) {
+                            listSelector.value = "";
+                            document.getElementById('dynamic-list-items-container').innerHTML = '';
+                            document.getElementById('add-new-item-btn').style.display = 'none';
+                        }
+                    } catch (error) {
+                        console.error("Error deleting list:", error);
+                        let errorDetail = error.message;
+                        if (error.response && error.response.detail) {
+                            errorDetail = typeof error.response.detail === 'string' ? error.response.detail : JSON.stringify(error.response.detail);
+                        }
+                        displayAdminMessage(`Failed to delete list: ${errorDetail}`, "error", modalId); // Display error in modal
+                    }
+                });
+            }
         }
 
         form.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
             const data = {
-                list_name: formData.get('list_name'),
+                list_name: formData.get('list_name'), // list_name will be readonly in edit mode
                 description: formData.get('description')
             };
 
             try {
                 if (isEdit) {
+                    // Only send description for update, list_name is not changeable
                     await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description });
-                    displayAdminMessage(`List '${listName}' updated.`, 'success');
+                    displayAdminMessage(`List '${escapeHTML(listName)}' updated.`, 'success'); // Global message
                 } else {
                     await apiRequest("/admin/dynamic-lists/", 'POST', data);
-                    displayAdminMessage(`List '${data.list_name}' created.`, 'success');
+                    displayAdminMessage(`List '${escapeHTML(data.list_name)}' created.`, 'success'); // Global message
                 }
                 document.getElementById(modalId).remove();
                 await populateListsForManagement();
-                await populateListSelectorForItems();
+                await populateListSelectorForItems(); // Refresh selector in items tab
             } catch (error) {
                 console.error("Error saving dynamic list:", error);
-                displayAdminMessage("Error saving list: " + error.message, "error");
+                let errorDetail = error.message;
+                if (error.response && error.response.detail) {
+                    errorDetail = typeof error.response.detail === 'string' ? error.response.detail : JSON.stringify(error.response.detail);
+                }
+                displayAdminMessage(`Error saving list: ${errorDetail}`, "error", modalId); // Display error in modal
             }
         };
     }
@@ -528,6 +582,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const isEdit = itemId !== null;
         let itemData = null;
         let currentListName = listNameForNewItem;
+        let itemInUseDetails = []; // To store in-use details for the modal
 
         const modalId = 'dynamicListItemModal';
         const existingModal = document.getElementById(modalId);
@@ -537,14 +592,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (isEdit) {
             try {
-                itemData = await apiRequest(`/admin/dynamic-list-items/${itemId}`, "GET");
+                itemData = await apiRequest(`/admin/dynamic-lists/items/${itemId}`, "GET");
                 if (!itemData) {
-                    displayAdminMessage(`Error: Item ID ${itemId} not found.`, "error");
+                    displayAdminMessage(`Error: Item ID ${itemId} not found.`, "error", modalId);
                     return;
                 }
                 currentListName = itemData.list_name;
+
+                // Fetch in-use status for the item being edited
+                const usageInfo = await apiRequest(`/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path
+                itemInUseDetails = usageInfo.is_in_use ? usageInfo.details : [];
+
             } catch (error) {
-                displayAdminMessage("Error fetching item details: " + error.message, "error");
+                displayAdminMessage("Error fetching item details: " + error.message, "error", modalId);
                 return;
             }
         }
@@ -555,7 +615,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const sortOrder = isEdit ? itemData.sort_order : 0;
 
         let additionalConfigString = '';
-        let openAIStyle = 'vivid';
+        let openAIStyle = 'vivid'; // Default for image_styles
         if (isEdit && itemData.additional_config) {
             if (currentListName === 'image_styles' && itemData.additional_config.openai_style) {
                 openAIStyle = itemData.additional_config.openai_style;
@@ -567,7 +627,11 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 additionalConfigString = JSON.stringify(itemData.additional_config, null, 2);
             }
+        } else if (!isEdit && currentListName === 'image_styles') {
+            // For new image_styles items, we might want to pre-fill openai_style if not other additional_config
+            // For now, handled by select default.
         }
+
 
         let imageStyleSpecificHTML = '';
         if (currentListName === 'image_styles') {
@@ -582,11 +646,15 @@ document.addEventListener("DOMContentLoaded", function () {
             `;
         }
 
+        // Modal message area
+        const modalMessageId = `${modalId}-message-area`;
+
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
-                    <span class="close-button" onclick="document.getElementById('${modalId}').remove();">&times;</span>
+                    <span class="close-button" onclick="document.getElementById(\'${modalId}\').remove();">&times;</span>
                     <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List Item (for List: ${escapeHTML(currentListName)})</h2>
+                    <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListItemForm" class="admin-form">
                         <input type="hidden" id="item_list_name" name="item_list_name" value="${escapeHTML(currentListName)}">
                         <div class="form-group">
@@ -607,10 +675,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         </div>
                         ${imageStyleSpecificHTML}
                         <div class="form-group">
-                            <label for="item_additional_config">Additional Config (JSON, Optional ${currentListName === 'image_styles' ? ' - OpenAI style handled above' : ''}):</label>
+                            <label for="item_additional_config">Additional Config (JSON, Optional${currentListName === 'image_styles' ? ' - OpenAI style handled above' : ''}):</label>
                             <textarea id="item_additional_config" name="item_additional_config" rows="3" class="admin-form-control">${escapeHTML(additionalConfigString)}</textarea>
                         </div>
-                        <button type="submit" class="admin-button">${isEdit ? 'Save Changes' : 'Create Item'}</button>
+                        <div class="modal-actions">
+                            <button type="submit" id="saveDynamicListItemButton" class="admin-button">${isEdit ? 'Save Changes' : 'Create Item'}</button>
+                            ${isEdit ? `<button type="button" id="deleteDynamicListItemButton" class="admin-button-danger">Delete Item</button>` : ''}
+                            <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" onclick="document.getElementById(\\'${modalId}\\').remove();">Cancel</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -621,26 +693,28 @@ document.addEventListener("DOMContentLoaded", function () {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
-            let additionalConfig = null;
+            let additionalConfig = {}; // Initialize as empty object
             const additionalConfigText = formData.get('item_additional_config').trim();
 
             if (additionalConfigText) {
                 try {
                     additionalConfig = JSON.parse(additionalConfigText);
                 } catch (jsonError) {
-                    displayAdminMessage("Invalid JSON in Additional Config: " + jsonError.message, "error");
+                    displayAdminMessage("Invalid JSON in Additional Config: " + jsonError.message, "error", modalId);
                     return;
                 }
-            } else {
-                additionalConfig = {};
             }
 
             if (currentListName === 'image_styles') {
+                // Ensure openai_style is always included for image_styles, even if other additional_config is empty
                 additionalConfig.openai_style = formData.get('item_openai_style');
             }
+
+            // Set to null if additionalConfig remains empty after potential openai_style addition
             if (Object.keys(additionalConfig).length === 0) {
                 additionalConfig = null;
             }
+
 
             const data = {
                 item_value: formData.get('item_value'),
@@ -652,12 +726,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
             try {
                 if (isEdit) {
-                    await apiRequest(`/admin/dynamic-list-items/${itemId}`, 'PUT', data);
-                    displayAdminMessage(`Item ID ${itemId} updated.`, 'success');
+                    await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'PUT', data); // Corrected path
+                    displayAdminMessage(`Item ID ${itemId} updated.`, 'success'); // Global message
                 } else {
-                    data.list_name = formData.get('item_list_name');
+                    data.list_name = formData.get('item_list_name'); // list_name only needed for POST
                     await apiRequest(`/admin/dynamic-lists/${data.list_name}/items`, 'POST', data);
-                    displayAdminMessage(`New item created in list '${data.list_name}'.`, 'success');
+                    displayAdminMessage(`New item created in list '${data.list_name}'.`, 'success'); // Global message
                 }
                 document.getElementById(modalId).remove();
                 await loadItemsForSelectedList(currentListName);
@@ -667,9 +741,36 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (error.response && error.response.detail) {
                     errorDetail = typeof error.response.detail === 'string' ? error.response.detail : JSON.stringify(error.response.detail);
                 }
-                displayAdminMessage(`Error saving item: ${errorDetail}`, "error");
+                displayAdminMessage(`Error saving item: ${errorDetail}`, "error", modalId); // Display error in modal
             }
         };
+
+        if (isEdit) {
+            const deleteButton = document.getElementById('deleteDynamicListItemBtn');
+            deleteButton.addEventListener('click', async () => {
+                // Use itemInUseDetails fetched when modal opened
+                if (itemInUseDetails.length > 0) {
+                    alert(`Cannot delete item ID ${itemId}. It is currently in use: ${itemInUseDetails.join(', ')}`);
+                    return;
+                }
+
+                if (!confirm(`Are you sure you want to delete item ID ${itemId} ('${escapeHTML(itemValue)}')? This cannot be undone.`)) return;
+
+                try {
+                    await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path
+                    displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success'); // Global message
+                    document.getElementById(modalId).remove();
+                    await loadItemsForSelectedList(currentListName);
+                } catch (error) {
+                    console.error("Error deleting item:", error);
+                    let errorDetail = error.message;
+                    if (error.response && error.response.detail) {
+                        errorDetail = typeof error.response.detail === 'string' ? error.response.detail : JSON.stringify(error.response.detail);
+                    }
+                    displayAdminMessage(`Failed to delete item: ${errorDetail}`, "error", modalId); // Display error in modal
+                }
+            });
+        }
     }
 
     // Expose functions to global scope for inline onclick handlers
@@ -718,33 +819,34 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         },
-        editDynamicList: async (listName) => {
+        editDynamicList: async (listName) => { // This function is now effectively an alias for the modal
             showAddEditDynamicListModal(listName);
         },
-        deleteDynamicList: async (listName) => {
-            if (!confirm(`Are you sure you want to delete the list "${listName}" and all its items? This cannot be undone.`)) return;
-            try {
-                await apiRequest(`/admin/dynamic-lists/${listName}`, 'DELETE');
-                displayAdminMessage(`List '${listName}' deleted successfully.`, 'success');
-                await populateListsForManagement();
-                await populateListSelectorForItems();
-                document.getElementById('dynamic-list-items-container').innerHTML = '';
-                const listSelector = document.getElementById('select-list-for-items');
-                if (listSelector.value === listName) {
-                    listSelector.value = "";
-                    document.getElementById('add-new-item-btn').style.display = 'none';
-                }
-            } catch (error) {
-                console.error("Error deleting list:", error);
-                displayAdminMessage("Failed to delete list: " + error.message, "error");
-            }
+        // Exposing the new modal function for adding/editing items
+        showAddEditDynamicListItemModal: async (itemId = null, listNameForNewItem = null) => {
+            // This is the primary function now for adding AND editing dynamic list items via modal
+            showAddEditDynamicListItemModal(itemId, listNameForNewItem);
         },
-        editDynamicListItem: async (itemId) => {
+        deleteDynamicList: async (listName) => {
+            // This function is effectively replaced by the modal's delete button logic.
+            // Kept for now if any old references exist, but should be deprecated.
+            // UI uses modal.
+            console.warn("deleteDynamicList directly called. UI uses modal. Consider removing this direct exposure if not needed.");
+            // The actual deletion logic is now within showAddEditDynamicListModal
+            // For safety, this could call the modal or just log a warning.
+            // To prevent accidental direct calls from breaking things if old code exists:
+            showAddEditDynamicListModal(listName); // Open the modal which contains the delete logic
+        },
+        editDynamicListItem: async (itemId) => { // This function is now effectively an alias for the modal
             showAddEditDynamicListItemModal(itemId);
         },
         deleteDynamicListItem: async (itemId, listName) => {
+            // This function is effectively replaced by the modal's delete button logic.
+            // Kept for now if any old references exist, but should be deprecated.
+            // For direct deletion (e.g. from console), it might still be useful, but UI uses modal.
+            console.warn("deleteDynamicListItem directly called. UI uses modal. Consider removing this direct exposure if not needed.");
             try {
-                const usageInfo = await apiRequest(`/admin/dynamic-list-items/${itemId}/in-use`, "GET");
+                const usageInfo = await apiRequest(`/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path for safety, though deprecated
                 if (usageInfo.is_in_use) {
                     alert(`Cannot delete item ID ${itemId}. It is currently in use: ${usageInfo.details.join(', ')}`);
                     return;
@@ -752,38 +854,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (!confirm(`Are you sure you want to delete item ID ${itemId}? This cannot be undone.`)) return;
 
-                await apiRequest(`/admin/dynamic-list-items/${itemId}`, 'DELETE');
+                await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path for safety, though deprecated
                 displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success');
-                await loadItemsForSelectedList(listName);
+                await loadItemsForSelectedList(listName); // listName needs to be available
             } catch (error) {
-                console.error("Error deleting item:", error);
+                console.error("Error deleting item directly:", error);
                 displayAdminMessage("Failed to delete item: " + error.message, "error");
             }
-        },
-        toggleDynamicListItemActiveStatus: async (itemId, listName, newStatus) => {
-            try {
-                const itemData = await apiRequest(`/admin/dynamic-list-items/${itemId}`, "GET");
-                if (!itemData) {
-                    displayAdminMessage(`Error: Item ID ${itemId} not found for status update.`, "error");
-                    return;
-                }
-
-                const updatePayload = {
-                    item_value: itemData.item_value,
-                    item_label: itemData.item_label,
-                    sort_order: itemData.sort_order,
-                    is_active: newStatus,
-                    additional_config: itemData.additional_config
-                };
-
-                await apiRequest(`/admin/dynamic-list-items/${itemId}`, 'PUT', updatePayload);
-                displayAdminMessage(`Item ID ${itemId} status updated to ${newStatus ? 'active' : 'inactive'}.`, 'success');
-                await loadItemsForSelectedList(listName);
-            } catch (error) {
-                console.error("Error updating item status:", error);
-                displayAdminMessage("Failed to update item status: " + error.message, "error");
-            }
         }
+        // toggleDynamicListItemActiveStatus is removed as its functionality is in the modal.
     };
 
 }); // End of DOMContentLoaded
@@ -837,22 +916,26 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     return response.json();
 }
 
-function displayAdminMessage(message, type = 'info') {
-    const messageArea = document.getElementById('admin-message-area');
-    if (!messageArea) return;
-    messageArea.textContent = message;
+function displayAdminMessage(message, type = 'info', modalId = null) {
+    let messageArea;
+    if (modalId) {
+        messageArea = document.getElementById(`${modalId}-message-area`);
+    } else {
+        messageArea = document.getElementById('admin-message-area');
+    }
 
+    if (!messageArea) {
+        // Fallback to global message area if modal-specific one isn't found (should not happen if HTML is correct)
+        messageArea = document.getElementById('admin-message-area');
+        if (!messageArea) return; // Still no message area, abort.
+        console.warn("Modal message area not found, using global.");
+    }
+
+    messageArea.textContent = message;
     messageArea.className = 'admin-message'; // Reset classes
     if (type) {
         messageArea.classList.add(type); // e.g., 'success', 'error', 'warning', 'info'
     }
-
-    // Ensure styles for these classes are in admin_style.css
-    // .admin-message.success { color: green; background-color: #e6ffed; border: 1px solid #b7ebc9; }
-    // .admin-message.error { color: red; background-color: #ffe6e6; border: 1px solid #ffb3b3; }
-    // .admin-message.warning { color: orange; background-color: #fff4e6; border: 1px solid #ffe0b3; }
-    // .admin-message.info { color: blue; background-color: #e6f7ff; border: 1px solid #b3e0ff; }
-    // These are examples; actual styling is in admin_style.css
 
     if (message) {
         messageArea.style.display = 'block';

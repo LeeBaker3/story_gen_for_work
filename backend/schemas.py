@@ -244,3 +244,8 @@ class DynamicList(DynamicListBase):
     items: List[DynamicListItem] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DynamicListItemUsage(BaseModel):
+    is_in_use: bool
+    details: List[str] = []

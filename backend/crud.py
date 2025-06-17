@@ -490,40 +490,29 @@ def is_dynamic_list_item_in_use(db: Session, item_id: int) -> dict:
 
     usage_details = []
 
-    # Check usage in Story.genre
-    if item.list_name == "genres":  # Assuming "genres" is a dynamic list name
+    # Only check specific story fields if the list name matches known special lists
+    if item.list_name == "genres":
         stories_using_genre = db.query(Story.id, Story.title).filter(
             Story.genre == item.item_value).all()
         if stories_using_genre:
             usage_details.append(
                 f"Genre in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_genre])}")
 
-    # Check usage in Story.image_style
-    if item.list_name == "image_styles":  # Assuming "image_styles" is a dynamic list name
+    elif item.list_name == "image_styles":
         stories_using_style = db.query(Story.id, Story.title).filter(
             Story.image_style == item.item_value).all()
         if stories_using_style:
             usage_details.append(
                 f"Image Style in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_style])}")
 
-    # Check usage in Story.word_to_picture_ratio (if managed by dynamic list)
-    # This field currently uses an Enum, but if it were dynamic:
-    # if item.list_name == "word_to_picture_ratios":
-    #     stories_using_ratio = db.query(Story.id, Story.title).filter(Story.word_to_picture_ratio == item.item_value).all()
-    #     if stories_using_ratio:
-    #         usage_details.append(f"Word/Picture Ratio in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_ratio])}")
-
-    # Check usage in Story.text_density (if managed by dynamic list)
-    # This field currently uses an Enum, but if it were dynamic:
-    # if item.list_name == "text_densities":
-    #     stories_using_density = db.query(Story.id, Story.title).filter(Story.text_density == item.item_value).all()
-    #     if stories_using_density:
-    #         usage_details.append(f"Text Density in Stories: {', '.join([s.title or f'ID {s.id}' for s in stories_using_density])}")
-
-    # Add more checks here for other dynamic lists and how they are used in the Story model
-    # or other models (e.g., User preferences, Application settings if they use dynamic list items).
+    # Add more checks here for other specific dynamic lists and how they are used.
+    # For generic lists not tied to specific Story fields, they are considered not in use by default
+    # unless a more generic check (e.g., in a hypothetical UserPreferences.favorite_color_item_id) is added.
 
     if usage_details:
         return {"is_in_use": True, "details": usage_details}
 
-    return {"is_in_use": False, "details": ["Not found in any known story fields."]}
+    # If no specific usage is found for known list types, or if it's a generic list,
+    # assume not in use by default for this specific check.
+    # The frontend might show a generic "Not in direct use" or similar.
+    return {"is_in_use": False, "details": []}

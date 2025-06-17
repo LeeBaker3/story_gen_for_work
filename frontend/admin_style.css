@@ -529,3 +529,68 @@ footer {
     text-decoration: none;
     cursor: pointer;
 }
+
+/* Styles for buttons within the Dynamic List Modal */
+#dynamicListModal #saveDynamicListButton {
+    background-color: #28a745;
+    /* Green from .admin-button-success */
+}
+
+#dynamicListModal #saveDynamicListButton:hover {
+    background-color: #1e7e34;
+    /* Darker green */
+}
+
+#dynamicListModal #deleteDynamicListButton {
+    background-color: #dc3545;
+    /* Red from .admin-button-danger */
+}
+
+#dynamicListModal #deleteDynamicListButton:hover {
+    background-color: #c82333;
+    /* Darker red */
+}
+
+#dynamicListModal #cancelDynamicListModalButton {
+    background-color: #6c757d;
+    /* Gray from .admin-button-secondary */
+}
+
+#dynamicListModal #cancelDynamicListModalButton:hover {
+    background-color: #545b62;
+    /* Darker gray */
+}
+
+
+/* Styles for buttons within the Dynamic List Item Modal */
+/* Ensure these buttons inherit base button styling and override background for theming */
+#dynamicListItemModal #saveDynamicListItemButton {
+    background-color: #28a745;
+    /* Green from .admin-button-success */
+    /* color, padding, border, etc., should be inherited from the generic 'button' rule */
+}
+
+#dynamicListItemModal #saveDynamicListItemButton:hover {
+    background-color: #1e7e34;
+    /* Darker green from .admin-button-success:hover */
+}
+
+#dynamicListItemModal #deleteDynamicListItemButton {
+    background-color: #dc3545;
+    /* Red from .admin-button-danger */
+}
+
+#dynamicListItemModal #deleteDynamicListItemButton:hover {
+    background-color: #c82333;
+    /* Darker red from .admin-button-danger:hover */
+}
+
+#dynamicListItemModal #cancelDynamicListItemModalButton {
+    background-color: #6c757d;
+    /* Gray from .admin-button-secondary */
+}
+
+#dynamicListItemModal #cancelDynamicListItemModalButton:hover {
+    background-color: #545b62;
+    /* Darker gray from .admin-button-secondary:hover */
+}

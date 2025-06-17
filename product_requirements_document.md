@@ -112,6 +112,22 @@ The Story Generator Web App is a web-based application that allows users to gene
     *   Image generation errors.
     *   Invalid JSON responses.
 
+## 3.5 State Management & Recovery Story Generation Process
+*  Process Tracking: The system shall track the progress of the story generation process, including the current step (e.g., "Generating reference images for characters") and the number of attempts made so far.
+*  Timeout Detection: The system shall detect when a timeout occurs during the process and pause or retry the process accordingly.
+*  Smart Retry Mechanism**: The system shall implement a smart retry mechanism that:
+    *   Avoids retrying the same step multiple times in quick succession (to prevent infinite loops).
+    *   Increases the delay between retries to prevent overwhelming the server with consecutive requests.
+*  Uses a maximum number of attempts before giving up on the process.
+*  Resume from Previous Attempt: The system shall be able to resume the process from where it left off, including re-trying failed steps and resuming image generation if necessary.
+*  Error Handling: The system shall handle errors that occur during the process, such as OpenAI API errors or server-side errors, and provide meaningful error messages or logging information.
+
+### 3.5.1 Additional Requirements:**
+*  Process State Management**: The system shall maintain a state machine to track the progress of each step in the process.
+*  Cache Mechanism**: The system shall consider implementing a cache mechanism to store intermediate results (e.g., generated images) to reduce processing time and improve performance.
+
+
+
 # 4. Functional Requirements
 
 ## 4.1 Core Application & Backend
@@ -199,6 +215,10 @@ Requirements:
 *   **NFR3:** Maintain consistent look and feel in generated images via detailed image prompts.
 *   **NFR4:** UI must be responsive on desktop and tablet browsers.
 *   **NFR5:** Session management using a secret key for form and input security.
+
+
+
+
 
 # 7. Testing and Validation
 *   Unit tests for:

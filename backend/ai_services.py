@@ -54,11 +54,13 @@ def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
     # Simple truncation for now, can be made smarter
     truncated = prompt[:max_length]
     # Try to cut at the last space to avoid breaking a word, if space exists nearby
-    last_space = truncated.rfind(' ', max_length - 30, max_length) # look for space in last 30 chars
+    # look for space in last 30 chars
+    last_space = truncated.rfind(' ', max_length - 30, max_length)
     if last_space != -1:
         return truncated[:last_space] + "..."
-    app_logger.warning(f"Prompt was truncated mid-word or abruptly. Original length: {len(prompt)}, Max: {max_length}")
-    return truncated + "..." # Fallback if no space found near end
+    app_logger.warning(
+        f"Prompt was truncated mid-word or abruptly. Original length: {len(prompt)}, Max: {max_length}")
+    return truncated + "..."  # Fallback if no space found near end
 
 
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
@@ -546,22 +548,33 @@ def generate_image(
     character_reference_image_paths: Optional[List[str]] = None,  # Modified
     character_name_for_reference: Optional[str] = None,
     # Changed from dall-e-3 to gpt-image-1
-    model: str = "gpt-image-1"
+    model: str = "gpt-image-1",
+    # Add openai_style parameter with default
+    openai_style: Optional[str] = "vivid"
 ) -> Dict[str, Any]:
     """
-    Generates an image using OpenAI's Image API.
-    If character_reference_image_paths is provided and valid, it attempts to use the edit API.
-    Otherwise, or if edit fails, it uses the generate API.
-    Saves the image to the specified image_path.
-    Returns a dictionary containing the image_path, revised_prompt (if any), and gen_id.
-    """
-    app_logger.debug(
-        # Log paths
-        f"generate_image called with: description='{page_image_description[:50]}...', path='{image_path}', refs='{character_reference_image_paths}'")
+    Generates an image using OpenAI's DALL-E API.
+    Can use image editing if a reference image is provided, otherwise generates a new image.
 
+    Args:
+        page_image_description: The textual prompt for the image.
+        image_path: The path where the generated image will be saved.
+        character_reference_image_paths: Optional list of paths to reference images for character consistency.
+        character_name_for_reference: Optional name of the character for whom reference is provided.
+        model: The OpenAI model to use for image generation.
+        openai_style: The style parameter for DALL-E ('vivid' or 'natural'). Defaults to 'vivid'.
+
+    Returns:
+        A dictionary containing the path to the saved image and the revised prompt (if any).
+    """
+    # Ensure the directory for the image_path exists
     os.makedirs(os.path.dirname(image_path), exist_ok=True)
-    revised_prompt_from_api = None
-    gen_id_from_api = None
+
+    # Validate openai_style
+    if openai_style not in ["vivid", "natural"]:
+        app_logger.warning(
+            f"Invalid openai_style '{openai_style}' provided. Defaulting to 'vivid'.")
+        openai_style = "vivid"
 
     # Prepare reference images if provided
     valid_reference_files: List[Any] = []  # To hold open file objects
@@ -612,7 +625,8 @@ def generate_image(
                 image=primary_reference_file,  # This is the opened file object
                 prompt=edit_prompt,
                 n=1,
-                size="1024x1024"
+                size="1024x1024",
+                style=openai_style  # Pass openai_style to edit
                 # response_format="b64_json" # Removed: gpt-image-1 always returns b64_json
             )
             if response.data and response.data[0].b64_json:
@@ -651,8 +665,8 @@ def generate_image(
     # Fallback to generate API if no valid references, or if edit API failed
     app_logger.info(
         "Using OpenAI Image API generate (either no valid refs, or edit failed/skipped).")
-    api_action_type_log = "generate" # Define for logging in case of error
-    prompt_to_log = page_image_description # Define for logging in case of error
+    api_action_type_log = "generate"  # Define for logging in case of error
+    prompt_to_log = page_image_description  # Define for logging in case of error
     try:
         # Ensure any files from a previous attempt (if edit block was skipped or failed early) are closed.
         # This is now redundant due to the finally block above, but kept for safety if logic changes.
@@ -667,8 +681,9 @@ def generate_image(
             model=model,  # Ensure model is passed here too
             prompt=page_image_description,
             size="1024x1024",
-            n=1
-            # response_format parameter removed as it\\\\\'s not supported for gpt-image-1
+            n=1,
+            style=openai_style  # Pass openai_style to generate
+            # response_format parameter removed as it's not supported for gpt-image-1
         )
 
         if response.data and response.data[0] and response.data[0].b64_json:
@@ -677,14 +692,14 @@ def generate_image(
                 f_out.write(image_data)
             app_logger.info(
                 f"Image successfully generated using GENERATE API and saved to {image_path}")
-            
+
             # Determine revised_prompt, fallback to original prompt if not available
-            current_revised_prompt = page_image_description 
+            current_revised_prompt = page_image_description
             if hasattr(response.data[0], 'revised_prompt') and response.data[0].revised_prompt:
                 current_revised_prompt = response.data[0].revised_prompt
-            
+
             # Determine gen_id, fallback to UUID if 'created' not available
-            current_gen_id = f"gen_{uuid.uuid4().hex}" 
+            current_gen_id = f"gen_{uuid.uuid4().hex}"
             if hasattr(response, 'created') and response.created:
                 current_gen_id = f"gen_{response.created}"
 
@@ -693,11 +708,14 @@ def generate_image(
             # This case means the API call succeeded (no exception) but the response format is unexpected.
             error_logger.error(
                 f"OpenAI Image API generate call for prompt '{prompt_to_log[:100]}...' succeeded but returned no image data or unexpected response structure. Response: {response}")
-            raise ValueError("OpenAI Image API generate call returned no image data.")
+            raise ValueError(
+                "OpenAI Image API generate call returned no image data.")
 
     except openai.BadRequestError as e:
-        error_details = e.response.json() if e.response else {"error": {"message": str(e)}}
-        error_message_detail = error_details.get("error", {}).get("message", "Unknown BadRequestError")
+        error_details = e.response.json() if e.response else {
+            "error": {"message": str(e)}}
+        error_message_detail = error_details.get(
+            "error", {}).get("message", "Unknown BadRequestError")
         error_code_detail = error_details.get("error", {}).get("code")
 
         # Determine api_action_type_log if not already set (e.g. if error happened in edit block)
@@ -707,11 +725,14 @@ def generate_image(
 
         if error_code_detail == 'moderation_blocked' or "safety system" in error_message_detail:
             # Use prompt_to_log which is page_image_description for the generate block
-            error_logger.error(f"OpenAI Image API call failed due to moderation/safety system. ACTION: {api_action_type_log}. FULL PROMPT: {prompt_to_log}")
-            error_logger.error(f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
+            error_logger.error(
+                f"OpenAI Image API call failed due to moderation/safety system. ACTION: {api_action_type_log}. FULL PROMPT: {prompt_to_log}")
+            error_logger.error(
+                f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
         else:
-            error_logger.error(f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
-        raise # Re-raise the exception
+            error_logger.error(
+                f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
+        raise  # Re-raise the exception
     except openai.OpenAIError as e:
         error_logger.error(
             f"OpenAI API Error during image generation: {e}", exc_info=True)
@@ -726,13 +747,33 @@ def generate_character_reference_image(
     character: CharacterDetail,
     user_id: int,
     story_id: int,
-    image_style_enum: ImageStyle
+    image_style_enum: ImageStyle,  # This is the application's ImageStyle enum
+    # To pass dynamic list item's additional_config
+    image_styles_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    app_logger.info( # ADDED THIS ENTRY LOG
-        f"Attempting to generate reference image for character: {character.name} (User: {user_id}, Story: {story_id})")
+    app_logger.info(  # ADDED THIS ENTRY LOG
+        f"Attempting to generate reference image for character: {character.name} (User: {user_id}, Story: {story_id}, Style Enum: {image_style_enum})")
+
+    # Determine the OpenAI style to use
+    # Default to 'vivid'
+    final_openai_style = "vivid"
+    if image_styles_config and isinstance(image_styles_config, dict):
+        # Look for 'openai_style' in the additional_config of the 'image_styles' item
+        configured_style = image_styles_config.get("openai_style")
+        if configured_style in ["vivid", "natural"]:
+            final_openai_style = configured_style
+            app_logger.info(
+                f"Using configured openai_style '{final_openai_style}' for character reference image from image_styles config.")
+        elif configured_style:
+            app_logger.warning(
+                f"Invalid openai_style '{configured_style}' in image_styles config. Defaulting to 'vivid'.")
+    else:
+        app_logger.info(
+            f"No valid image_styles_config provided or 'openai_style' not found. Defaulting to 'vivid' for character reference image.")
 
     # Use "the character" if name is empty or whitespace
-    char_name_for_prompt = character.name if character.name and character.name.strip() else "the character"
+    char_name_for_prompt = character.name if character.name and character.name.strip(
+    ) else "the character"
 
     prompt_parts = [
         f"Generate a character sheet for {char_name_for_prompt} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view.",
@@ -790,14 +831,16 @@ def generate_character_reference_image(
         _save_directory_on_disk, char_image_filename)
     image_path_for_db = os.path.join(_db_path_prefix, char_image_filename)
 
-    app_logger.debug(f"generate_character_reference_image: About to call generate_image for character '{character.name}'. Disk path: {image_save_path_on_disk}. Prompt: '{image_prompt[:100]}...'") # ADDED/ENHANCED LOG
+    # ADDED/ENHANCED LOG
+    app_logger.debug(
+        f"generate_character_reference_image: About to call generate_image for character '{character.name}'. Disk path: {image_save_path_on_disk}. Prompt: '{image_prompt[:100]}...'")
 
     try:
         image_generation_result = generate_image(
             page_image_description=image_prompt,
             image_path=image_save_path_on_disk,
             character_reference_image_paths=None,
-            character_name_for_reference=None, # Explicitly None for character ref generation
+            character_name_for_reference=None,  # Explicitly None for character ref generation
         )
 
         updated_character_dict = character.model_dump(exclude_none=True)
@@ -807,7 +850,7 @@ def generate_character_reference_image(
         updated_character_dict["reference_image_gen_id"] = image_generation_result.get(
             "gen_id")
 
-        app_logger.info( # ENSURED THIS LOG IS PRESENT
+        app_logger.info(  # ENSURED THIS LOG IS PRESENT
             f"Reference image for {character.name} generated and saved to {image_save_path_on_disk}. DB path: {image_path_for_db}")
         return updated_character_dict
 

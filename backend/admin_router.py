@@ -51,6 +51,25 @@ def read_dynamic_list_endpoint(
     return db_list
 
 
+@router.put("/{list_name}", response_model=schemas.DynamicList)
+def update_dynamic_list_endpoint(
+    list_name: str,
+    dynamic_list_update: schemas.DynamicListUpdate,
+    db: Session = Depends(get_db)
+):
+    db_list = crud.get_dynamic_list(db, list_name=list_name)
+    if db_list is None:
+        raise HTTPException(
+            status_code=404, detail=f"Dynamic list '{list_name}' not found, cannot update.")
+
+    updated_list = crud.update_dynamic_list(
+        db, list_name=list_name, dynamic_list_update=dynamic_list_update)
+    if updated_list is None:  # Should ideally not happen if previous check passed
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update dynamic list '{list_name}'.")
+    return updated_list
+
+
 @router.delete("/{list_name}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dynamic_list_endpoint(
     list_name: str,
@@ -66,7 +85,8 @@ def delete_dynamic_list_endpoint(
     items = crud.get_dynamic_list_items(
         db, list_name=list_name, limit=1000)  # Get all items
     for item in items:
-        if crud.is_dynamic_list_item_in_use(db, item_id=item.id):
+        usage_info = crud.is_dynamic_list_item_in_use(db, item_id=item.id)
+        if usage_info["is_in_use"]:  # Explicitly check the 'is_in_use' key
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Cannot delete list '{list_name}'. Item '{item.item_label}' (ID: {item.id}) is currently in use."
@@ -184,7 +204,8 @@ def delete_dynamic_list_item_endpoint(
         raise HTTPException(
             status_code=404, detail=f"Dynamic list item with ID {item_id} not found")
 
-    if crud.is_dynamic_list_item_in_use(db, item_id=item_id):
+    usage_info = crud.is_dynamic_list_item_in_use(db, item_id=item_id)
+    if usage_info["is_in_use"]:  # Explicitly check the 'is_in_use' key
         # Instead of deleting, an admin might prefer to deactivate.
         # For now, we prevent deletion and let admin deactivate via PUT if needed.
         raise HTTPException(
@@ -199,35 +220,43 @@ def delete_dynamic_list_item_endpoint(
     return
 
 
-@router.get("/items/{item_id}/in-use", response_model=dict)
+@router.get("/items/{item_id}/in-use", response_model=schemas.DynamicListItemUsage)
 def check_dynamic_list_item_in_use(
     item_id: int,
     db: Session = Depends(get_db)
 ):
     """
-    Returns whether a dynamic list item is currently in use (referenced in any stories).
-    Response: {"in_use": true/false}
+    Returns whether a dynamic list item is currently in use and details of its usage.
+    Response model: schemas.DynamicListItemUsage
     """
     db_item = crud.get_dynamic_list_item(db, item_id=item_id)
     if db_item is None:
         raise HTTPException(
             status_code=404, detail=f"Dynamic list item with ID {item_id} not found"
         )
-    in_use = crud.is_dynamic_list_item_in_use(db, item_id)
-    # Adjust based on what crud.is_dynamic_list_item_in_use returns.
-    # If it returns a dict like {"is_in_use": bool, "details": ...}, then just return that.
-    # If it returns a simple boolean:
-    if isinstance(in_use, bool):
-        return {"is_in_use": in_use}
-    elif isinstance(in_use, dict) and "is_in_use" in in_use:
-        # Return only the boolean for this specific endpoint contract if needed
-        return {"is_in_use": in_use["is_in_use"]}
+
+    usage_info = crud.is_dynamic_list_item_in_use(db, item_id)
+
+    # Ensure usage_info is always a dictionary matching DynamicListItemUsage schema
+    if isinstance(usage_info, bool):  # Case where crud returns simple boolean (item not in use)
+        return schemas.DynamicListItemUsage(is_in_use=usage_info, details=[])
+    elif isinstance(usage_info, dict) and "is_in_use" in usage_info:
+        # Ensure details is a list, even if crud might sometimes not include it when not in use
+        details = usage_info.get("details", [])
+        if not isinstance(details, list):
+            # Log a warning if details is not a list as expected by schema
+            app_logger.warning(
+                f"Usage details for item {item_id} was not a list: {details}. Defaulting to empty list.")
+            details = []
+        return schemas.DynamicListItemUsage(is_in_use=usage_info["is_in_use"], details=details)
 
     # Fallback or error if the return type is unexpected
     error_logger.error(
-        f"Unexpected return type from crud.is_dynamic_list_item_in_use for item {item_id}: {type(in_use)}")
+        f"Unexpected return type from crud.is_dynamic_list_item_in_use for item {item_id}: {type(usage_info)}, value: {usage_info}")
+    # Return a default "not in use" state with an error logged, or raise 500
+    # Raising 500 might be better to signal an unexpected state from CRUD.
     raise HTTPException(
-        status_code=500, detail="Error checking item usage status.")
+        status_code=500, detail="Error checking item usage status due to unexpected data format from CRUD.")
 
 
 # --- Admin User Management Router ---
