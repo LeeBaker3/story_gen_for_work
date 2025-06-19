@@ -40,29 +40,7 @@ def db_session() -> Generator[Session, None, None]:
     # Ensure all models are imported so Base.metadata is fully populated
     # These imports are at top-level of conftest.py now.
 
-    print(
-        f"DEBUG: Tables in Base.metadata before create_all: {list(Base.metadata.tables.keys())}")
-    if 'users' not in Base.metadata.tables:
-        print("DEBUG: 'users' table is NOT in Base.metadata before create_all!")
-    else:
-        print("DEBUG: 'users' table IS in Base.metadata before create_all.")
-
     Base.metadata.create_all(bind=engine)
-    print("DEBUG: Base.metadata.create_all(bind=engine) called.")
-
-    # === BEGIN SQLITE_MASTER CHECK ===
-    try:
-        with engine.connect() as connection:
-            result = connection.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table';"))
-            # Sort for consistent order
-            tables_in_db = sorted([row[0] for row in result])
-            print(
-                f"DEBUG: Tables found in sqlite_master after create_all: {tables_in_db}")
-            # No explicit commit needed for SELECT with engine.connect() context manager
-    except Exception as e:
-        print(f"DEBUG: EXCEPTION during sqlite_master check: {e}")
-    # === END SQLITE_MASTER CHECK ===
 
     db = TestingSessionLocal()
     try:
@@ -88,44 +66,12 @@ def db_session() -> Generator[Session, None, None]:
         db.commit()
         db.refresh(admin_user)  # Get IDs
         db.refresh(regular_user)  # Get IDs
-        print(
-            f"DEBUG: Created admin user 'admin@example.com' (ID: {admin_user.id}) in fixture.")
-        print(
-            f"DEBUG: Created regular user 'user@example.com' (ID: {regular_user.id}) in fixture.")
-
-        # === BEGIN DIAGNOSTIC CODE FOR DynamicList ===
-        print("DEBUG: Attempting to create and retrieve a test DynamicList directly in db_session fixture...")
-        try:
-            # DynamicList is imported from backend.database
-            fixture_dl = DynamicList(
-                list_name="fixture_dl_test",
-                description="A test dynamic list created in fixture"
-            )
-            db.add(fixture_dl)
-            db.commit()
-            db.refresh(fixture_dl)
-            print(
-                f"DEBUG: DynamicList 'fixture_dl_test' (Description: {fixture_dl.description}) committed to DB in fixture.")
-
-            retrieved_fixture_dl = db.query(DynamicList).filter(
-                DynamicList.list_name == "fixture_dl_test").first()
-            if retrieved_fixture_dl:
-                print(
-                    f"DEBUG: DynamicList 'fixture_dl_test' (Description: {retrieved_fixture_dl.description}) successfully retrieved from DB in fixture.")
-            else:
-                print(
-                    "DEBUG: FAILED to retrieve 'fixture_dl_test' (DynamicList) from DB in fixture.")
-        except Exception as e:
-            print(f"DEBUG: EXCEPTION during fixture DynamicList test: {e}")
-            import traceback
-            traceback.print_exc()  # Print full traceback for this specific exception
-        # === END DIAGNOSTIC CODE FOR DynamicList ===
 
         yield db
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)  # Clean up tables
-        print("DEBUG: Base.metadata.drop_all(bind=engine) called.")
+
 
 # Override the get_db dependency for the FastAPI app
 

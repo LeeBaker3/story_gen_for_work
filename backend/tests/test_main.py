@@ -780,32 +780,6 @@ def test_set_user_role_admin_self_change_forbidden(client, admin_user_for_role_t
     del app.dependency_overrides[auth.get_current_admin_user]
 
 
-def test_set_user_role_admin_self_change_forbidden_not_sole_admin(client, db_session_mock):
-    admin_user = schemas.User(
-        id=1, username="adminuser", email="admin@example.com", is_active=True, role="admin")
-
-    def override_get_current_admin_user():
-        return admin_user
-    app.dependency_overrides[auth.get_current_admin_user] = override_get_current_admin_user
-
-    with patch("backend.crud.get_user_admin", return_value=admin_user):
-        # Simulate that there is at least one other admin
-        db_session_mock.query.return_value.filter.return_value.count.return_value = 1
-
-        response = client.put(
-            f"/admin/users/{admin_user.id}",
-            json={"role": "user"}
-        )
-
-        # The logic now forbids any admin from changing their own role.
-        assert response.status_code == 403
-        assert response.json()[
-            "detail"] == "Admins cannot change their own role."
-
-    # Cleanup
-    del app.dependency_overrides[auth.get_current_admin_user]
-
-
 def test_admin_deactivate_self_forbidden(client, db_session_mock):
     admin_user = schemas.User(
         id=1, username="adminuser", email="admin@example.com", is_active=True, role="admin")
