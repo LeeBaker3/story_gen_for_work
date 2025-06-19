@@ -329,6 +329,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <thead>
                         <tr>
                             <th>List Name</th>
+                            <th>List Label</th>
                             <th>Description</th>
                             <th>Actions</th>
                         </tr>
@@ -339,9 +340,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 tableHTML += `
                     <tr>
                         <td>${escapeHTML(list.list_name)}</td>
+                        <td>${escapeHTML(list.list_label || list.list_name)}</td>
                         <td>${escapeHTML(list.description || 'N/A')}</td>
                         <td>
-                            <button class="admin-button-secondary edit-dynamic-list-btn" data-list-name="${escapeHTML(list.list_name)}">Edit</button>
+                            <button class=\"admin-button-secondary edit-dynamic-list-btn\" data-list-name=\"${escapeHTML(list.list_name)}\">Edit</button>
                         </td>
                     </tr>
                 `;
@@ -373,7 +375,7 @@ document.addEventListener("DOMContentLoaded", function () {
             lists.forEach(list => {
                 const option = document.createElement('option');
                 option.value = list.list_name;
-                option.textContent = escapeHTML(list.list_name);
+                option.textContent = escapeHTML(list.list_label || list.list_name); // Use list_label if available, otherwise list_name
                 selector.appendChild(option);
             });
         } catch (error) {
@@ -465,6 +467,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function showAddEditDynamicListModal(listName = null) {
         const isEdit = listName !== null;
         let currentDescription = '';
+        let currentListLabel = ''; // Added for list_label
 
         const modalId = 'dynamicListModal';
         const existingModal = document.getElementById(modalId);
@@ -483,8 +486,12 @@ document.addEventListener("DOMContentLoaded", function () {
                     <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListForm" class="admin-form">
                         <div class="form-group">
-                            <label for="dl_list_name">List Name:</label>
+                            <label for="dl_list_name">List Name (ID):</label>
                             <input type="text" id="dl_list_name" name="list_name" value="${isEdit ? escapeHTML(listName) : ''}" ${isEdit ? 'readonly' : 'required'} class="admin-form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="dl_list_label">List Label (User-Friendly):</label>
+                            <input type="text" id="dl_list_label" name="list_label" value="${isEdit ? escapeHTML(currentListLabel) : ''}" class="admin-form-control">
                         </div>
                         <div class="form-group">
                             <label for="dl_description">Description (Optional):</label>
@@ -503,13 +510,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const form = document.getElementById('dynamicListForm');
         const descriptionTextarea = document.getElementById('dl_description');
+        const listLabelInput = document.getElementById('dl_list_label'); // Added for list_label
         const modalMessageArea = document.getElementById(modalMessageId);
 
         if (isEdit) {
             apiRequest(`/admin/dynamic-lists/${listName}`, "GET")
                 .then(listData => {
-                    if (listData && listData.description) {
-                        descriptionTextarea.value = listData.description;
+                    if (listData) {
+                        if (listData.description) {
+                            descriptionTextarea.value = listData.description;
+                        }
+                        if (listData.list_label) { // Added for list_label
+                            listLabelInput.value = listData.list_label;
+                        }
                     }
                 })
                 .catch(err => {
@@ -551,13 +564,14 @@ document.addEventListener("DOMContentLoaded", function () {
             const formData = new FormData(form);
             const data = {
                 list_name: formData.get('list_name'), // list_name will be readonly in edit mode
+                list_label: formData.get('list_label'), // Added for list_label
                 description: formData.get('description')
             };
 
             try {
                 if (isEdit) {
-                    // Only send description for update, list_name is not changeable
-                    await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description });
+                    // Only send description and list_label for update
+                    await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description, list_label: data.list_label });
                     displayAdminMessage(`List '${escapeHTML(listName)}' updated.`, 'success'); // Global message
                 } else {
                     await apiRequest("/admin/dynamic-lists/", 'POST', data);
@@ -615,36 +629,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const sortOrder = isEdit ? itemData.sort_order : 0;
 
         let additionalConfigString = '';
-        let openAIStyle = 'vivid'; // Default for image_styles
         if (isEdit && itemData.additional_config) {
-            if (currentListName === 'image_styles' && itemData.additional_config.openai_style) {
-                openAIStyle = itemData.additional_config.openai_style;
-                const otherConfigs = { ...itemData.additional_config };
-                delete otherConfigs.openai_style;
-                if (Object.keys(otherConfigs).length > 0) {
-                    additionalConfigString = JSON.stringify(otherConfigs, null, 2);
-                }
-            } else {
-                additionalConfigString = JSON.stringify(itemData.additional_config, null, 2);
-            }
-        } else if (!isEdit && currentListName === 'image_styles') {
-            // For new image_styles items, we might want to pre-fill openai_style if not other additional_config
-            // For now, handled by select default.
+            additionalConfigString = JSON.stringify(itemData.additional_config, null, 2);
         }
 
 
         let imageStyleSpecificHTML = '';
-        if (currentListName === 'image_styles') {
-            imageStyleSpecificHTML = `
-                <div class="form-group">
-                    <label for="item_openai_style">OpenAI Style Parameter (for DALL-E 'style'):</label>
-                    <select id="item_openai_style" name="item_openai_style" class="admin-form-control">
-                        <option value="vivid" ${openAIStyle === 'vivid' ? 'selected' : ''}>Vivid</option>
-                        <option value="natural" ${openAIStyle === 'natural' ? 'selected' : ''}>Natural</option>
-                    </select>
-                </div>
-            `;
-        }
+
 
         // Modal message area
         const modalMessageId = `${modalId}-message-area`;
@@ -673,9 +664,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             <label for="item_is_active" style="display: inline-block; margin-right: 10px;">Is Active:</label>
                             <input type="checkbox" id="item_is_active" name="item_is_active" ${isActive ? 'checked' : ''} style="width: auto; vertical-align: middle;">
                         </div>
-                        ${imageStyleSpecificHTML}
                         <div class="form-group">
-                            <label for="item_additional_config">Additional Config (JSON, Optional${currentListName === 'image_styles' ? ' - OpenAI style handled above' : ''}):</label>
+                            <label for="item_additional_config">Additional Config (JSON, Optional):</label>
                             <textarea id="item_additional_config" name="item_additional_config" rows="3" class="admin-form-control">${escapeHTML(additionalConfigString)}</textarea>
                         </div>
                         <div class="modal-actions">
@@ -705,12 +695,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
 
-            if (currentListName === 'image_styles') {
-                // Ensure openai_style is always included for image_styles, even if other additional_config is empty
-                additionalConfig.openai_style = formData.get('item_openai_style');
-            }
-
-            // Set to null if additionalConfig remains empty after potential openai_style addition
+            // Set to null if additionalConfig remains empty
             if (Object.keys(additionalConfig).length === 0) {
                 additionalConfig = null;
             }
@@ -746,7 +731,7 @@ document.addEventListener("DOMContentLoaded", function () {
         };
 
         if (isEdit) {
-            const deleteButton = document.getElementById('deleteDynamicListItemBtn');
+            const deleteButton = document.getElementById('deleteDynamicListItemButton'); // Corrected ID
             deleteButton.addEventListener('click', async () => {
                 // Use itemInUseDetails fetched when modal opened
                 if (itemInUseDetails.length > 0) {

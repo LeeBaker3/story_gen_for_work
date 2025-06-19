@@ -30,14 +30,16 @@ from backend import database, crud, schemas
 # Utility to create a test list and ensure it exists for subsequent item tests
 
 
-def ensure_dynamic_list_exists(client: TestClient, list_name: str, admin_token: str):
+def ensure_dynamic_list_exists(client: TestClient, list_name: str, admin_token: str, list_label: str = None):
     response = client.get(
         f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
     if response.status_code == 404:
+        list_payload = {"list_name": list_name, "description": f"Test list {list_name}"}
+        if list_label:
+            list_payload["list_label"] = list_label
         create_response = client.post(
             "/admin/dynamic-lists/",
-            json={"list_name": list_name,
-                  "description": f"Test list {list_name}"},
+            json=list_payload,
             headers={"Authorization": f"Bearer {admin_token}"}
         )
         # FastAPI returns 200 for POST if resource created
@@ -631,28 +633,64 @@ def test_public_get_active_items_for_non_existent_list(client: TestClient):
 
 
 def test_admin_create_dynamic_list(client: TestClient, admin_token: str):
-    payload = {"list_name": "new_test_list", "description": "A new test list"}
+    payload = {"list_name": "new_test_list_label", "list_label": "New Test List Label", "description": "A new test list with a label"}
     response = client.post("/admin/dynamic-lists/", json=payload,
                            headers={"Authorization": f"Bearer {admin_token}"})
-    assert response.status_code == 201  # Corrected expected status code
+    assert response.status_code == 201
     data = response.json()
-    assert data["list_name"] == "new_test_list"
-    assert data["description"] == "A new test list"
+    assert data["list_name"] == "new_test_list_label"
+    assert data["list_label"] == "New Test List Label"
+    assert data["description"] == "A new test list with a label"
 
 
 def test_admin_edit_dynamic_list(client: TestClient, admin_token: str):
-    list_name = "list_to_edit_unique_name"  # Ensure unique name
+    list_name = "list_to_edit_label_unique_name"  # Ensure unique name
+    list_label_initial = "Initial Label"
     # Ensure list exists or create it
-    ensure_dynamic_list_exists(client, list_name, admin_token)
+    ensure_dynamic_list_exists(client, list_name, admin_token, list_label=list_label_initial)
 
-    update_payload = {"description": "Updated description for edit test"}
+    update_payload = {"description": "Updated description for edit test with label", "list_label": "Updated Label"}
     response = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload,
                           headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
     assert data["list_name"] == list_name
-    assert data["description"] == "Updated description for edit test"
+    assert data["list_label"] == "Updated Label"
+    assert data["description"] == "Updated description for edit test with label"
 
+    # Test updating only description (list_label should remain)
+    update_payload_desc_only = {"description": "Only description updated"}
+    response_desc_only = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_desc_only,
+                                    headers={"Authorization": f"Bearer {admin_token}"})
+    assert response_desc_only.status_code == 200
+    data_desc_only = response_desc_only.json()
+    assert data_desc_only["list_label"] == "Updated Label" # Should persist
+    assert data_desc_only["description"] == "Only description updated"
+
+    # Test updating only list_label (description should remain)
+    update_payload_label_only = {"list_label": "Label Only Updated"}
+    response_label_only = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_label_only,
+                                     headers={"Authorization": f"Bearer {admin_token}"})
+    assert response_label_only.status_code == 200
+    data_label_only = response_label_only.json()
+    assert data_label_only["list_label"] == "Label Only Updated"
+    assert data_label_only["description"] == "Only description updated" # Should persist
+
+    # Test sending empty string for list_label (should be allowed, becomes null or empty based on model)
+    update_payload_empty_label = {"list_label": ""}
+    response_empty_label = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_empty_label,
+                                     headers={"Authorization": f"Bearer {admin_token}"})
+    assert response_empty_label.status_code == 200
+    data_empty_label = response_empty_label.json()
+    assert data_empty_label["list_label"] == "" # Or None, depending on Pydantic/DB model handling
+
+    # Test sending null for list_label (should be allowed)
+    update_payload_null_label = {"list_label": None}
+    response_null_label = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_null_label,
+                                     headers={"Authorization": f"Bearer {admin_token}"})
+    assert response_null_label.status_code == 200
+    data_null_label = response_null_label.json()
+    assert data_null_label["list_label"] is None
 
 def test_admin_delete_dynamic_list(client: TestClient, admin_token: str):
     # Ensure this list name is unique for this test run or cleaned up
@@ -706,9 +744,9 @@ def test_admin_cannot_create_duplicate_dynamic_list(client: TestClient, admin_to
 
 def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     # Create a couple of lists to ensure there's something to fetch
-    client.post("/admin/dynamic-lists/", json={"list_name": "list_alpha",
+    client.post("/admin/dynamic-lists/", json={"list_name": "list_alpha_label", "list_label": "Alpha Label",
                 "description": "Alpha"}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post("/admin/dynamic-lists/", json={"list_name": "list_beta",
+    client.post("/admin/dynamic-lists/", json={"list_name": "list_beta_label", "list_label": "Beta Label",
                 "description": "Beta"}, headers={"Authorization": f"Bearer {admin_token}"})
 
     response = client.get("/admin/dynamic-lists/",
@@ -716,19 +754,40 @@ def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
+    fetched_lists = {lst["list_name"]: lst for lst in data}
+    assert "list_alpha_label" in fetched_lists
+    assert fetched_lists["list_alpha_label"]["list_label"] == "Alpha Label"
+    assert "list_beta_label" in fetched_lists
+    assert fetched_lists["list_beta_label"]["list_label"] == "Beta Label"
+    
     list_names_fetched = [lst["list_name"] for lst in data]
-    assert "list_alpha" in list_names_fetched
-    assert "list_beta" in list_names_fetched
     # Check sorting by list_name (as per crud.get_dynamic_lists)
-    if len(data) >= 2 and "list_alpha" in list_names_fetched and "list_beta" in list_names_fetched:
-        assert list_names_fetched.index(
-            "list_alpha") < list_names_fetched.index("list_beta")
+    if len(data) >= 2 and "list_alpha_label" in list_names_fetched and "list_beta_label" in list_names_fetched:
+        # This assertion depends on the exact list names and their alphabetical order
+        # Adjust if list_names are different or sorting changes
+        sorted_test_list_names = sorted(["list_alpha_label", "list_beta_label"])
+        # Find the indices of our test lists in the fetched data
+        idx_alpha = -1
+        idx_beta = -1
+        for i, lst in enumerate(data):
+            if lst["list_name"] == "list_alpha_label":
+                idx_alpha = i
+            elif lst["list_name"] == "list_beta_label":
+                idx_beta = i
+        
+        # Only assert order if both are found and their expected order is known
+        if idx_alpha != -1 and idx_beta != -1:
+             if "list_alpha_label" == sorted_test_list_names[0]: # if alpha comes before beta
+                 assert idx_alpha < idx_beta
+             else:
+                 assert idx_beta < idx_alpha
 
 
 def test_admin_get_specific_dynamic_list(client: TestClient, admin_token: str):
-    list_name = "specific_list_test"
-    description = "Specific list for testing get by name"
-    client.post("/admin/dynamic-lists/", json={"list_name": list_name,
+    list_name = "specific_list_test_label"
+    list_label = "Specific Label for Test"
+    description = "Specific list for testing get by name with label"
+    client.post("/admin/dynamic-lists/", json={"list_name": list_name, "list_label": list_label,
                 "description": description}, headers={"Authorization": f"Bearer {admin_token}"})
 
     response = client.get(
@@ -736,6 +795,7 @@ def test_admin_get_specific_dynamic_list(client: TestClient, admin_token: str):
     assert response.status_code == 200
     data = response.json()
     assert data["list_name"] == list_name
+    assert data["list_label"] == list_label
     assert data["description"] == description
 
 

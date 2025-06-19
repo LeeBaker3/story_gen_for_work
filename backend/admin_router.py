@@ -308,21 +308,12 @@ async def admin_update_user_details(
             detail="Admins cannot deactivate their own account."
         )
 
-    # Prevent an admin from changing their own role if they are the sole admin
+    # Prevent an admin from changing their own role
     if user_id == current_admin.id and user_update.role is not None and user_update.role != "admin":
-        active_admins_query = db.query(database.User).filter(
-            database.User.role == "admin",
-            database.User.is_active == True,
-            database.User.id != current_admin.id
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins cannot change their own role."
         )
-        other_active_admins_count = active_admins_query.count()
-        if other_active_admins_count == 0:
-            error_logger.warning(
-                f"Admin {current_admin.username} (ID: {current_admin.id}) attempted to change their own role from admin to {user_update.role} while being the sole admin.")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot change your role from admin as you are the sole active administrator. Promote another user to admin first."
-            )
 
     # Validate role if it's being updated
     if user_update.role is not None and user_update.role not in ["user", "admin"]:

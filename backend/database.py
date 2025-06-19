@@ -78,6 +78,7 @@ class DynamicList(Base):
 
     # e.g., "genres", "image_styles"
     list_name = Column(String, primary_key=True, index=True)
+    list_label = Column(String, nullable=True)  # User-friendly label
     # Optional description of the list's purpose
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

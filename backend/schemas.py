@@ -225,6 +225,7 @@ class DynamicListItem(DynamicListItemBase):
 
 class DynamicListBase(BaseModel):
     list_name: str
+    list_label: Optional[str] = None  # User-friendly label
     description: Optional[str] = None
 
 
@@ -233,6 +234,7 @@ class DynamicListCreate(DynamicListBase):
 
 
 class DynamicListUpdate(BaseModel):
+    list_label: Optional[str] = None  # User-friendly label
     description: Optional[str] = None
 
 

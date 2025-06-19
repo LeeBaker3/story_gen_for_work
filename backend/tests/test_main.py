@@ -676,7 +676,7 @@ def test_set_user_role_unauthorized_non_admin(client, current_user_mock, target_
     # The endpoint /admin/users/{user_id}/role uses Depends(auth.get_current_admin_user)
     # So, we need to ensure that if a non-admin tries, auth.get_current_admin_user raises HTTPException
     # This is implicitly tested by the auth.get_current_admin_user dependency itself.
-    # If we were to mock get_current_admin_user to return a non-admin, it should fail.
+    # If we were to mock get_current_user to return a non-admin, it should fail.
     # However, the more direct test is that the dependency itself protects the route.
 
     # To simulate a non-admin making the call, we\'d typically ensure get_current_user returns a non-admin
@@ -686,11 +686,11 @@ def test_set_user_role_unauthorized_non_admin(client, current_user_mock, target_
     # Override get_current_user to be our non-admin user
     original_get_user_override = app.dependency_overrides.get(
         auth.get_current_user)
-    # current_user_mock is role="user"
     app.dependency_overrides[auth.get_current_user] = lambda: current_user_mock
 
     response = client.put(
-        f"/admin/users/{target_user_for_role_tests.id}/role",
+        # CHANGED: use correct endpoint
+        f"/admin/users/{target_user_for_role_tests.id}",
         json={"role": "admin"}
     )
     assert response.status_code == 403  # Because get_current_admin_user will fail
@@ -704,7 +704,7 @@ def test_set_user_role_unauthorized_non_admin(client, current_user_mock, target_
 
 
 def test_set_user_role_admin_success(client, admin_user_for_role_tests, target_user_for_role_tests, db_session_mock):
-    """Test admin successfully changing another user\'s role."""
+    """Test admin successfully changing another user's role."""
     original_admin_override = app.dependency_overrides.get(
         auth.get_current_admin_user)
     app.dependency_overrides[auth.get_current_admin_user] = mock_get_current_admin_user_specific(
@@ -713,29 +713,41 @@ def test_set_user_role_admin_success(client, admin_user_for_role_tests, target_u
     updated_user_data = target_user_for_role_tests.model_copy(
         update={"role": "admin"})
 
-    with patch("backend.crud.update_user_role_admin", return_value=updated_user_data) as mock_update_role:
+    with patch("backend.crud.admin_update_user", return_value=updated_user_data) as mock_update_user, \
+            patch("backend.crud.get_user_admin", return_value=updated_user_data):
+        db_session_mock.query.return_value.filter.return_value.first.return_value = updated_user_data
+
         response = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}/role",
+            f"/admin/users/{target_user_for_role_tests.id}",
             json={"role": "admin"}
         )
         assert response.status_code == 200, response.text
         assert response.json()["role"] == "admin"
         assert response.json()["id"] == target_user_for_role_tests.id
-        mock_update_role.assert_called_once_with(
-            db_session_mock, user_id=target_user_for_role_tests.id, role="admin")
+        mock_update_user.assert_called_once()
+        called_args, called_kwargs = mock_update_user.call_args
+        assert called_args[0] == db_session_mock
+        assert called_kwargs["user_id"] == target_user_for_role_tests.id
+        assert called_kwargs["user_update"].role == "admin"
 
     # Test changing role back
     updated_user_data_back = target_user_for_role_tests.model_copy(update={
                                                                    "role": "user"})
-    with patch("backend.crud.update_user_role_admin", return_value=updated_user_data_back) as mock_update_role_back:
+    with patch("backend.crud.admin_update_user", return_value=updated_user_data_back) as mock_update_user_back, \
+            patch("backend.crud.get_user_admin", return_value=updated_user_data_back):
+        db_session_mock.query.return_value.filter.return_value.first.return_value = updated_user_data_back
+
         response_back = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}/role",
+            f"/admin/users/{target_user_for_role_tests.id}",
             json={"role": "user"}
         )
         assert response_back.status_code == 200, response_back.text
         assert response_back.json()["role"] == "user"
-        mock_update_role_back.assert_called_once_with(
-            db_session_mock, user_id=target_user_for_role_tests.id, role="user")
+        mock_update_user_back.assert_called_once()
+        called_args_back, called_kwargs_back = mock_update_user_back.call_args
+        assert called_args_back[0] == db_session_mock
+        assert called_kwargs_back["user_id"] == target_user_for_role_tests.id
+        assert called_kwargs_back["user_update"].role == "user"
 
     # Cleanup
     if original_admin_override:
@@ -751,22 +763,68 @@ def test_set_user_role_admin_self_change_forbidden(client, admin_user_for_role_t
     app.dependency_overrides[auth.get_current_admin_user] = mock_get_current_admin_user_specific(
         admin_user_for_role_tests)
 
-    with patch("backend.crud.update_user_role_admin") as mock_update_role:  # Should not be called
+    with patch("backend.crud.get_user_admin", return_value=admin_user_for_role_tests):
+        # Simulate that there is at least one other admin
+        db_session_mock.query.return_value.filter.return_value.count.return_value = 1
+
         response = client.put(
-            # Admin tries to change their own role
-            f"/admin/users/{admin_user_for_role_tests.id}/role",
+            f"/admin/users/{admin_user_for_role_tests.id}",
             json={"role": "user"}
         )
-        assert response.status_code == 403, response.text
-        assert response.json() == {
-            "detail": "Admin users cannot change their own role."}
-        mock_update_role.assert_not_called()
+        # The logic now forbids any admin from changing their own role.
+        assert response.status_code == 403
+        assert response.json()[
+            "detail"] == "Admins cannot change their own role."
 
     # Cleanup
-    if original_admin_override:
-        app.dependency_overrides[auth.get_current_admin_user] = original_admin_override
-    elif auth.get_current_user in app.dependency_overrides:
-        del app.dependency_overrides[auth.get_current_user]
+    del app.dependency_overrides[auth.get_current_admin_user]
+
+
+def test_set_user_role_admin_self_change_forbidden_not_sole_admin(client, db_session_mock):
+    admin_user = schemas.User(
+        id=1, username="adminuser", email="admin@example.com", is_active=True, role="admin")
+
+    def override_get_current_admin_user():
+        return admin_user
+    app.dependency_overrides[auth.get_current_admin_user] = override_get_current_admin_user
+
+    with patch("backend.crud.get_user_admin", return_value=admin_user):
+        # Simulate that there is at least one other admin
+        db_session_mock.query.return_value.filter.return_value.count.return_value = 1
+
+        response = client.put(
+            f"/admin/users/{admin_user.id}",
+            json={"role": "user"}
+        )
+
+        # The logic now forbids any admin from changing their own role.
+        assert response.status_code == 403
+        assert response.json()[
+            "detail"] == "Admins cannot change their own role."
+
+    # Cleanup
+    del app.dependency_overrides[auth.get_current_admin_user]
+
+
+def test_admin_deactivate_self_forbidden(client, db_session_mock):
+    admin_user = schemas.User(
+        id=1, username="adminuser", email="admin@example.com", is_active=True, role="admin")
+
+    def override_get_current_admin_user():
+        return admin_user
+    app.dependency_overrides[auth.get_current_admin_user] = override_get_current_admin_user
+
+    with patch("backend.crud.get_user_admin", return_value=admin_user):
+        response = client.put(
+            f"/admin/users/{admin_user.id}",
+            json={"is_active": False}
+        )
+        assert response.status_code == 403
+        assert response.json() == {
+            "detail": "Admins cannot deactivate their own account."}
+
+    # Cleanup
+    del app.dependency_overrides[auth.get_current_admin_user]
 
 
 def test_set_user_role_admin_invalid_role_value(client, admin_user_for_role_tests, target_user_for_role_tests, db_session_mock):
@@ -776,21 +834,21 @@ def test_set_user_role_admin_invalid_role_value(client, admin_user_for_role_test
     app.dependency_overrides[auth.get_current_admin_user] = mock_get_current_admin_user_specific(
         admin_user_for_role_tests)
 
-    with patch("backend.crud.update_user_role_admin") as mock_update_role:  # Should not be called
+    with patch("backend.crud.admin_update_user") as mock_update_role:  # Should not be called
         response = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}/role",
+            f"/admin/users/{target_user_for_role_tests.id}",
             json={"role": "moderator"}  # Invalid role
         )
         assert response.status_code == 400, response.text
         assert response.json() == {
-            "detail": "Invalid role specified. Must be 'user' or 'admin'."}
+            "detail": "Invalid role. Must be 'user' or 'admin'."}
         mock_update_role.assert_not_called()
 
     # Cleanup
     if original_admin_override:
         app.dependency_overrides[auth.get_current_admin_user] = original_admin_override
-    elif auth.get_current_user in app.dependency_overrides:
-        del app.dependency_overrides[auth.get_current_user]
+    else:
+        del app.dependency_overrides[auth.get_current_admin_user]
 
 
 def test_set_user_role_admin_user_not_found(client, admin_user_for_role_tests, db_session_mock):
@@ -802,22 +860,24 @@ def test_set_user_role_admin_user_not_found(client, admin_user_for_role_tests, d
 
     non_existent_user_id = 9999
 
-    with patch("backend.crud.update_user_role_admin", return_value=None) as mock_update_role:
-        response = client.put(
-            f"/admin/users/{non_existent_user_id}/role",
-            json={"role": "admin"}
-        )
-        assert response.status_code == 404, response.text
-        assert response.json() == {"detail": "User not found"}
-        mock_update_role.assert_called_once_with(
-            db_session_mock, user_id=non_existent_user_id, role="admin")
+    with patch("backend.crud.get_user_admin", return_value=None):
+        with patch("backend.crud.admin_update_user") as mock_update_user:
+            response = client.put(
+                f"/admin/users/{non_existent_user_id}",
+                json={"role": "admin"}
+            )
+            assert response.status_code == 404
+            assert response.json() == {
+                "detail": f"User with ID {non_existent_user_id} not found"}
+            mock_update_user.assert_not_called()
 
     # Cleanup
     if original_admin_override:
         app.dependency_overrides[auth.get_current_admin_user] = original_admin_override
-    elif auth.get_current_user in app.dependency_overrides:
-        del app.dependency_overrides[auth.get_current_user]
+    else:
+        del app.dependency_overrides[auth.get_current_admin_user]
 
-# --- END Admin User Role Management Tests ---
+
+# --- User Profile Management ---
 
 # Ensure this is the last line or followed by other class/function definitions

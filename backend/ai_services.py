@@ -548,9 +548,7 @@ def generate_image(
     character_reference_image_paths: Optional[List[str]] = None,  # Modified
     character_name_for_reference: Optional[str] = None,
     # Changed from dall-e-3 to gpt-image-1
-    model: str = "gpt-image-1",
-    # Add openai_style parameter with default
-    openai_style: Optional[str] = "vivid"
+    model: str = "gpt-image-1"
 ) -> Dict[str, Any]:
     """
     Generates an image using OpenAI's DALL-E API.
@@ -562,19 +560,12 @@ def generate_image(
         character_reference_image_paths: Optional list of paths to reference images for character consistency.
         character_name_for_reference: Optional name of the character for whom reference is provided.
         model: The OpenAI model to use for image generation.
-        openai_style: The style parameter for DALL-E ('vivid' or 'natural'). Defaults to 'vivid'.
 
     Returns:
         A dictionary containing the path to the saved image and the revised prompt (if any).
     """
     # Ensure the directory for the image_path exists
     os.makedirs(os.path.dirname(image_path), exist_ok=True)
-
-    # Validate openai_style
-    if openai_style not in ["vivid", "natural"]:
-        app_logger.warning(
-            f"Invalid openai_style '{openai_style}' provided. Defaulting to 'vivid'.")
-        openai_style = "vivid"
 
     # Prepare reference images if provided
     valid_reference_files: List[Any] = []  # To hold open file objects
@@ -603,7 +594,7 @@ def generate_image(
                 "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
                 "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
                 "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
-                "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene\\\'s style and actions. "
+                "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
                 "Scene details: "
             )
 
@@ -625,8 +616,7 @@ def generate_image(
                 image=primary_reference_file,  # This is the opened file object
                 prompt=edit_prompt,
                 n=1,
-                size="1024x1024",
-                style=openai_style  # Pass openai_style to edit
+                size="1024x1024"
                 # response_format="b64_json" # Removed: gpt-image-1 always returns b64_json
             )
             if response.data and response.data[0].b64_json:
@@ -681,8 +671,7 @@ def generate_image(
             model=model,  # Ensure model is passed here too
             prompt=page_image_description,
             size="1024x1024",
-            n=1,
-            style=openai_style  # Pass openai_style to generate
+            n=1
             # response_format parameter removed as it's not supported for gpt-image-1
         )
 
@@ -753,23 +742,6 @@ def generate_character_reference_image(
 ) -> Dict[str, Any]:
     app_logger.info(  # ADDED THIS ENTRY LOG
         f"Attempting to generate reference image for character: {character.name} (User: {user_id}, Story: {story_id}, Style Enum: {image_style_enum})")
-
-    # Determine the OpenAI style to use
-    # Default to 'vivid'
-    final_openai_style = "vivid"
-    if image_styles_config and isinstance(image_styles_config, dict):
-        # Look for 'openai_style' in the additional_config of the 'image_styles' item
-        configured_style = image_styles_config.get("openai_style")
-        if configured_style in ["vivid", "natural"]:
-            final_openai_style = configured_style
-            app_logger.info(
-                f"Using configured openai_style '{final_openai_style}' for character reference image from image_styles config.")
-        elif configured_style:
-            app_logger.warning(
-                f"Invalid openai_style '{configured_style}' in image_styles config. Defaulting to 'vivid'.")
-    else:
-        app_logger.info(
-            f"No valid image_styles_config provided or 'openai_style' not found. Defaulting to 'vivid' for character reference image.")
 
     # Use "the character" if name is empty or whitespace
     char_name_for_prompt = character.name if character.name and character.name.strip(

@@ -1,28 +1,24 @@
 -- Seed script for initial dynamic lists and items
 INSERT OR
-IGNORE INTO dynamic_lists (list_name)
+IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
-    ('story_genres');
+    ('story_genres', 'Story Genres');
 INSERT OR
-IGNORE INTO dynamic_lists (list_name)
+IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
-    ('image_styles_app');
+    ('image_styles_app', 'Image Styles (Application)');
 INSERT OR
-IGNORE INTO dynamic_lists (list_name)
+IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
-    ('writing_styles');
+    ('writing_styles', 'Writing Styles');
 INSERT OR
-IGNORE INTO dynamic_lists (list_name)
+IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
-    ('word_to_picture_ratio');
+    ('word_to_picture_ratio', 'Word to Picture Ratio');
 INSERT OR
-IGNORE INTO dynamic_lists (list_name)
+IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
-    ('text_density');
-INSERT OR
-IGNORE INTO dynamic_lists (list_name)
-VALUES
-    ('openai_image_style_mappings');
+    ('text_density', 'Text Density');
 
 INSERT OR
 IGNORE INTO dynamic_list_items (list_name, item_value, item_label, is_active, sort_order, additional_config)
@@ -58,11 +54,4 @@ VALUES
     -- Text Density (match TextDensity enum values exactly)
     ('text_density', 'Concise (~30-50 words)', 'Concise (~30-50 words)', 1, 1, NULL),
     ('text_density', 'Standard (~60-90 words)', 'Standard (~60-90 words)', 1, 2, NULL),
-    ('text_density', 'Detailed (~100-150 words)', 'Detailed (~100-150 words)', 1, 3, NULL),
-    -- OpenAI Image Style Mappings
-    -- item_value: The style from 'image_styles_app' that this mapping applies to.
-    -- item_label: A descriptive label for this mapping entry.
-    -- additional_config: JSON containing the specific OpenAI parameter, e.g., {"openai_style_enum": "vivid"}
-    ('openai_image_style_mappings', 'Cartoon', 'Cartoon (OpenAI Style: vivid)', 1, 1, '{"openai_style_enum": "vivid"}'),
-    ('openai_image_style_mappings', 'Photorealistic', 'Photorealistic (OpenAI Style: natural)', 1, 2, '{"openai_style_enum": "natural"}'),
-    ('openai_image_style_mappings', 'Watercolor', 'Watercolor (OpenAI Style: vivid)', 1, 3, '{"openai_style_enum": "vivid"}');
+    ('text_density', 'Detailed (~100-150 words)', 'Detailed (~100-150 words)', 1, 3, NULL);
