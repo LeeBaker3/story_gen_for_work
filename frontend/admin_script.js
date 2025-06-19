@@ -10,6 +10,14 @@ if (window.location.hostname === "localhost" || window.location.hostname === "12
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+    const navLogout = document.getElementById("nav-logout");
+    if (navLogout) {
+        navLogout.addEventListener("click", () => {
+            localStorage.removeItem("authToken");
+            window.location.href = "index.html";
+        });
+    }
+
     const adminMessageArea = document.getElementById("admin-message-area");
     const adminViewPanel = document.getElementById("admin-view-panel");
     const adminSidebarLinks = document.querySelectorAll("#admin-sidebar ul li a");

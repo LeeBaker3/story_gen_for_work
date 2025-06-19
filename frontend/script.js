@@ -171,8 +171,13 @@ document.addEventListener("DOMContentLoaded", function () {
     // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
     updateNav(!!authToken);
     if (!!authToken) {
-        showSection(storyCreationSection);
-        populateGenreDropdown(); // Populate genres on load if logged in
+        if (window.location.hash === "#browse") {
+            showSection(browseStoriesSection);
+            loadAndDisplayUserStories();
+        } else {
+            showSection(storyCreationSection);
+            populateGenreDropdown(); // Populate genres on load if logged in
+        }
         // Add first character entry if not already present by HTML
         if (
             document.querySelectorAll("#main-characters-fieldset .character-entry")
@@ -1078,37 +1083,21 @@ document.addEventListener("DOMContentLoaded", function () {
                 body: formData,
             });
             if (!response.ok) {
-                const errorData = await response
-                    .json()
-                    .catch(() => ({ detail: response.statusText }));
-                throw new Error(
-                    errorData.detail || `HTTP error! status: ${response.status}`,
-                );
+                const errorData = await response.json().catch(() => ({ detail: "Login failed" }));
+                throw new Error(errorData.detail || "Login failed");
             }
             const data = await response.json();
             authToken = data.access_token;
             localStorage.setItem("authToken", authToken);
             displayMessage("Login successful!", "success");
+
+            // Fetch and set user role, then update nav
+            await fetchAndSetUserRole();
             updateNav(true);
 
-            // Fetch user role after login to decide initial view
-            const user = await apiRequest("/users/me/");
-            if (user && user.role === "admin") {
-                showSection(adminPanelContainer);
-                if (typeof loadAdminUsers === "function" && adminUserTableBody) {
-                    await loadAdminUsers();
-                } else {
-                    console.error(
-                        "Admin Login: loadAdminUsers function or adminUserTableBody element not available.",
-                    );
-                    displayMessage(
-                        "Logged in as admin, but panel content could not be loaded. See console.",
-                        "error",
-                    );
-                }
-            } else {
-                showSection(storyCreationSection);
-            }
+            // Always show the story creation section after login
+            showSection(storyCreationSection);
+
             loginForm.reset();
         } catch (error) {
             displayMessage(error.message || "Login failed.", "error");
