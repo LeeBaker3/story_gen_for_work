@@ -690,10 +690,10 @@ def test_set_user_role_unauthorized_non_admin(client, current_user_mock, target_
 
     response = client.put(
         # CHANGED: use correct endpoint
-        f"/admin/users/{target_user_for_role_tests.id}",
+        f"/api/v1/admin/management/users/{target_user_for_role_tests.id}",
         json={"role": "admin"}
     )
-    assert response.status_code == 403  # Because get_current_admin_user will fail
+    assert response.status_code == 403  # Because get_current_user will fail
     assert response.json() == {"detail": "Not authorized"}
 
     # Cleanup
@@ -718,7 +718,7 @@ def test_set_user_role_admin_success(client, admin_user_for_role_tests, target_u
         db_session_mock.query.return_value.filter.return_value.first.return_value = updated_user_data
 
         response = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}",
+            f"/api/v1/admin/management/users/{target_user_for_role_tests.id}",
             json={"role": "admin"}
         )
         assert response.status_code == 200, response.text
@@ -738,7 +738,7 @@ def test_set_user_role_admin_success(client, admin_user_for_role_tests, target_u
         db_session_mock.query.return_value.filter.return_value.first.return_value = updated_user_data_back
 
         response_back = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}",
+            f"/api/v1/admin/management/users/{target_user_for_role_tests.id}",
             json={"role": "user"}
         )
         assert response_back.status_code == 200, response_back.text
@@ -768,13 +768,13 @@ def test_set_user_role_admin_self_change_forbidden(client, admin_user_for_role_t
         db_session_mock.query.return_value.filter.return_value.count.return_value = 1
 
         response = client.put(
-            f"/admin/users/{admin_user_for_role_tests.id}",
+            f"/api/v1/admin/management/users/{admin_user_for_role_tests.id}",
             json={"role": "user"}
         )
         # The logic now forbids any admin from changing their own role.
         assert response.status_code == 403
-        assert response.json()[
-            "detail"] == "Admins cannot change their own role."
+        assert response.json() == {
+            "detail": "Admins cannot change their own role."}
 
     # Cleanup
     del app.dependency_overrides[auth.get_current_admin_user]
@@ -790,7 +790,7 @@ def test_admin_deactivate_self_forbidden(client, db_session_mock):
 
     with patch("backend.crud.get_user_admin", return_value=admin_user):
         response = client.put(
-            f"/admin/users/{admin_user.id}",
+            f"/api/v1/admin/management/users/{admin_user.id}",
             json={"is_active": False}
         )
         assert response.status_code == 403
@@ -810,7 +810,7 @@ def test_set_user_role_admin_invalid_role_value(client, admin_user_for_role_test
 
     with patch("backend.crud.admin_update_user") as mock_update_role:  # Should not be called
         response = client.put(
-            f"/admin/users/{target_user_for_role_tests.id}",
+            f"/api/v1/admin/management/users/{target_user_for_role_tests.id}",
             json={"role": "moderator"}  # Invalid role
         )
         assert response.status_code == 400, response.text
@@ -837,7 +837,7 @@ def test_set_user_role_admin_user_not_found(client, admin_user_for_role_tests, d
     with patch("backend.crud.get_user_admin", return_value=None):
         with patch("backend.crud.admin_update_user") as mock_update_user:
             response = client.put(
-                f"/admin/users/{non_existent_user_id}",
+                f"/api/v1/admin/management/users/{non_existent_user_id}",
                 json={"role": "admin"}
             )
             assert response.status_code == 404

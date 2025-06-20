@@ -44,7 +44,7 @@ def admin_get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
 
-def admin_update_user(db: Session, user_id: int, user_update: schemas.UserUpdateAdmin) -> Optional[User]:
+def admin_update_user(db: Session, user_id: int, user_update: schemas.AdminUserUpdate) -> Optional[User]:
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
         return None
@@ -429,6 +429,14 @@ def get_dynamic_list_items(
     if only_active is not None:
         query = query.filter(DynamicListItem.is_active == only_active)
     return query.order_by(DynamicListItem.sort_order, DynamicListItem.item_label).offset(skip).limit(limit).all()
+
+
+def get_public_list_items(db: Session, list_name: str) -> List[schemas.DynamicListItemPublic]:
+    """
+    Gets all active, public-facing items for a list, sorted by sort_order.
+    Returns only the item_value and item_label.
+    """
+    return db.query(DynamicListItem).filter(DynamicListItem.list_name == list_name, DynamicListItem.is_active == True).order_by(DynamicListItem.sort_order, DynamicListItem.item_label).all()
 
 
 def get_active_dynamic_list_items(db: Session, list_name: str, skip: int = 0, limit: int = 1000) -> List[DynamicListItem]:

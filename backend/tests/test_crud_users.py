@@ -143,14 +143,14 @@ def test_admin_update_user_all_fields(db_session: Session):
     assert user_to_update is not None
 
     # 2. Define the updates
-    update_data = schemas.UserUpdateAdmin(
+    update_data = schemas.AdminUserUpdate(
         username="updated_username_all",
         email="updated_all@example.com",
         role="admin",
         is_active=False
     )
 
-    # 3. Perform the update
+    # 3. Call the update function
     updated_user = crud.admin_update_user(
         db_session, user_id=user_to_update.id, user_update=update_data)
     assert updated_user is not None
@@ -176,12 +176,12 @@ def test_admin_update_user_partial_fields(db_session: Session):
     assert user_to_update is not None
 
     # 2. Define partial updates (only email and role)
-    update_data = schemas.UserUpdateAdmin(
+    update_data = schemas.AdminUserUpdate(
         email="updated_partial@example.com",
         role="admin"
     )
 
-    # 3. Perform the update
+    # 3. Call the update function
     updated_user = crud.admin_update_user(
         db_session, user_id=user_to_update.id, user_update=update_data)
     assert updated_user is not None
@@ -205,9 +205,9 @@ def test_admin_update_user_no_changes(db_session: Session):
     assert user_to_update is not None
 
     # 2. Define an empty update (no fields provided)
-    update_data = schemas.UserUpdateAdmin()
+    update_data = schemas.AdminUserUpdate()
 
-    # 3. Perform the update
+    # 3. Call the update function
     updated_user = crud.admin_update_user(
         db_session, user_id=user_to_update.id, user_update=update_data)
     assert updated_user is not None
@@ -220,7 +220,7 @@ def test_admin_update_user_no_changes(db_session: Session):
 
 
 def test_admin_update_non_existent_user(db_session: Session):
-    update_data = schemas.UserUpdateAdmin(username="ghost_user")
+    update_data = schemas.AdminUserUpdate(username="ghost_user")
     updated_user = crud.admin_update_user(
-        db_session, user_id=999999, user_update=update_data)
+        db_session, user_id=99999, user_update=update_data)
     assert updated_user is None

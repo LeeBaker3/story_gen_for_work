@@ -11,6 +11,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()  # Use the imported declarative_base
 
 
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -116,13 +124,3 @@ class DynamicListItem(Base):
 
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
-
-# Dependency to get DB session
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

@@ -1,23 +1,23 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Body  # Added Body
+from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
-# Added PlainTextResponse
 from fastapi.responses import StreamingResponse, PlainTextResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles  # Added for static files
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import timedelta
-import uuid  # For unique image filenames
+import uuid
 import asyncio
 import os
-import io  # Added for BytesIO
-# Added for List, Optional, and Dict type hints
+import io
 from typing import List, Optional, Dict
+from contextlib import asynccontextmanager
 
-# Added pdf_generator
-from . import crud, schemas, auth, database, ai_services, pdf_generator
-# Import routers from admin_router.py
-from .admin_router import router as admin_dynamic_lists_router, admin_user_router
-from .logging_config import app_logger, api_logger, error_logger
+from backend import crud, schemas, auth, database, ai_services, pdf_generator
+from backend.admin_router import admin_router
+from backend.public_router import public_router
+from backend.logging_config import app_logger, error_logger
+from backend.database_seeding import seed_database
+from backend.database import get_db, SessionLocal
 
 # Drop all tables (for development purposes to apply schema changes)
 # IMPORTANT: This will delete all existing data. Remove or comment out for production.
@@ -26,11 +26,23 @@ from .logging_config import app_logger, api_logger, error_logger
 # Create database tables
 database.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI()
 
-# Include routers from admin_router.py
-app.include_router(admin_dynamic_lists_router)
-app.include_router(admin_user_router)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app_logger.info("Application startup: Checking database for initial data.")
+    db = SessionLocal()
+    try:
+        seed_database(db)
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(public_router, prefix="/api/v1", tags=["public"])
+
 
 # Mount static files directory for frontend
 # Conditionally mount based on an environment variable
@@ -62,16 +74,6 @@ if RUN_ENV != "test":
 else:
     app_logger.info(
         "Skipping mounting of frontend and data static files in test environment (RUN_ENV=test).")
-
-# Dependency to get DB session
-
-
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @app.post("/users/", response_model=schemas.User)
@@ -141,6 +143,7 @@ async def admin_placeholder_endpoint(current_user: schemas.User = Depends(auth.g
 # @app.get("/admin/users", response_model=List[schemas.User], tags=["Admin - User Management"]) ...
 # ... all admin user management endpoints ...
 # @app.delete("/admin/users/{user_id}", status_code=204, tags=["Admin - User Management"]) ...
+
 
 @app.get("/stories/", response_model=List[schemas.Story])
 async def read_user_stories(
@@ -710,6 +713,25 @@ async def read_story_draft(
 
 
 # --- Public Endpoints for Dynamic Content ---
+
+
+@app.get("/dynamic-lists/{list_name}/items", response_model=List[schemas.DynamicListItemPublic])
+def get_public_list_items_endpoint(
+    list_name: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Public endpoint to fetch active, public-facing items for a given dynamic list.
+    Returns a simplified list of items (value and label) for frontend dropdowns.
+    """
+    db_list = crud.get_dynamic_list(db, list_name=list_name)
+    if not db_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dynamic list '{list_name}' not found."
+        )
+
+    return crud.get_public_list_items(db, list_name=list_name)
 
 
 @app.get("/dynamic-lists/{list_name}/active-items", response_model=List[schemas.DynamicListItem])

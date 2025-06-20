@@ -32,13 +32,14 @@ from backend import database, crud, schemas
 
 def ensure_dynamic_list_exists(client: TestClient, list_name: str, admin_token: str, list_label: str = None):
     response = client.get(
-        f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
     if response.status_code == 404:
-        list_payload = {"list_name": list_name, "description": f"Test list {list_name}"}
+        list_payload = {"list_name": list_name,
+                        "description": f"Test list {list_name}"}
         if list_label:
             list_payload["list_label"] = list_label
         create_response = client.post(
-            "/admin/dynamic-lists/",
+            "/api/v1/admin/dynamic-lists/",
             json=list_payload,
             headers={"Authorization": f"Bearer {admin_token}"}
         )
@@ -65,7 +66,7 @@ def test_admin_create_dynamic_list_item(client: TestClient, admin_token: str):
         "sort_order": 1
     }
     response = client.post(
-        f"/admin/dynamic-lists/{list_name}/items",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/{list_name}/items",  # Corrected endpoint
         json=payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -90,7 +91,7 @@ def test_admin_edit_dynamic_list_item(client: TestClient, admin_token: str):
         "is_active": True,
         "sort_order": 2
     }
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     assert create_response.status_code == 201  # Corrected expected status code
     item_id = create_response.json()["id"]
@@ -103,7 +104,7 @@ def test_admin_edit_dynamic_list_item(client: TestClient, admin_token: str):
         "sort_order": 3
     }
     response = client.put(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -127,14 +128,14 @@ def test_admin_delete_dynamic_list_item_not_in_use(client: TestClient, admin_tok
         "item_value": "delval_not_in_use",
         "item_label": "Delete Value Not In Use",
     }
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     assert create_response.status_code == 201  # Corrected expected status code
     item_id = create_response.json()["id"]
 
     # Delete
     response = client.delete(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert response.status_code == 204
@@ -156,7 +157,7 @@ def test_admin_cannot_delete_in_use_dynamic_list_item(client: TestClient, admin_
         "item_value": item_value_in_use,
         "item_label": "In Use Genre Label",
     }
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     # Corrected expected status code
     assert create_response.status_code == 201, f"Failed to create item: {create_response.text}"
@@ -191,7 +192,7 @@ def test_admin_cannot_delete_in_use_dynamic_list_item(client: TestClient, admin_
 
     # Try to delete the item - should fail because it\'s in use
     delete_response = client.delete(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     # Corrected based on router logic for in-use item
@@ -222,7 +223,7 @@ def test_admin_can_deactivate_in_use_dynamic_list_item(client: TestClient, admin
         "item_label": "Deactivate Genre Label",
         "is_active": True
     }
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     assert create_response.status_code == 201  # Corrected expected status code
     item_id = create_response.json()["id"]
@@ -251,7 +252,7 @@ def test_admin_can_deactivate_in_use_dynamic_list_item(client: TestClient, admin
     # Deactivate the item (is_active: False)
     update_payload = {"is_active": False}
     response = client.put(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -280,7 +281,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
     list_create_payload = {"list_name": list_name,
                            "description": "Attempt by non-admin"}
     response_list_create = client.post(
-        "/admin/dynamic-lists/",
+        "/api/v1/admin/dynamic-lists/",
         json=list_create_payload,
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
@@ -293,7 +294,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
         "item_label": "Should Fail Non-Admin",
     }
     response_item_create = client.post(
-        f"/admin/dynamic-lists/{list_name}/items",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/{list_name}/items",  # Corrected endpoint
         json=item_payload,
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
@@ -303,7 +304,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
     # without first creating an item as admin. For simplicity, we can skip or mock.
     # Let's assume an item with ID 1 exists for the sake of testing the endpoint protection.
     response_item_update = client.put(
-        f"/admin/dynamic-lists/items/1",  # Corrected endpoint
+        f"/api/v1/admin/items/1",  # Corrected endpoint
         json={"item_label": "Attempted Update"},
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
@@ -311,7 +312,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
 
     # Non-admin tries to DELETE an item
     response_item_delete = client.delete(
-        f"/admin/dynamic-lists/items/1",  # Corrected endpoint
+        f"/api/v1/admin/items/1",  # Corrected endpoint
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
     assert response_item_delete.status_code == 403  # Forbidden (or 404)
@@ -329,7 +330,7 @@ def test_cannot_create_duplicate_item_value_in_list(client: TestClient, admin_to
         "sort_order": 1
     }
     # Create first item
-    response1 = client.post(f"/admin/dynamic-lists/{list_name}/items", json=item_payload,  # Corrected endpoint
+    response1 = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=item_payload,  # Corrected endpoint
                             headers={"Authorization": f"Bearer {admin_token}"})
     assert response1.status_code == 201  # Corrected expected status code
 
@@ -340,7 +341,7 @@ def test_cannot_create_duplicate_item_value_in_list(client: TestClient, admin_to
         "item_label": "Duplicate Value 2",
         "sort_order": 2
     }
-    response2 = client.post(f"/admin/dynamic-lists/{list_name}/items", json=item_payload_duplicate,  # Corrected endpoint
+    response2 = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=item_payload_duplicate,  # Corrected endpoint
                             headers={"Authorization": f"Bearer {admin_token}"})
     assert response2.status_code == 400
     assert "already exists" in response2.json()["detail"].lower()
@@ -356,15 +357,15 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
     # Create a couple of items
-    client.post(f"/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val1",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val1",  # Corrected endpoint
                 "item_label": "Label1"}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post(f"/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val2",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val2",  # Corrected endpoint
                 "item_label": "Label2", "is_active": False}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post(f"/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val3",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val3",  # Corrected endpoint
                 "item_label": "Label3"}, headers={"Authorization": f"Bearer {admin_token}"})
 
     # Get all items
-    response_all = client.get(f"/admin/dynamic-lists/{list_name}/items", headers={
+    response_all = client.get(f"/api/v1/admin/dynamic-lists/{list_name}/items", headers={
                               "Authorization": f"Bearer {admin_token}"})
     assert response_all.status_code == 200
     items = response_all.json()
@@ -373,7 +374,7 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
 
     # Get only active items
     response_active = client.get(
-        f"/admin/dynamic-lists/{list_name}/items?only_active=true", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}/items?only_active=true", headers={"Authorization": f"Bearer {admin_token}"})
     assert response_active.status_code == 200
     active_items = response_active.json()
     assert len(active_items) >= 2  # val2 is inactive
@@ -382,7 +383,7 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
 
     # Get only inactive items
     response_inactive = client.get(
-        f"/admin/dynamic-lists/{list_name}/items?only_active=false", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}/items?only_active=false", headers={"Authorization": f"Bearer {admin_token}"})
     assert response_inactive.status_code == 200
     inactive_items = response_inactive.json()
     assert len(inactive_items) >= 1  # val2 is inactive
@@ -398,14 +399,14 @@ def test_admin_get_specific_item_by_id(client: TestClient, admin_token: str):
 
     create_payload = {"list_name": list_name,
                       "item_value": "specific_val", "item_label": "Specific Label"}
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     assert create_response.status_code == 201  # Corrected expected status code
     item_id = create_response.json()["id"]
 
     response = client.get(
         # Corrected endpoint
-        f"/admin/dynamic-lists/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == item_id
@@ -415,7 +416,7 @@ def test_admin_get_specific_item_by_id(client: TestClient, admin_token: str):
 
 
 def test_admin_get_non_existent_item_returns_404(client: TestClient, admin_token: str):
-    response = client.get("/admin/dynamic-lists/items/999999", headers={  # Corrected endpoint
+    response = client.get("/api/v1/admin/items/999999", headers={  # Corrected endpoint
                           "Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 404
 
@@ -435,7 +436,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "sort_order": 100,
         "additional_config": {"openai_style": "vivid"}
     }
-    create_response = client.post(f"/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
+    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
                                   headers={"Authorization": f"Bearer {admin_token}"})
     # Corrected expected status code
     assert create_response.status_code == 201, f"Failed to create item: {create_response.text}"
@@ -458,7 +459,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "sort_order": 101
     }
     edit_response = client.put(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -479,7 +480,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "additional_config": {"openai_style": "vivid", "other_key": "other_value"}
     }
     edit_response_other_config = client.put(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         json=update_payload_other_config,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -493,7 +494,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "additional_config": {}
     }
     edit_response_empty_config = client.put(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         json=update_payload_empty_config,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -503,7 +504,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
 
     # Cleanup: Delete the created item
     delete_response = client.delete(
-        f"/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert delete_response.status_code == 204
@@ -519,7 +520,7 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
 
     create_payload = {"list_name": list_name_usage,
                       "item_value": item_value_usage, "item_label": "Usage Check Label"}
-    item_res = client.post(f"/admin/dynamic-lists/{list_name_usage}/items", json=create_payload,  # Corrected endpoint
+    item_res = client.post(f"/api/v1/admin/dynamic-lists/{list_name_usage}/items", json=create_payload,  # Corrected endpoint
                            headers={"Authorization": f"Bearer {admin_token}"})
     assert item_res.status_code == 201  # Corrected expected status code
     item_id = item_res.json()["id"]
@@ -527,7 +528,7 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
     # Check usage (should not be in use yet)
     usage_res_before = client.get(
         # Corrected endpoint
-        f"/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert usage_res_before.status_code == 200
     usage_data_before = usage_res_before.json()
     assert usage_data_before["is_in_use"] is False
@@ -550,7 +551,7 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
     # Check usage again (should be in use)
     usage_res_after = client.get(
         # Corrected endpoint
-        f"/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert usage_res_after.status_code == 200
     usage_data_after = usage_res_after.json()
     assert usage_data_after["is_in_use"] is True
@@ -572,27 +573,27 @@ def test_public_get_active_list_items(client: TestClient, admin_token: str):
     list_name_public = "public_list_test"
     ensure_dynamic_list_exists(client, list_name_public, admin_token)
 
-    client.post(f"/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_active1",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_active1",  # Corrected endpoint
                 "item_label": "Public Active 1", "is_active": True, "sort_order": 1}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post(f"/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_inactive",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_inactive",  # Corrected endpoint
                 "item_label": "Public Inactive", "is_active": False, "sort_order": 2}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post(f"/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_active2", "item_label": "Public Active 2",  # Corrected endpoint
-                                                                        "is_active": True, "sort_order": 0}, headers={"Authorization": f"Bearer {admin_token}"})
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name_public}/items", json={"list_name": list_name_public, "item_value": "pub_active2", "item_label": "Public Active 2",  # Corrected endpoint
+                                                                               "is_active": True, "sort_order": 0}, headers={"Authorization": f"Bearer {admin_token}"})
 
     response = client.get(
-        f"/dynamic-lists/{list_name_public}/active-items")  # No auth needed
+        # No auth needed
+        f"/api/v1/dynamic-lists/{list_name_public}/active-items")
     assert response.status_code == 200
     items = response.json()
     assert len(items) == 2
     assert items[0]["item_value"] == "pub_active2"  # Check sort_order
     assert items[1]["item_value"] == "pub_active1"
-    for item in items:
-        assert item["is_active"] is True
 
 
 def test_public_get_active_items_for_non_existent_list(client: TestClient):
+    """Test that fetching active items for a non-existent list returns 404."""
     response = client.get(
-        "/dynamic-lists/non_existent_list_abc123/active-items")
+        "/api/v1/dynamic-lists/non_existent_list_abc123/active-items")
     assert response.status_code == 404
 
 # Ensure conftest.py has fixtures for `client`, `admin_token`, `regular_user_token`, and `db_session`.
@@ -633,8 +634,9 @@ def test_public_get_active_items_for_non_existent_list(client: TestClient):
 
 
 def test_admin_create_dynamic_list(client: TestClient, admin_token: str):
-    payload = {"list_name": "new_test_list_label", "list_label": "New Test List Label", "description": "A new test list with a label"}
-    response = client.post("/admin/dynamic-lists/", json=payload,
+    payload = {"list_name": "new_test_list_label", "list_label": "New Test List Label",
+               "description": "A new test list with a label"}
+    response = client.post("/api/v1/admin/dynamic-lists/", json=payload,
                            headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 201
     data = response.json()
@@ -647,10 +649,12 @@ def test_admin_edit_dynamic_list(client: TestClient, admin_token: str):
     list_name = "list_to_edit_label_unique_name"  # Ensure unique name
     list_label_initial = "Initial Label"
     # Ensure list exists or create it
-    ensure_dynamic_list_exists(client, list_name, admin_token, list_label=list_label_initial)
+    ensure_dynamic_list_exists(
+        client, list_name, admin_token, list_label=list_label_initial)
 
-    update_payload = {"description": "Updated description for edit test with label", "list_label": "Updated Label"}
-    response = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload,
+    update_payload = {
+        "description": "Updated description for edit test with label", "list_label": "Updated Label"}
+    response = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json=update_payload,
                           headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
@@ -660,66 +664,69 @@ def test_admin_edit_dynamic_list(client: TestClient, admin_token: str):
 
     # Test updating only description (list_label should remain)
     update_payload_desc_only = {"description": "Only description updated"}
-    response_desc_only = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_desc_only,
+    response_desc_only = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json=update_payload_desc_only,
                                     headers={"Authorization": f"Bearer {admin_token}"})
     assert response_desc_only.status_code == 200
     data_desc_only = response_desc_only.json()
-    assert data_desc_only["list_label"] == "Updated Label" # Should persist
+    assert data_desc_only["list_label"] == "Updated Label"  # Should persist
     assert data_desc_only["description"] == "Only description updated"
 
     # Test updating only list_label (description should remain)
     update_payload_label_only = {"list_label": "Label Only Updated"}
-    response_label_only = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_label_only,
+    response_label_only = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json=update_payload_label_only,
                                      headers={"Authorization": f"Bearer {admin_token}"})
     assert response_label_only.status_code == 200
     data_label_only = response_label_only.json()
     assert data_label_only["list_label"] == "Label Only Updated"
-    assert data_label_only["description"] == "Only description updated" # Should persist
+    # Should persist
+    assert data_label_only["description"] == "Only description updated"
 
     # Test sending empty string for list_label (should be allowed, becomes null or empty based on model)
     update_payload_empty_label = {"list_label": ""}
-    response_empty_label = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_empty_label,
-                                     headers={"Authorization": f"Bearer {admin_token}"})
+    response_empty_label = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json=update_payload_empty_label,
+                                      headers={"Authorization": f"Bearer {admin_token}"})
     assert response_empty_label.status_code == 200
     data_empty_label = response_empty_label.json()
-    assert data_empty_label["list_label"] == "" # Or None, depending on Pydantic/DB model handling
+    # Or None, depending on Pydantic/DB model handling
+    assert data_empty_label["list_label"] == ""
 
     # Test sending null for list_label (should be allowed)
     update_payload_null_label = {"list_label": None}
-    response_null_label = client.put(f"/admin/dynamic-lists/{list_name}", json=update_payload_null_label,
+    response_null_label = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json=update_payload_null_label,
                                      headers={"Authorization": f"Bearer {admin_token}"})
     assert response_null_label.status_code == 200
     data_null_label = response_null_label.json()
     assert data_null_label["list_label"] is None
 
+
 def test_admin_delete_dynamic_list(client: TestClient, admin_token: str):
     # Ensure this list name is unique for this test run or cleaned up
     list_name = "list_to_delete"
     # Ensure list exists
-    create_res = client.post("/admin/dynamic-lists/", json={
+    create_res = client.post("/api/v1/admin/dynamic-lists/", json={
                              "list_name": list_name, "description": "To be deleted"}, headers={"Authorization": f"Bearer {admin_token}"})
     assert create_res.status_code == 201  # Corrected expected status code
 
     # Add an item to it to test cascade delete (optional, but good)
     item_payload = {"list_name": list_name,
                     "item_value": "item_in_deleted_list", "item_label": "Test Item"}
-    item_res = client.post(f"/admin/dynamic-lists/{list_name}/items", json=item_payload,  # Corrected endpoint
+    item_res = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=item_payload,  # Corrected endpoint
                            headers={"Authorization": f"Bearer {admin_token}"})
     assert item_res.status_code == 201  # Corrected expected status code
     item_id = item_res.json()["id"]
 
     delete_response = client.delete(
-        f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
     assert delete_response.status_code == 204
 
     # Verify list is gone
     get_response = client.get(
-        f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
     assert get_response.status_code == 404
 
     # Verify item is also gone (due to cascade)
     get_item_response = client.get(
-        f"/admin/dynamic-list-items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert get_item_response.status_code == 404
 
 
@@ -727,16 +734,16 @@ def test_admin_cannot_create_duplicate_dynamic_list(client: TestClient, admin_to
     list_name = "duplicate_list_name"
     payload = {"list_name": list_name, "description": "First instance"}
     # Clean up if it exists from a previous failed run
-    client.delete(f"/admin/dynamic-lists/{list_name}",
+    client.delete(f"/api/v1/admin/dynamic-lists/{list_name}",
                   headers={"Authorization": f"Bearer {admin_token}"})
 
-    response1 = client.post("/admin/dynamic-lists/", json=payload,
+    response1 = client.post("/api/v1/admin/dynamic-lists/", json=payload,
                             headers={"Authorization": f"Bearer {admin_token}"})
     assert response1.status_code == 201  # Corrected expected status code
 
     payload2 = {"list_name": list_name,
                 "description": "Second instance attempt"}
-    response2 = client.post("/admin/dynamic-lists/", json=payload2,
+    response2 = client.post("/api/v1/admin/dynamic-lists/", json=payload2,
                             headers={"Authorization": f"Bearer {admin_token}"})
     assert response2.status_code == 400  # Expecting conflict or bad request
     assert "already exists" in response2.json()["detail"].lower()
@@ -744,12 +751,12 @@ def test_admin_cannot_create_duplicate_dynamic_list(client: TestClient, admin_to
 
 def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     # Create a couple of lists to ensure there's something to fetch
-    client.post("/admin/dynamic-lists/", json={"list_name": "list_alpha_label", "list_label": "Alpha Label",
+    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": "list_alpha_label", "list_label": "Alpha Label",
                 "description": "Alpha"}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post("/admin/dynamic-lists/", json={"list_name": "list_beta_label", "list_label": "Beta Label",
+    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": "list_beta_label", "list_label": "Beta Label",
                 "description": "Beta"}, headers={"Authorization": f"Bearer {admin_token}"})
 
-    response = client.get("/admin/dynamic-lists/",
+    response = client.get("/api/v1/admin/dynamic-lists/",
                           headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
@@ -759,13 +766,14 @@ def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     assert fetched_lists["list_alpha_label"]["list_label"] == "Alpha Label"
     assert "list_beta_label" in fetched_lists
     assert fetched_lists["list_beta_label"]["list_label"] == "Beta Label"
-    
+
     list_names_fetched = [lst["list_name"] for lst in data]
     # Check sorting by list_name (as per crud.get_dynamic_lists)
     if len(data) >= 2 and "list_alpha_label" in list_names_fetched and "list_beta_label" in list_names_fetched:
         # This assertion depends on the exact list names and their alphabetical order
         # Adjust if list_names are different or sorting changes
-        sorted_test_list_names = sorted(["list_alpha_label", "list_beta_label"])
+        sorted_test_list_names = sorted(
+            ["list_alpha_label", "list_beta_label"])
         # Find the indices of our test lists in the fetched data
         idx_alpha = -1
         idx_beta = -1
@@ -774,24 +782,25 @@ def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
                 idx_alpha = i
             elif lst["list_name"] == "list_beta_label":
                 idx_beta = i
-        
+
         # Only assert order if both are found and their expected order is known
         if idx_alpha != -1 and idx_beta != -1:
-             if "list_alpha_label" == sorted_test_list_names[0]: # if alpha comes before beta
-                 assert idx_alpha < idx_beta
-             else:
-                 assert idx_beta < idx_alpha
+            # if alpha comes before beta
+            if "list_alpha_label" == sorted_test_list_names[0]:
+                assert idx_alpha < idx_beta
+            else:
+                assert idx_beta < idx_alpha
 
 
 def test_admin_get_specific_dynamic_list(client: TestClient, admin_token: str):
     list_name = "specific_list_test_label"
     list_label = "Specific Label for Test"
     description = "Specific list for testing get by name with label"
-    client.post("/admin/dynamic-lists/", json={"list_name": list_name, "list_label": list_label,
+    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": list_name, "list_label": list_label,
                 "description": description}, headers={"Authorization": f"Bearer {admin_token}"})
 
     response = client.get(
-        f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
     assert data["list_name"] == list_name
@@ -800,7 +809,7 @@ def test_admin_get_specific_dynamic_list(client: TestClient, admin_token: str):
 
 
 def test_admin_get_non_existent_dynamic_list_returns_404(client: TestClient, admin_token: str):
-    response = client.get("/admin/dynamic-lists/non_existent_list_name_xyz",
+    response = client.get("/api/v1/admin/dynamic-lists/non_existent_list_name_xyz",
                           headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 404
 
@@ -808,27 +817,27 @@ def test_admin_get_non_existent_dynamic_list_returns_404(client: TestClient, adm
 def test_non_admin_cannot_manage_dynamic_lists(client: TestClient, regular_user_token: str):
     list_name = "list_non_admin_test"
     # Create
-    response_create = client.post("/admin/dynamic-lists/", json={
+    response_create = client.post("/api/v1/admin/dynamic-lists/", json={
                                   "list_name": list_name, "description": "Non-admin attempt"}, headers={"Authorization": f"Bearer {regular_user_token}"})
     assert response_create.status_code == 403
 
     # Edit (assuming a list name that might exist, or just testing endpoint protection)
-    response_edit = client.put(f"/admin/dynamic-lists/{list_name}", json={
+    response_edit = client.put(f"/api/v1/admin/dynamic-lists/{list_name}", json={
                                "description": "Update attempt"}, headers={"Authorization": f"Bearer {regular_user_token}"})
     # Or 404 if list doesn't exist, but 403 should be checked first
     assert response_edit.status_code == 403
 
     # Delete
-    response_delete = client.delete(f"/admin/dynamic-lists/{list_name}", headers={
+    response_delete = client.delete(f"/api/v1/admin/dynamic-lists/{list_name}", headers={
                                     "Authorization": f"Bearer {regular_user_token}"})
     assert response_delete.status_code == 403  # Or 404
 
     # Get specific (should also be admin only)
     response_get_specific = client.get(
-        f"/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {regular_user_token}"})
+        f"/api/v1/admin/dynamic-lists/{list_name}", headers={"Authorization": f"Bearer {regular_user_token}"})
     assert response_get_specific.status_code == 403  # Or 404
 
     # Get all (should also be admin only)
     response_get_all = client.get(
-        "/admin/dynamic-lists/", headers={"Authorization": f"Bearer {regular_user_token}"})
+        "/api/v1/admin/dynamic-lists/", headers={"Authorization": f"Bearer {regular_user_token}"})
     assert response_get_all.status_code == 403

@@ -7,17 +7,14 @@ from backend.auth import get_current_admin_user
 from backend.logging_config import app_logger, error_logger
 from backend.database import get_db
 
-router = APIRouter(
-    prefix="/admin/dynamic-lists",
-    tags=["Admin - Dynamic Lists"],
-    # Protect all routes in this router
+admin_router = APIRouter(
     dependencies=[Depends(get_current_admin_user)]
 )
 
 # DynamicList Endpoints
 
 
-@router.post("/", response_model=schemas.DynamicList, status_code=status.HTTP_201_CREATED)
+@admin_router.post("/dynamic-lists/", response_model=schemas.DynamicList, status_code=status.HTTP_201_CREATED)
 def create_dynamic_list_endpoint(
     dynamic_list: schemas.DynamicListCreate,
     db: Session = Depends(get_db)
@@ -29,7 +26,7 @@ def create_dynamic_list_endpoint(
     return crud.create_dynamic_list(db=db, dynamic_list=dynamic_list)
 
 
-@router.get("/", response_model=List[schemas.DynamicList])
+@admin_router.get("/dynamic-lists/", response_model=List[schemas.DynamicList])
 def read_dynamic_lists_endpoint(
     skip: int = 0,
     limit: int = 100,
@@ -39,7 +36,7 @@ def read_dynamic_lists_endpoint(
     return lists
 
 
-@router.get("/{list_name}", response_model=schemas.DynamicList)
+@admin_router.get("/dynamic-lists/{list_name}", response_model=schemas.DynamicList)
 def read_dynamic_list_endpoint(
     list_name: str,
     db: Session = Depends(get_db)
@@ -51,7 +48,7 @@ def read_dynamic_list_endpoint(
     return db_list
 
 
-@router.put("/{list_name}", response_model=schemas.DynamicList)
+@admin_router.put("/dynamic-lists/{list_name}", response_model=schemas.DynamicList)
 def update_dynamic_list_endpoint(
     list_name: str,
     dynamic_list_update: schemas.DynamicListUpdate,
@@ -70,7 +67,7 @@ def update_dynamic_list_endpoint(
     return updated_list
 
 
-@router.delete("/{list_name}", status_code=status.HTTP_204_NO_CONTENT)
+@admin_router.delete("/dynamic-lists/{list_name}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dynamic_list_endpoint(
     list_name: str,
     db: Session = Depends(get_db)
@@ -100,7 +97,7 @@ def delete_dynamic_list_endpoint(
 # DynamicListItem Endpoints
 
 
-@router.post("/{list_name}/items", response_model=schemas.DynamicListItem, status_code=status.HTTP_201_CREATED)
+@admin_router.post("/dynamic-lists/{list_name}/items", response_model=schemas.DynamicListItem, status_code=status.HTTP_201_CREATED)
 def create_dynamic_list_item_endpoint(
     list_name: str,  # Ensure the item is created for the correct list in the path
     item: schemas.DynamicListItemCreate,
@@ -128,7 +125,7 @@ def create_dynamic_list_item_endpoint(
     return crud.create_dynamic_list_item(db=db, item=item)
 
 
-@router.get("/{list_name}/items", response_model=List[schemas.DynamicListItem])
+@admin_router.get("/dynamic-lists/{list_name}/items", response_model=List[schemas.DynamicListItem])
 def read_dynamic_list_items_endpoint(
     list_name: str,
     skip: int = 0,
@@ -152,7 +149,7 @@ def read_dynamic_list_items_endpoint(
 
 
 # Changed path for clarity
-@router.get("/items/{item_id}", response_model=schemas.DynamicListItem)
+@admin_router.get("/items/{item_id}", response_model=schemas.DynamicListItem)
 def read_single_dynamic_list_item_endpoint(
     item_id: int,
     db: Session = Depends(get_db)
@@ -164,7 +161,7 @@ def read_single_dynamic_list_item_endpoint(
     return db_item
 
 
-@router.put("/items/{item_id}", response_model=schemas.DynamicListItem)
+@admin_router.put("/items/{item_id}", response_model=schemas.DynamicListItem)
 def update_dynamic_list_item_endpoint(
     item_id: int,
     item_update: schemas.DynamicListItemUpdate,
@@ -194,7 +191,7 @@ def update_dynamic_list_item_endpoint(
     return updated_item
 
 
-@router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@admin_router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dynamic_list_item_endpoint(
     item_id: int,
     db: Session = Depends(get_db)
@@ -220,7 +217,7 @@ def delete_dynamic_list_item_endpoint(
     return
 
 
-@router.get("/items/{item_id}/in-use", response_model=schemas.DynamicListItemUsage)
+@admin_router.get("/items/{item_id}/in-use", response_model=schemas.DynamicListItemUsage)
 def check_dynamic_list_item_in_use(
     item_id: int,
     db: Session = Depends(get_db)
@@ -260,33 +257,8 @@ def check_dynamic_list_item_in_use(
 
 
 # --- Admin User Management Router ---
-admin_user_router = APIRouter(
-    prefix="/admin/users",
-    tags=["Admin - User Management"],
-    dependencies=[Depends(get_current_admin_user)]
-)
-
-
-@admin_user_router.get("/", response_model=List[schemas.User])
-def admin_read_users(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    """
-    Retrieve all users.
-    """
-    users = crud.get_users_admin(db, skip=skip, limit=limit)
-    return users
-
-
-@admin_user_router.put("/{user_id}", response_model=schemas.User)
-async def admin_update_user_details(
-    user_id: int,
-    user_update: schemas.UserUpdateAdmin,  # Using the comprehensive schema
-    db: Session = Depends(get_db),
-    current_admin: schemas.User = Depends(get_current_admin_user)
-):
+@admin_router.put("/management/users/{user_id}", response_model=schemas.User, dependencies=[Depends(get_current_admin_user)])
+def admin_update_user_endpoint(user_id: int, user_update: schemas.AdminUserUpdate, db: Session = Depends(get_db), current_admin: schemas.User = Depends(get_current_admin_user)):
     """
     Update a user's details (username, email, role, active status).
     Prevents an admin from changing their own role if they are the sole admin or deactivating themselves.
@@ -346,6 +318,27 @@ async def admin_update_user_details(
     app_logger.info(
         f"User ID {user_id} details updated by admin {current_admin.username}. New details: {updated_user}")
     return updated_user
+
+
+@admin_router.get("/management/users/", response_model=List[schemas.User], dependencies=[Depends(get_current_admin_user)])
+def admin_get_users_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Retrieve all users.
+    """
+    users = crud.get_users_admin(db, skip=skip, limit=limit)
+    return users
+
+
+@admin_router.get("/management/users/{user_id}", response_model=schemas.User, dependencies=[Depends(get_current_admin_user)])
+def admin_get_user_endpoint(user_id: int, db: Session = Depends(get_db)):
+    """
+    Retrieve a specific user by ID.
+    """
+    user = crud.get_user_admin(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with ID {user_id} not found")
+    return user
 
 # You will need to include admin_user_router in your main FastAPI app (e.g., in main.py)
 # Example for main.py:

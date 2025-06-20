@@ -109,7 +109,7 @@ class Page(PageBase):
 
 
 class StoryBase(BaseModel):
-    title: Optional[str] = None  # Added
+    title: str
     genre: str
     story_outline: str  # User's initial outline
     main_characters: List[CharacterDetail]
@@ -171,7 +171,7 @@ class UserInDB(User):
 # For Admin User Management
 
 
-class UserUpdateAdmin(BaseModel):
+class AdminUserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None  # Should be 'user' or 'admin'
@@ -206,6 +206,15 @@ class DynamicListItemCreate(DynamicListItemBase):
     list_name: str  # Must be provided when creating an item
 
 
+class DynamicListItem(DynamicListItemBase):
+    id: int
+    list_name: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DynamicListItemUpdate(BaseModel):
     item_value: Optional[str] = None
     item_label: Optional[str] = None
@@ -214,11 +223,9 @@ class DynamicListItemUpdate(BaseModel):
     additional_config: Optional[dict] = None
 
 
-class DynamicListItem(DynamicListItemBase):
-    id: int
-    list_name: str
-    created_at: datetime
-    updated_at: datetime
+class DynamicListItemPublic(BaseModel):
+    item_value: str
+    item_label: str
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -21,6 +21,7 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
     character1 = schemas.CharacterDetail(
         name="Hero", description="Brave knight")
     story_data = schemas.StoryBase(
+        title="The Dragon Slayer",
         genre=schemas.StoryGenre.FANTASY,
         story_outline="A quest to defeat a dragon.",
         main_characters=[character1],
@@ -52,7 +53,7 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
 
 def test_get_story(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Sci-Fi", story_outline="Space adventure", main_characters=[], num_pages=3)
+        title="Galaxy Quest", genre="Sci-Fi", story_outline="Space adventure", main_characters=[], num_pages=3)
     created_story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Galaxy Quest")
     retrieved_story = crud.get_story(db=db_session, story_id=created_story.id)
@@ -71,11 +72,11 @@ def test_get_story_non_existent(db_session: Session):
 
 def test_get_stories_by_user(db_session: Session, test_user: User):
     story_data1 = schemas.StoryBase(
-        genre="Comedy", story_outline="Funny story", main_characters=[], num_pages=2)
+        title="Haha Time", genre="Comedy", story_outline="Funny story", main_characters=[], num_pages=2)
     crud.create_story_db_entry(
         db=db_session, story_data=story_data1, user_id=test_user.id, title="Haha Time")
     story_data2 = schemas.StoryBase(
-        genre="Drama", story_outline="Sad story", main_characters=[], num_pages=4)
+        title="Tear Jerker", genre="Drama", story_outline="Sad story", main_characters=[], num_pages=4)
     crud.create_story_db_entry(
         db=db_session, story_data=story_data2, user_id=test_user.id, title="Tear Jerker")
 
@@ -121,7 +122,7 @@ def test_get_stories_by_user_with_drafts(db_session: Session, test_user: User):
 
 def test_update_story_title(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Mystery", story_outline="Whodunit", main_characters=[], num_pages=10)
+        title="The Initial Clue", genre="Mystery", story_outline="Whodunit", main_characters=[], num_pages=10)
     original_title = "The Initial Clue"
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title=original_title)
@@ -147,7 +148,7 @@ def test_update_story_title_non_existent(db_session: Session):
 
 def test_create_story_page(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Action", story_outline="Big boom", main_characters=[], num_pages=1)
+        title="Explosion Man", genre="Action", story_outline="Big boom", main_characters=[], num_pages=1)
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Explosion Man")
 
@@ -169,7 +170,7 @@ def test_create_story_page(db_session: Session, test_user: User):
 
 def test_update_story_with_pages(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Horror", story_outline="Scary stuff", main_characters=[], num_pages=2)
+        title="Night Terrors", genre="Horror", story_outline="Scary stuff", main_characters=[], num_pages=2)
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Night Terrors")
 
@@ -196,7 +197,7 @@ def test_update_story_with_pages(db_session: Session, test_user: User):
 
 def test_delete_story_db_entry(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Fantasy", story_outline="To be deleted", main_characters=[], num_pages=1)
+        title="Ephemeral Tale", genre="Fantasy", story_outline="To be deleted", main_characters=[], num_pages=1)
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Ephemeral Tale")
     page_data = schemas.PageCreate(
@@ -231,7 +232,7 @@ def test_delete_story_db_entry_non_existent(db_session: Session):
 
 def test_update_page_image_path(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        genre="Childrens", story_outline="A cute story", main_characters=[], num_pages=1)
+        title="Picture Book", genre="Childrens", story_outline="A cute story", main_characters=[], num_pages=1)
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Picture Book")
     page_data = schemas.PageCreate(

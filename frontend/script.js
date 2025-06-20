@@ -63,6 +63,64 @@ document.addEventListener("DOMContentLoaded", function () {
     // Spinner Elements
     const spinner = document.getElementById("spinner");
 
+    // --- DYNAMIC DROPDOWN POPULATION ---
+    async function populateDropdown(selectElementId, listName) {
+        const selectElement = document.getElementById(selectElementId);
+        if (!selectElement) {
+            console.error(
+                `[populateDropdown] Select element with ID '${selectElementId}' not found.`,
+            );
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/v1/dynamic-lists/${listName}/items`,
+            );
+            if (!response.ok) {
+                throw new Error(
+                    `Failed to fetch ${listName}: ${response.status} ${response.statusText}`,
+                );
+            }
+            const items = await response.json();
+
+            // Clear existing options (except for a potential placeholder)
+            selectElement.innerHTML = '';
+
+            // Add a default, disabled option
+            const defaultOption = document.createElement("option");
+            defaultOption.value = "";
+            defaultOption.textContent = "Select...";
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            selectElement.appendChild(defaultOption);
+
+            // Populate with fetched items
+            items.forEach(item => {
+                const option = document.createElement("option");
+                option.value = item.item_value; // Corrected from item.value
+                option.textContent = item.item_label; // Corrected from item.label
+                selectElement.appendChild(option);
+            });
+        } catch (error) {
+            console.error(`[populateDropdown] Error populating ${listName}:`, error);
+            // Optionally, display an error message to the user in the dropdown
+            selectElement.innerHTML = '<option value="">Error loading options</option>';
+        }
+    }
+
+    function populateAllDropdowns() {
+        console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
+        populateDropdown("story-genre", "story_genres");
+        populateDropdown("story-image-style", "image_styles_app");
+        populateDropdown(
+            "story-word-to-picture-ratio",
+            "word_to_picture_ratio",
+        );
+        populateDropdown("story-text-density", "text_density");
+    }
+
+
     // --- RESET FUNCTION (MOVED HERE) ---
     function resetFormAndState() {
         console.log("[resetFormAndState] Attempting to reset form and state.");
@@ -176,7 +234,7 @@ document.addEventListener("DOMContentLoaded", function () {
             loadAndDisplayUserStories();
         } else {
             showSection(storyCreationSection);
-            populateGenreDropdown(); // Populate genres on load if logged in
+            populateAllDropdowns(); // Populate all dropdowns on load if logged in
         }
         // Add first character entry if not already present by HTML
         if (
@@ -863,32 +921,44 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- POPULATE DYNAMIC FORM ELEMENTS ---
-    async function populateGenreDropdown() {
-        const genreSelect = storyCreationForm.genre;
-        if (!genreSelect) {
-            console.error("Genre select element not found.");
+    async function populateDropdown(selectElementName, listName) {
+        const selectElement = storyCreationForm[selectElementName];
+        if (!selectElement) {
+            console.error(`Select element with name '${selectElementName}' not found.`);
             return;
         }
 
         try {
-            const genres = await apiRequest("/genres/"); // No token needed for public genres
-            genreSelect.innerHTML = ""; // Clear existing options
-            if (genres && genres.length > 0) {
-                genres.forEach((genre) => {
+            const items = await apiRequest(`/dynamic-lists/${listName}/active-items`);
+
+            selectElement.innerHTML = '<option value="">Select an option</option>'; // Clear and add a placeholder
+
+            if (items && items.length > 0) {
+                items.forEach(item => {
                     const option = document.createElement("option");
-                    option.value = genre;
-                    option.textContent = genre;
-                    genreSelect.appendChild(option);
+                    option.value = item.item_value; // Corrected from item.value
+                    option.textContent = item.item_label; // Corrected from item.label
+                    selectElement.appendChild(option);
                 });
             } else {
-                displayMessage("Could not load story genres.", "error");
+                console.warn(`No items found for list: ${listName}`);
             }
         } catch (error) {
-            displayMessage(
-                "Failed to load story genres. Please try refreshing.",
-                "error",
-            );
+            console.error(`Failed to load dynamic list ${listName}:`, error);
+            selectElement.innerHTML = '<option value="" disabled>Error loading options</option>';
+            // apiRequest function is expected to display the error message.
         }
+    }
+
+    function populateAllDropdowns() {
+        console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
+        populateDropdown("story-genre", "story_genres");
+        populateDropdown("story-image-style", "image_styles_app");
+        populateDropdown(
+            "story-word-to-picture-ratio",
+            "word_to_picture_ratio",
+        );
+        populateDropdown("story-text-density", "text_density");
     }
 
     // --- END POPULATE DYNAMIC FORM ELEMENTS (Placeholder for correct positioning) ---
@@ -1040,6 +1110,8 @@ document.addEventListener("DOMContentLoaded", function () {
         navCreateStory.addEventListener("click", () => {
             showSection(storyCreationSection);
             resetFormAndState();
+            populateAllDropdowns(); // Populate dropdowns when navigating to the create form
+            showSection(storyCreationSection);
         });
     }
 
@@ -1089,16 +1161,14 @@ document.addEventListener("DOMContentLoaded", function () {
             const data = await response.json();
             authToken = data.access_token;
             localStorage.setItem("authToken", authToken);
+            updateNav(true);
+            showSection(storyCreationSection); // Show creation form first
+            populateAllDropdowns(); // Populate dropdowns
+            loadAndDisplayUserStories(); // Then load stories
             displayMessage("Login successful!", "success");
 
-            // Fetch and set user role, then update nav
+            // Check for admin role and update UI
             await fetchAndSetUserRole();
-            updateNav(true);
-
-            // Always show the story creation section after login
-            showSection(storyCreationSection);
-
-            loginForm.reset();
         } catch (error) {
             displayMessage(error.message || "Login failed.", "error");
         }
@@ -1148,18 +1218,16 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         const numPagesValue = document.getElementById("story-num-pages").value; // Corrected ID
-        let numPagesAsInt = parseInt(numPagesValue);
+        let numPagesAsInt = parseInt(numPagesValue, 10);
 
         // Ensure num_pages is a positive integer, defaulting to 1 if empty, NaN, or <= 0.
         // This is to satisfy StoryCreate's requirement for num_pages: int and downstream AI logic.
-        if (!numPagesValue.trim() || isNaN(numPagesAsInt) || numPagesAsInt <= 0) {
-            numPagesAsInt = 1;
-            // Optionally, update the form field to reflect the default:
-            // document.getElementById('numPages').value = "1";
+        if (isNaN(numPagesAsInt) || numPagesAsInt <= 0) {
+            numPagesAsInt = 1; // Default to 1 if not a valid positive number
         }
 
         return {
-            title: document.getElementById("story-title").value, // Corrected ID
+            title: document.getElementById("story-title").value, // FR-FE-DRAFT-01: Add title
             genre: document.getElementById("story-genre").value, // Corrected ID
             story_outline: document.getElementById("story-outline").value, // Corrected ID
             main_characters: mainCharacters,
@@ -1833,12 +1901,26 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 const isSelf = currentUserId && id === currentUserId;
                 // Replace cells with inputs, email now editable for all users
-                row.children[2].innerHTML = `<input type=\"email\" value=\"${email}\" style=\"width: 95%\">`;
-                row.children[3].innerHTML = `<select${isSelf ? ' disabled title=\"You cannot change your own role.\"' : ''}><option value=\"user\"${role === "user" ? " selected" : ""}>user</option><option value=\"admin\"${role === "admin" ? " selected" : ""}>admin</option></select>`;
-                row.children[4].innerHTML = `<input type=\"checkbox\" ${active ? "checked" : ""}>`;
-                row.children[5].innerHTML = `<button class=\"admin-action-button admin-save-user\">Save</button> <button class=\"admin-action-button admin-cancel-edit\">Cancel</button>`;
-            }
-            if (target.classList.contains("admin-cancel-edit")) {
+                row.children[2].innerHTML = `<input type="email" value="${email}" style="width: 95%">`;
+                row.children[3].innerHTML = `
+                <select name="role" ${isSelf ? 'disabled' : ''}>
+                    <option value="user" ${role === 'user' ? 'selected' : ''}>user</option>
+                    <option value="editor" ${role === 'editor' ? 'selected' : ''}>editor</option>
+                    <option value="admin" ${role === 'admin' ? 'selected' : ''}>admin</option>
+                </select>`;
+                row.children[4].innerHTML = `
+                <select name="active">
+                    <option value="true" ${active ? 'selected' : ''}>true</option>
+                    <option value="false" ${!active ? 'selected' : ''}>false</option>
+                </select>`;
+
+                // Replace "Edit" with "Save" and "Cancel"
+                target.style.display = 'none';
+                const actionsCell = row.children[5];
+                actionsCell.innerHTML = `<button class="admin-save-user-changes">Save</button> <button class="admin-cancel-user-edit">Cancel</button>`;
+            } else if (target.classList.contains("admin-cancel-user-edit")) {
+                const row = target.closest("tr");
+                if (!row) return;
                 // Reload users to reset row
                 if (typeof loadAdminUsers === "function") await loadAdminUsers();
             }
