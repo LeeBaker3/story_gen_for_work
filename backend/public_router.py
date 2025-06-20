@@ -1,10 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from backend import crud, schemas
+
+from backend import crud, schemas, auth
 from backend.database import get_db
+from backend.logging_config import app_logger
 
 public_router = APIRouter()
+
+
+@public_router.get("/users/me/", response_model=schemas.User)
+async def read_users_me(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    """
+    Fetch the current logged-in user.
+    """
+    app_logger.info(f"User {current_user.username} is fetching their details.")
+    return current_user
 
 
 @public_router.get("/dynamic-lists/{list_name}/active-items", response_model=List[schemas.DynamicListItemPublic])

@@ -122,13 +122,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 async def root():
     return {"message": "Story Generator API"}
 
-# Placeholder for current user endpoint (requires token verification)
-
-
-@app.get("/users/me/", response_model=schemas.User)
-async def read_users_me(current_user: schemas.User = Depends(auth.get_current_active_user)):
-    return current_user
-
 # Admin only placeholder endpoint
 
 

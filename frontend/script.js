@@ -693,7 +693,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
         try {
-            const user = await apiRequest("/users/me/");
+            const user = await apiRequest("/api/v1/users/me/");
             if (user && user.role === "admin") {
                 if (navAdminPanel) navAdminPanel.style.display = "inline-block";
             } else {

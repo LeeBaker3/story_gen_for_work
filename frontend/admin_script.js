@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function checkAdminRole() {
         try {
-            const user = await apiRequest("/users/me/");
+            const user = await apiRequest("/api/v1/users/me/");
             if (!user || user.role !== "admin") {
                 displayAdminMessage("Access Denied: You do not have admin privileges.", "error");
                 adminViewPanel.innerHTML = "<p>You do not have permission to view this page.</p>";
@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", function () {
     async function loadUserManagement() {
         adminViewPanel.innerHTML = '<h2>User Management</h2><div id="user-list-table-container"></div>';
         try {
-            const users = await apiRequest("/admin/users/", "GET");
+            const users = await apiRequest("/api/v1/admin/management/users/", "GET");
             renderUserTable(users);
         } catch (error) {
             console.error("Error loading users:", error);
@@ -168,13 +168,13 @@ document.addEventListener("DOMContentLoaded", function () {
             // Fetch the specific user's current details.
             // Assuming /admin/users/ returns a list, find the user.
             // A direct /admin/users/{user_id} GET endpoint would be more efficient if available.
-            const users = await apiRequest("/admin/users/", "GET");
+            const users = await apiRequest("/api/v1/admin/management/users/", "GET");
             currentUserData = users.find(u => u.id === userId);
 
             if (!currentUserData) {
                 // As a fallback, try fetching the single user if the list doesn't contain them or direct endpoint exists
                 try {
-                    currentUserData = await apiRequest(`/admin/users/${userId}`, "GET");
+                    currentUserData = await apiRequest(`/api/v1/admin/management/users/${userId}`, "GET");
                 } catch (singleFetchError) {
                     console.warn(`Could not fetch user ${userId} individually, relying on list or failing. Error: ${singleFetchError.message}`);
                 }
@@ -327,7 +327,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('dynamic-lists-container');
         container.innerHTML = '<p>Loading lists...</p>';
         try {
-            const lists = await apiRequest("/admin/dynamic-lists/", "GET");
+            const lists = await apiRequest("/api/v1/admin/dynamic-lists/", "GET");
             if (!lists || lists.length === 0) {
                 container.innerHTML = "<p>No dynamic lists found. You can add one!</p>";
                 return;
@@ -379,7 +379,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const selector = document.getElementById('select-list-for-items');
         selector.innerHTML = '<option value="">-- Select a List --</option>';
         try {
-            const lists = await apiRequest("/admin/dynamic-lists/", "GET");
+            const lists = await apiRequest("/api/v1/admin/dynamic-lists/", "GET");
             lists.forEach(list => {
                 const option = document.createElement('option');
                 option.value = list.list_name;
@@ -396,7 +396,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('dynamic-list-items-container');
         container.innerHTML = `<p>Loading items for <strong>${escapeHTML(listName)}</strong>...</p>`;
         try {
-            const items = await apiRequest(`/admin/dynamic-lists/${listName}/items`, "GET");
+            const items = await apiRequest(`/api/v1/admin/dynamic-lists/${listName}/items`, "GET");
 
             if (!items || items.length === 0) {
                 container.innerHTML = `<p>No items found for list: ${escapeHTML(listName)}. You can add one!</p>`;
@@ -421,7 +421,7 @@ document.addEventListener("DOMContentLoaded", function () {
             `;
 
             const usagePromises = items.map(item =>
-                apiRequest(`/admin/dynamic-lists/items/${item.id}/in-use`, "GET") // Corrected path
+                apiRequest(`/api/v1/admin/dynamic-lists/items/${item.id}/in-use`, "GET") // Corrected path
                     .then(usageInfo => ({ itemId: item.id, isInUse: usageInfo.is_in_use, details: usageInfo.details }))
                     .catch(err => {
                         console.warn(`Could not fetch in-use status for item ${item.id}`, err);
@@ -522,7 +522,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const modalMessageArea = document.getElementById(modalMessageId);
 
         if (isEdit) {
-            apiRequest(`/admin/dynamic-lists/${listName}`, "GET")
+            apiRequest(`/api/v1/admin/dynamic-lists/${listName}`, "GET")
                 .then(listData => {
                     if (listData) {
                         if (listData.description) {
@@ -541,9 +541,9 @@ document.addEventListener("DOMContentLoaded", function () {
             const deleteButton = document.getElementById('deleteDynamicListButton');
             if (deleteButton) { // Ensure delete button exists (it should in edit mode)
                 deleteButton.addEventListener('click', async () => {
-                    if (!confirm(`Are you sure you want to delete the list "${escapeHTML(listName)}" and all its items? This cannot be undone.`)) return;
+                    if (!confirm(`Are you sure you want to delete the list \"${escapeHTML(listName)}\" and all its items? This cannot be undone.`)) return;
                     try {
-                        await apiRequest(`/admin/dynamic-lists/${listName}`, 'DELETE');
+                        await apiRequest(`/api/v1/admin/dynamic-lists/${listName}`, 'DELETE');
                         displayAdminMessage(`List '${escapeHTML(listName)}' deleted successfully.`, 'success'); // Global message
                         document.getElementById(modalId).remove();
                         await populateListsForManagement();
@@ -579,10 +579,10 @@ document.addEventListener("DOMContentLoaded", function () {
             try {
                 if (isEdit) {
                     // Only send description and list_label for update
-                    await apiRequest(`/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description, list_label: data.list_label });
+                    await apiRequest(`/api/v1/admin/dynamic-lists/${listName}`, 'PUT', { description: data.description, list_label: data.list_label });
                     displayAdminMessage(`List '${escapeHTML(listName)}' updated.`, 'success'); // Global message
                 } else {
-                    await apiRequest("/admin/dynamic-lists/", 'POST', data);
+                    await apiRequest("/api/v1/admin/dynamic-lists/", 'POST', data);
                     displayAdminMessage(`List '${escapeHTML(data.list_name)}' created.`, 'success'); // Global message
                 }
                 document.getElementById(modalId).remove();
@@ -614,7 +614,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (isEdit) {
             try {
-                itemData = await apiRequest(`/admin/dynamic-lists/items/${itemId}`, "GET");
+                itemData = await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, "GET");
                 if (!itemData) {
                     displayAdminMessage(`Error: Item ID ${itemId} not found.`, "error", modalId);
                     return;
@@ -622,7 +622,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 currentListName = itemData.list_name;
 
                 // Fetch in-use status for the item being edited
-                const usageInfo = await apiRequest(`/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path
+                const usageInfo = await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path
                 itemInUseDetails = usageInfo.is_in_use ? usageInfo.details : [];
 
             } catch (error) {
@@ -719,11 +719,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             try {
                 if (isEdit) {
-                    await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'PUT', data); // Corrected path
+                    await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'PUT', data); // Corrected path
                     displayAdminMessage(`Item ID ${itemId} updated.`, 'success'); // Global message
                 } else {
                     data.list_name = formData.get('item_list_name'); // list_name only needed for POST
-                    await apiRequest(`/admin/dynamic-lists/${data.list_name}/items`, 'POST', data);
+                    await apiRequest(`/api/v1/admin/dynamic-lists/${data.list_name}/items`, 'POST', data);
                     displayAdminMessage(`New item created in list '${data.list_name}'.`, 'success'); // Global message
                 }
                 document.getElementById(modalId).remove();
@@ -750,7 +750,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!confirm(`Are you sure you want to delete item ID ${itemId} ('${escapeHTML(itemValue)}')? This cannot be undone.`)) return;
 
                 try {
-                    await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path
+                    await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path
                     displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success'); // Global message
                     document.getElementById(modalId).remove();
                     await loadItemsForSelectedList(currentListName);
@@ -771,7 +771,7 @@ document.addEventListener("DOMContentLoaded", function () {
         updateUser: async function (userId, payload, updateType = 'details') { // updateType can be 'status' or 'details'
             const modalId = 'editUserDetailsModal'; // Assuming this is the relevant modal for details
             try {
-                await apiRequest(`/admin/users/${userId}`, 'PUT', payload);
+                await apiRequest(`/api/v1/admin/management/users/${userId}`, 'PUT', payload);
                 displayAdminMessage(`User ${userId} ${updateType} updated successfully.`, 'success');
                 if (updateType === 'details' && document.getElementById(modalId)) {
                     document.getElementById(modalId).remove();
@@ -839,7 +839,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // For direct deletion (e.g. from console), it might still be useful, but UI uses modal.
             console.warn("deleteDynamicListItem directly called. UI uses modal. Consider removing this direct exposure if not needed.");
             try {
-                const usageInfo = await apiRequest(`/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path for safety, though deprecated
+                const usageInfo = await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path for safety, though deprecated
                 if (usageInfo.is_in_use) {
                     alert(`Cannot delete item ID ${itemId}. It is currently in use: ${usageInfo.details.join(', ')}`);
                     return;
@@ -847,7 +847,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (!confirm(`Are you sure you want to delete item ID ${itemId}? This cannot be undone.`)) return;
 
-                await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path for safety, though deprecated
+                await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path for safety, though deprecated
                 displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success');
                 await loadItemsForSelectedList(listName); // listName needs to be available
             } catch (error) {
