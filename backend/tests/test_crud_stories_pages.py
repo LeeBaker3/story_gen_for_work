@@ -56,15 +56,17 @@ def test_get_story(db_session: Session, test_user: User):
         title="Galaxy Quest", genre="Sci-Fi", story_outline="Space adventure", main_characters=[], num_pages=3)
     created_story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Galaxy Quest")
-    retrieved_story = crud.get_story(db=db_session, story_id=created_story.id)
+    retrieved_story = crud.get_story(
+        db=db_session, story_id=created_story.id, user_id=test_user.id)
 
     assert retrieved_story is not None
     assert retrieved_story.id == created_story.id
     assert retrieved_story.title == "Galaxy Quest"
 
 
-def test_get_story_non_existent(db_session: Session):
-    retrieved_story = crud.get_story(db=db_session, story_id=9999)
+def test_get_story_non_existent(db_session: Session, test_user: User):
+    retrieved_story = crud.get_story(
+        db=db_session, story_id=9999, user_id=test_user.id)
     assert retrieved_story is None
 
 # Test Get Stories by User
@@ -134,7 +136,8 @@ def test_update_story_title(db_session: Session, test_user: User):
     assert updated_story is not None
     assert updated_story.title == new_title
 
-    refetched_story = crud.get_story(db=db_session, story_id=story.id)
+    refetched_story = crud.get_story(
+        db=db_session, story_id=story.id, user_id=test_user.id)
     assert refetched_story.title == new_title
 
 
@@ -208,7 +211,7 @@ def test_delete_story_db_entry(db_session: Session, test_user: User):
     story_id_to_delete = story.id
     # Verify story and page exist before deletion
     assert crud.get_story(
-        db=db_session, story_id=story_id_to_delete) is not None
+        db=db_session, story_id=story_id_to_delete, user_id=test_user.id) is not None
     assert db_session.query(Page).filter(
         Page.story_id == story_id_to_delete).count() == 1
 
@@ -217,7 +220,8 @@ def test_delete_story_db_entry(db_session: Session, test_user: User):
     assert delete_successful is True
 
     # Verify story and page are deleted
-    assert crud.get_story(db=db_session, story_id=story_id_to_delete) is None
+    assert crud.get_story(
+        db=db_session, story_id=story_id_to_delete, user_id=test_user.id) is None
     assert db_session.query(Page).filter(
         Page.story_id == story_id_to_delete).count() == 0
 
@@ -232,7 +236,7 @@ def test_delete_story_db_entry_non_existent(db_session: Session):
 
 def test_update_page_image_path(db_session: Session, test_user: User):
     story_data = schemas.StoryBase(
-        title="Picture Book", genre="Childrens", story_outline="A cute story", main_characters=[], num_pages=1)
+        title="Picture Book", genre="Children's", story_outline="A cute story", main_characters=[], num_pages=1)
     story = crud.create_story_db_entry(
         db=db_session, story_data=story_data, user_id=test_user.id, title="Picture Book")
     page_data = schemas.PageCreate(
@@ -319,7 +323,7 @@ def test_update_story_draft(db_session: Session, test_user: User):
 
 def test_finalize_story_draft(db_session: Session, test_user: User):
     # Create a draft first
-    draft_data = schemas.StoryCreate(title="Journey Begins (Draft)", genre="Adventure",
+    draft_data = schemas.StoryCreate(title="Journey Begins (Draft)", genre=schemas.StoryGenre.FANTASY,
                                      story_outline="A grand journey.", main_characters=[], num_pages=5)
     # draft_title = "Journey Begins (Draft)" # Title is in draft_data
     draft_story = crud.create_story_draft(
@@ -340,7 +344,7 @@ def test_finalize_story_draft(db_session: Session, test_user: User):
     assert finalized_story.title == draft_data.title
     assert finalized_story.is_draft is False
     assert finalized_story.generated_at is not None  # Should be set upon finalization
-    assert finalized_story.genre == "Adventure"  # Other fields remain
+    assert finalized_story.genre == schemas.StoryGenre.FANTASY.value  # Other fields remain
 
 
 def test_update_story_draft_non_existent(db_session: Session):

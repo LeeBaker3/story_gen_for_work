@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Body
+from fastapi import FastAPI, Depends, HTTPException, status, Body, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse, PlainTextResponse, JSONResponse
@@ -18,6 +18,7 @@ from backend.public_router import public_router
 from backend.logging_config import app_logger, error_logger
 from backend.database_seeding import seed_database
 from backend.database import get_db, SessionLocal
+from backend.story_generation_service import generate_story_as_background_task
 
 # Drop all tables (for development purposes to apply schema changes)
 # IMPORTANT: This will delete all existing data. Remove or comment out for production.
@@ -87,33 +88,19 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    error_logger.error(
-        # Existing log
-        f"LOGIN_TOKEN: Attempting login for username: {form_data.username}")
     user = auth.authenticate_user(db, form_data.username, form_data.password)
 
     if not user:
-        error_logger.error(
-            # New log
-            f"LOGIN_TOKEN: auth.authenticate_user returned no user for {form_data.username}. Raising 401.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    error_logger.error(
-        # New log
-        f"LOGIN_TOKEN: User {user.username} authenticated successfully. Creating access token.")
-
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-
-    error_logger.error(
-        # New log
-        f"LOGIN_TOKEN: Access token created for {user.username}. Token (first 10): {access_token[:10]}...")
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -164,7 +151,7 @@ async def read_story(
 ):
     app_logger.info(
         f"User {current_user.username} requested story with ID: {story_id}")
-    db_story = crud.get_story(db, story_id=story_id)
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
     if db_story is None:
         error_logger.warning(
             f"Story with ID {story_id} not found for user {current_user.username}.")
@@ -188,7 +175,7 @@ async def update_story_title_endpoint(
 ):
     app_logger.info(
         f"User {current_user.username} attempting to update title for story ID: {story_id} to '{title_update.title}'")
-    db_story = crud.get_story(db, story_id=story_id)
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
 
     if not db_story:
         error_logger.warning(
@@ -224,7 +211,7 @@ async def delete_story_endpoint(
 ):
     app_logger.info(
         f"User {current_user.username} attempting to delete story ID: {story_id}")
-    db_story = crud.get_story(db, story_id=story_id)
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
 
     if not db_story:
         error_logger.warning(
@@ -309,7 +296,8 @@ async def update_story_draft_endpoint(
         f"User {current_user.username} updating draft ID: {story_id} with data: {story_update_data.model_dump(exclude_none=True)}")
 
     # Verify the draft exists and belongs to the user
-    existing_draft = crud.get_story(db, story_id=story_id)
+    existing_draft = crud.get_story(
+        db, story_id=story_id, user_id=current_user.id)
     if not existing_draft or existing_draft.owner_id != current_user.id or not existing_draft.is_draft:
         error_logger.warning(
             f"User {current_user.username} attempted to update non-existent or unauthorized draft ID: {story_id}")
@@ -339,9 +327,10 @@ async def update_story_draft_endpoint(
         )
 
 
-@app.post("/stories/", response_model=schemas.Story)
+@app.post("/stories/", response_model=schemas.Story, status_code=status.HTTP_201_CREATED)
 async def create_new_story(
     story_input: schemas.StoryCreate,  # This is the base input from the user
+    background_tasks: BackgroundTasks,
     db: Session = Depends(database.get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user),
     # Optional: ID of the draft being finalized
@@ -350,54 +339,29 @@ async def create_new_story(
     app_logger.info(
         f"User {current_user.username} initiating new story creation. Input: {story_input.model_dump(exclude_none=True)}. Draft ID: {draft_id}")
 
-    # Ensure db_story is typed for clarity
-    db_story: Optional[database.Story] = None
-    # initial_title is used for the first DB entry before AI generation, or for finalize_story_draft call.
-    initial_title_for_db_operation = story_input.title if story_input.title and story_input.title.strip(
-    ) else "[AI Title Pending...]"
-
-    if draft_id:
-        app_logger.info(
-            f"Finalizing draft ID: {draft_id} for user {current_user.username}")
-        # First, update the draft with any last-minute changes from story_input.
-        # crud.update_story_draft should fetch the draft, check ownership, update fields, and return the updated draft.
-        # It should not change is_draft status.
-        updated_draft_before_finalize = crud.update_story_draft(
-            db, draft_id, story_input, current_user.id)
-        if not updated_draft_before_finalize:
-            error_logger.warning(
-                f"Draft ID {draft_id} not found or not authorized for finalization by user {current_user.username}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Draft to finalize not found or not authorized.")
-
-        # Now, finalize it (sets is_draft=False, generated_at, and potentially a new title if provided by initial_title_for_db_operation)
-        # The title passed here is the one from the current user input, which might update the draft's existing title.
-        db_story = crud.finalize_story_draft(
-            db, draft_id, current_user.id, title=initial_title_for_db_operation)
-        if not db_story:
-            error_logger.error(
-                f"Failed to finalize draft {draft_id} for user {current_user.username} after successful update.")
-            raise HTTPException(
-                status_code=500, detail="Internal server error: Unable to finalize draft.")
-        app_logger.info(
-            f"Draft {draft_id} finalized. Story ID is now {db_story.id}, Title: {db_story.title}")
-    else:
-        app_logger.info(
-            f"Creating new story from scratch (not from draft) for user {current_user.username}. Initial title for DB: {initial_title_for_db_operation}")
-        db_story = crud.create_story_db_entry(
-            db=db,
-            story_data=story_input,
-            user_id=current_user.id,
-            title=initial_title_for_db_operation,  # Use the derived initial title
-            is_draft=False
+    # Check if a story with the same title already exists for this user, but only if not finalizing a draft
+    if not draft_id and story_input.title and crud.get_story_by_title_and_owner(db, title=story_input.title, user_id=current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A story with this title already exists."
         )
-        if not db_story:
-            error_logger.error(
-                f"Failed to create preliminary story entry for user {current_user.username}.")
-            raise HTTPException(
-                status_code=500, detail="Internal server error: Unable to create story entry.")
-        app_logger.info(
-            f"Preliminary story entry created with ID: {db_story.id}, Title: {db_story.title}")
+
+    # Create a story shell first
+    initial_title = story_input.title or "[AI Title Pending...]"
+    db_story = crud.create_story_db_entry(
+        db=db,
+        story_data=story_input,
+        user_id=current_user.id,
+        title=initial_title,  # Use the derived initial title
+        is_draft=False
+    )
+    if not db_story:
+        error_logger.error(
+            f"Failed to create preliminary story entry for user {current_user.username}.")
+        raise HTTPException(
+            status_code=500, detail="Internal server error: Unable to create story entry.")
+    app_logger.info(
+        f"Preliminary story entry created with ID: {db_story.id}, Title: {db_story.title}")
 
     # Prepare paths for character reference images
     user_images_base_path_for_db = f"images/user_{current_user.id}"
@@ -419,15 +383,27 @@ async def create_new_story(
                 f"Generating new character reference images as this is not a draft finalization.")
             for char_detail_input in story_input.main_characters:
                 try:
-                    updated_char_info_dict = ai_services.generate_character_reference_image(
+                    # Build file paths for saving
+                    char_image_filename = f"{char_detail_input.name.replace(' ', '_')}_ref_story_{db_story.id}.png"
+                    char_image_save_path_on_disk = os.path.join(
+                        char_ref_image_dir_on_disk, char_image_filename)
+                    char_image_path_for_db = os.path.join(
+                        char_ref_image_path_base_for_db, char_image_filename)
+                    updated_char_info_dict = await ai_services.generate_character_reference_image(
                         character=char_detail_input,
+                        story_input=story_input,
+                        db=db,
                         user_id=current_user.id,
                         story_id=db_story.id,
-                        image_style_enum=story_input.image_style
+                        image_save_path_on_disk=char_image_save_path_on_disk,
+                        image_path_for_db=char_image_path_for_db
                     )
-                    updated_main_characters.append(updated_char_info_dict)
+                    # Add reference_image_path to character dict for DB/frontend
+                    char_dict = char_detail_input.model_dump(exclude_none=True)
+                    char_dict['reference_image_path'] = char_image_path_for_db if updated_char_info_dict else None
+                    updated_main_characters.append(char_dict)
                     app_logger.info(
-                        f"Generated reference image and updated details for character: {updated_char_info_dict.get('name')}")
+                        f"Generated reference image and updated details for character: {char_detail_input.name}")
                 except Exception as e:
                     error_logger.error(
                         f"Error generating reference image for character {char_detail_input.name}: {e}", exc_info=True)
@@ -444,11 +420,21 @@ async def create_new_story(
                     app_logger.info(
                         f"Missing reference image for character: {char_detail_input.name}. Generating now.")
                     try:
-                        updated_char_info_dict = ai_services.generate_character_reference_image(
+                        # Build file paths for saving
+                        char_image_filename = f"{char_detail_input.name.replace(' ', '_')}_ref_story_{db_story.id}.png"
+                        char_image_save_path_on_disk = os.path.join(
+                            char_ref_image_dir_on_disk, char_image_filename)
+                        char_image_path_for_db = os.path.join(
+                            char_ref_image_path_base_for_db, char_image_filename)
+
+                        updated_char_info_dict = await ai_services.generate_character_reference_image(
                             character=char_detail_input,  # Pass the Pydantic model
+                            story_input=story_input,
+                            db=db,
                             user_id=current_user.id,
                             story_id=db_story.id,
-                            image_style_enum=story_input.image_style  # Use story's image style
+                            image_save_path_on_disk=char_image_save_path_on_disk,
+                            image_path_for_db=char_image_path_for_db
                         )
                         updated_main_characters.append(updated_char_info_dict)
                         app_logger.info(
@@ -538,6 +524,10 @@ async def create_new_story(
     created_pages_db = []
     # The character_name_to_ref_image_map is not strictly needed if iterating updated_main_characters directly below,
     # but it's harmless if updated_main_characters is the source of truth.
+    character_name_to_ref_image_map = {
+        char['name']: char.get('reference_image_path')
+        for char in updated_main_characters if char.get('reference_image_path')
+    }
 
     for page_data_from_ai in generated_content.get("Pages", []):
         page_number_from_ai = page_data_from_ai.get("Page_number")
@@ -559,6 +549,7 @@ async def create_new_story(
         )
 
         if page_to_create.image_description:
+            image_path_for_db = None  # Initialize to None
             try:
                 image_filename_prefix = "cover" if db_page_number == 0 else f"page_{db_page.page_number}"
                 unique_suffix = uuid.uuid4().hex[:8]
@@ -566,61 +557,42 @@ async def create_new_story(
                 image_save_path_on_disk = os.path.join(
                     story_page_image_dir_on_disk, image_filename)
 
-                char_name_for_ref_prompt: Optional[str] = None
-                char_ref_paths_for_page: Optional[List[str]] = None
-
-                page_characters_in_scene = page_data_from_ai.get(
-                    "Characters_in_scene", [])
-                app_logger.debug(
-                    f"Page {db_page.page_number} (AI: {page_number_from_ai}): Characters in scene from AI: {page_characters_in_scene}")
-
-                if page_characters_in_scene:
-                    for char_name_in_scene in page_characters_in_scene:
-                        found_char_detail = next((
-                            char_detail for char_detail in updated_main_characters
-                            if char_detail.get("name") == char_name_in_scene
-                        ), None)
-
-                        if found_char_detail:
-                            # Always set the character name if a character from the scene is identified in main_characters
-                            char_name_for_ref_prompt = found_char_detail.get(
-                                "name")
-                            ref_path_from_char_detail = found_char_detail.get(
-                                "reference_image_path")
-
-                            if ref_path_from_char_detail:
-                                full_ref_image_disk_path = os.path.join(
-                                    "data", ref_path_from_char_detail)
-                                if os.path.exists(full_ref_image_disk_path):
-                                    char_ref_paths_for_page = [
-                                        full_ref_image_disk_path]
-                                    app_logger.info(
-                                        f"Found reference image for character '{char_name_for_ref_prompt}' for page {db_page.page_number}: {full_ref_image_disk_path}")
-                                    break  # Use the first character found with an existing reference image
-                                else:
-                                    error_logger.warning(
-                                        f"Reference image file for character '{char_name_for_ref_prompt}' ({full_ref_image_disk_path}) does not exist. Will not use for edit, but name is set.")
-                            # else: No reference_image_path recorded for this character detail. Character name is still set.
-                        # else: Character name from scene not found in main_characters list.
-                        if char_ref_paths_for_page:  # If we found a valid ref path, stop searching chars in scene
-                            break
-
-                app_logger.debug(
-                    f"Page {db_page.page_number}: char_name_for_ref_prompt='{char_name_for_ref_prompt}', char_ref_paths_for_page={char_ref_paths_for_page}")
-
-                image_generation_result = ai_services.generate_image(
-                    page_image_description=page_to_create.image_description,
-                    image_path=image_save_path_on_disk,
-                    character_reference_image_paths=char_ref_paths_for_page,
-                    character_name_for_reference=char_name_for_ref_prompt
-                )
-
                 image_path_for_db = os.path.join(
                     story_page_image_path_for_db_base, image_filename)
-                db_page = crud.update_page_image_path(
-                    db=db, page_id=db_page.id, image_path=image_path_for_db)
+
+                # Get reference images for characters in the scene
+                characters_in_scene = page_data_from_ai.get(
+                    "Characters_in_scene", [])
+                reference_image_paths_for_page = [
+                    character_name_to_ref_image_map[char_name]
+                    for char_name in characters_in_scene if char_name in character_name_to_ref_image_map
+                ]
+
+                image_generation_result = await ai_services.generate_image_for_page(
+                    page_content=page_to_create.image_description,
+                    style_reference=str(story_input.image_style.value) if hasattr(
+                        story_input.image_style, 'value') else str(story_input.image_style),
+                    db=db,
+                    user_id=current_user.id,
+                    story_id=db_story.id,
+                    page_number=db_page.page_number,
+                    image_save_path_on_disk=image_save_path_on_disk,
+                    image_path_for_db=image_path_for_db,
+                    reference_image_paths=reference_image_paths_for_page
+                )
+
                 app_logger.info(
-                    f"Generated and saved image for page_number {db_page.page_number} (DB ID: {db_page.id}) at {image_path_for_db} (on disk: {image_save_path_on_disk})")
+                    f"Image generation result for page {db_page.page_number}: {image_generation_result}")
+
+                if image_generation_result and image_path_for_db:
+                    db_page = crud.update_page_image_path(
+                        db=db, page_id=db_page.id, image_path=image_path_for_db)
+                    app_logger.info(
+                        f"Generated and saved image for page_number {db_page.page_number} (DB ID: {db_page.id}) at {image_path_for_db} (on disk: {image_save_path_on_disk})")
+                else:
+                    error_logger.warning(
+                        f"Image generation failed for page {db_page.page_number} of story {db_story.id}. No image path to update.")
+
             except Exception as e:
                 error_logger.error(
                     f"Failed to generate or save image for page_number {db_page.page_number} (DB ID: {db_page.id}): {e}", exc_info=True)
@@ -695,14 +667,21 @@ async def read_story_draft(
     return db_story_draft
 
 
-# --- Admin Endpoints for Dynamic Content Management (FR-ADM-05) --- # REMOVE THIS SECTION
-# All routes previously under "/admin/users" and "/admin/dynamic-lists" and "/admin/dynamic-list-items"
-# are now handled by the routers imported from admin_router.py.
-# The following duplicated definitions will be removed:
-# # Dynamic Lists
-# @app.post("/admin/dynamic-lists/", response_model=schemas.DynamicList, tags=["Admin - Dynamic Content"]) ...
-# ... all admin dynamic list and dynamic list item endpoints ...
-# @app.get("/admin/dynamic-list-items/{item_id}/in-use", response_model=dict, tags=["Admin - Dynamic Content"]) ...
+@app.get("/tasks/{task_id}", response_model=schemas.StoryGenerationTask)
+async def get_story_generation_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    app_logger.info(
+        f"User {current_user.username} requested status of story generation task ID: {task_id}")
+    task = crud.get_story_generation_task(db, task_id=task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to view this task")
+    return task
 
 
 # --- Public Endpoints for Dynamic Content ---

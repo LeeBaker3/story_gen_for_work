@@ -110,7 +110,7 @@ class Page(PageBase):
 
 class StoryBase(BaseModel):
     title: str
-    genre: str
+    genre: StoryGenre
     story_outline: str  # User's initial outline
     main_characters: List[CharacterDetail]
     num_pages: int
@@ -128,7 +128,7 @@ class StoryBase(BaseModel):
 
 
 class StoryCreate(StoryBase):  # This schema is for user input to generate a story
-    pass
+    draft_id: Optional[int] = None
 
 
 class StoryTitleUpdate(BaseModel):  # New Schema for updating title
@@ -140,6 +140,7 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
     owner_id: int
     pages: List[Page] = []
     created_at: datetime  # Added based on previous work
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
@@ -160,6 +161,8 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
+    created_at: datetime
+    updated_at: datetime
     # stories: list[Story] = [] # Avoid circular dependency if Story schema also refers to User
 
     model_config = ConfigDict(from_attributes=True)  # Correctly indented
@@ -258,3 +261,42 @@ class DynamicList(DynamicListBase):
 class DynamicListItemUsage(BaseModel):
     is_in_use: bool
     details: List[str] = []
+
+# Story Generation Task Schemas (New for State Management)
+
+
+class GenerationTaskStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class GenerationTaskStep(str, Enum):
+    INITIALIZING = "initializing"
+    GENERATING_TEXT = "generating_text"
+    GENERATING_CHARACTER_IMAGES = "generating_character_images"
+    GENERATING_PAGE_IMAGES = "generating_page_images"
+    FINALIZING = "finalizing"
+
+
+class StoryGenerationTaskBase(BaseModel):
+    story_id: int
+    status: GenerationTaskStatus = GenerationTaskStatus.PENDING
+    current_step: GenerationTaskStep = GenerationTaskStep.INITIALIZING
+    retry_attempts: int = 0
+    last_error: Optional[str] = None
+
+
+class StoryGenerationTaskCreate(StoryGenerationTaskBase):
+    pass
+
+
+class StoryGenerationTask(StoryGenerationTaskBase):
+    id: str
+    user_id: int
+    progress: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

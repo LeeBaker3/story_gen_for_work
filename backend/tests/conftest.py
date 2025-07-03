@@ -1,8 +1,8 @@
 from datetime import timedelta  # Add this import
 # Changed from backend.models to backend.database
 # Changed from backend.database to backend.schemas
-from backend.schemas import UserRole
-from backend.auth import create_access_token, get_password_hash  # Add get_password_hash
+from ..schemas import UserRole
+from ..auth import create_access_token, get_password_hash  # Add get_password_hash
 from fastapi.testclient import TestClient  # Add this import
 from typing import Generator
 from sqlalchemy.orm import sessionmaker, Session
@@ -10,9 +10,9 @@ from sqlalchemy import create_engine, text  # Added text
 import pytest
 # Ensure all models are imported so Base.metadata is fully populated
 # User here is the model
-from backend.database import Base, User, Story, Page, DynamicList, DynamicListItem
-from backend.database import get_db as database_get_db  # Alias for database.get_db
-from backend.main import app, get_db as main_get_db  # Import app's get_db and alias
+from ..database import Base, User, Story, Page, DynamicList, DynamicListItem
+from ..database import get_db as database_get_db  # Alias for database.get_db
+from ..main import app, get_db as main_get_db  # Import app's get_db and alias
 import sys  # Add sys import
 from pathlib import Path  # Add pathlib import
 

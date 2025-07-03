@@ -45,6 +45,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const generateStoryButton = document.getElementById("generate-story-button");
     const saveDraftButton = document.getElementById("save-draft-button");
 
+    // Generation Progress Elements
+    const generationProgressArea = document.getElementById("generation-progress-area");
+    const generationProgressBar = document.getElementById("generation-progress-bar");
+    const generationStatusMessage = document.getElementById("generation-status-message");
+
     let authToken = localStorage.getItem("authToken");
 
     // State variables for draft editing
@@ -74,15 +79,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         try {
-            const response = await fetch(
-                `${API_BASE_URL}/api/v1/dynamic-lists/${listName}/items`,
+            const items = await apiRequest(
+                `/api/v1/dynamic-lists/${listName}/items`
             );
-            if (!response.ok) {
-                throw new Error(
-                    `Failed to fetch ${listName}: ${response.status} ${response.statusText}`,
-                );
-            }
-            const items = await response.json();
 
             // Clear existing options (except for a potential placeholder)
             selectElement.innerHTML = '';
@@ -130,6 +129,20 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
             console.error("[resetFormAndState] storyCreationForm is null!");
         }
+
+        // Manually reset dropdowns to their placeholder state as a safeguard
+        const dropdownIds = [
+            "story-genre",
+            "story-image-style",
+            "story-word-to-picture-ratio",
+            "story-text-density",
+        ];
+        dropdownIds.forEach(id => {
+            const select = document.getElementById(id);
+            if (select) {
+                select.selectedIndex = 0; // The placeholder is the first option
+            }
+        });
 
         // Clear existing dynamic characters (beyond the first one if it's static or part of the template)
         const characterEntries = document.querySelectorAll(
@@ -1044,33 +1057,35 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    async function deleteStory(storyId, listItemElement) {
-        console.log(`[deleteStory] Called with storyId: ${storyId}`);
-        showSpinner();
+    async function deleteStory(storyId) {
+        if (!confirm("Are you sure you want to delete this story?")) return;
         try {
-            await apiRequest(`/stories/${storyId}`, "DELETE");
+            const token = localStorage.getItem("authToken");
+            const response = await fetch(`${API_BASE_URL}/stories/${storyId}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+            if (!response.ok) {
+                let errorDetail = "Unknown error";
+                try {
+                    const errorData = await response.json();
+                    errorDetail = errorData.detail || JSON.stringify(errorData);
+                } catch (e) {
+                    errorDetail = await response.text();
+                }
+                throw new Error(
+                    `Delete story failed: ${response.status} ${response.statusText}. Detail: ${errorDetail}`,
+                );
+            }
             displayMessage("Story deleted successfully.", "success");
-            if (listItemElement) {
-                listItemElement.remove();
-            }
-            // If the deleted story was being previewed, clear the preview
-            if (currentStoryId === storyId) {
-                storyPreviewContent.innerHTML =
-                    "<p>The story you were viewing has been deleted.</p>";
-                if (exportPdfButton) exportPdfButton.style.display = "none";
-                currentStoryId = null;
-            }
-            // Optionally, refresh the list if other stories might be affected or for consistency
-            // await loadAndDisplayUserStories(); // Uncomment if a full refresh is desired
+            // Optionally, refresh the list or navigate away
+            // await loadAndDisplayUserStories();
+            // showSection(browseStoriesSection);
         } catch (error) {
             console.error("[deleteStory] Error:", error);
-            // displayMessage is usually handled by apiRequest
-            if (
-                !messageArea.textContent.includes("Failed") &&
-                !messageArea.textContent.includes("error")
-            ) {
-                displayMessage(`Error deleting story: ${error.message}`, "error");
-            }
+            displayMessage(`Error deleting story: ${error.message}`, "error");
         } finally {
             hideSpinner();
         }

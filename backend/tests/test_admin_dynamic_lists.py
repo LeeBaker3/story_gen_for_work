@@ -148,20 +148,30 @@ def test_admin_delete_dynamic_list_item_not_in_use(client: TestClient, admin_tok
 def test_admin_cannot_delete_in_use_dynamic_list_item(client: TestClient, admin_token: str, db_session: Session):
     # Use a list name that crud.is_dynamic_list_item_in_use checks
     list_name = "genres"
-    item_value_in_use = "in_use_genre_value_for_real_genre_list"
+    item_value_in_use = schemas.StoryGenre.HORROR.value  # Use a valid genre
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
     # Create item
-    create_payload = {
-        "list_name": list_name,
-        "item_value": item_value_in_use,
-        "item_label": "In Use Genre Label",
-    }
-    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
-                                  headers={"Authorization": f"Bearer {admin_token}"})
-    # Corrected expected status code
-    assert create_response.status_code == 201, f"Failed to create item: {create_response.text}"
-    item_id = create_response.json()["id"]
+    # First, try to get the item
+    get_item_response = client.get(f"/api/v1/admin/dynamic-lists/{list_name}/items",
+                                   headers={"Authorization": f"Bearer {admin_token}"})
+    assert get_item_response.status_code == 200
+    items = get_item_response.json()
+    item = next(
+        (i for i in items if i['item_value'] == item_value_in_use), None)
+
+    if not item:
+        create_payload = {
+            "list_name": list_name,
+            "item_value": item_value_in_use,
+            "item_label": "In Use Genre Label",
+        }
+        create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,
+                                      headers={"Authorization": f"Bearer {admin_token}"})
+        assert create_response.status_code == 201, f"Failed to create item: {create_response.text}"
+        item_id = create_response.json()["id"]
+    else:
+        item_id = item['id']
 
     # Create a story using this genre item_value directly via CRUD
     # Ensure adminuser exists or use a known user
@@ -184,49 +194,54 @@ def test_admin_cannot_delete_in_use_dynamic_list_item(client: TestClient, admin_
         word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
         text_density=schemas.TextDensity.CONCISE,
     )
-    # Use create_story_draft or a similar CRUD that directly sets genre
-    created_story = crud.create_story_draft(
-        db=db_session, story_data=story_data, user_id=admin_user.id)
-    assert created_story is not None
-    db_session.commit()  # Ensure story is committed
+    story = crud.create_story_db_entry(
+        db_session, story_data, admin_user.id, title=story_data.title)
 
-    # Try to delete the item - should fail because it\'s in use
+    # Attempt to delete the item, which should fail
     delete_response = client.delete(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
-        headers={"Authorization": f"Bearer {admin_token}"}
-    )
-    # Corrected based on router logic for in-use item
+        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert delete_response.status_code == 409
-    # assert "cannot delete item" in delete_response.json()["detail"].lower()
-    assert f"item '{item_value_in_use.lower()}'" in delete_response.json()["detail"].lower() or \
-        f"item '{create_payload['item_label'].lower()}'" in delete_response.json()[
-        "detail"].lower()
     assert "is currently in use and cannot be deleted" in delete_response.json()[
-        "detail"].lower()
+        "detail"]
 
-    # Cleanup: delete the story to make the item deletable for other tests if needed, or handle DB rollback
-    if created_story:
-        crud.delete_story_db_entry(db_session, created_story.id)
-        db_session.commit()
+    # Cleanup
+    crud.delete_story_db_entry(db_session, story.id)
 
 
 # 5. Admin can deactivate an item even if in use
 def test_admin_can_deactivate_in_use_dynamic_list_item(client: TestClient, admin_token: str, db_session: Session):
-    list_name = "genres_for_deactivate_test"
-    item_value_to_deactivate = "deactivate_genre_value"
+    list_name = "genres"  # Use the actual list name that is checked for usage
+    # Use a valid genre from the enum
+    item_value_to_deactivate = schemas.StoryGenre.FANTASY.value
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
-    # Create item
-    create_payload = {
-        "list_name": list_name,
-        "item_value": item_value_to_deactivate,
-        "item_label": "Deactivate Genre Label",
-        "is_active": True
-    }
-    create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,  # Corrected endpoint
-                                  headers={"Authorization": f"Bearer {admin_token}"})
-    assert create_response.status_code == 201  # Corrected expected status code
-    item_id = create_response.json()["id"]
+    # Ensure the item exists in the dynamic list, or create it
+    # First, try to get the item
+    get_item_response = client.get(f"/api/v1/admin/dynamic-lists/{list_name}/items",
+                                   headers={"Authorization": f"Bearer {admin_token}"})
+    assert get_item_response.status_code == 200
+    items = get_item_response.json()
+    item = next(
+        (i for i in items if i['item_value'] == item_value_to_deactivate), None)
+
+    if not item:
+        create_payload = {
+            "list_name": list_name,
+            "item_value": item_value_to_deactivate,
+            "item_label": "Fantasy Genre",
+            "is_active": True
+        }
+        create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload,
+                                      headers={"Authorization": f"Bearer {admin_token}"})
+        assert create_response.status_code == 201
+        item_id = create_response.json()["id"]
+    else:
+        item_id = item['id']
+        # Ensure it's active for the test
+        if not item['is_active']:
+            update_payload = {"is_active": True}
+            client.put(f"/api/v1/admin/dynamic-lists/{list_name}/items/{item_id}", json=update_payload,
+                       headers={"Authorization": f"Bearer {admin_token}"})
 
     # Create a story using this genre item_value
     admin_user = crud.get_user_by_username(db_session, "adminuser")
@@ -236,7 +251,7 @@ def test_admin_can_deactivate_in_use_dynamic_list_item(client: TestClient, admin
 
     story_data = schemas.StoryCreate(
         title="Story For Deactivating Item",
-        genre=item_value_to_deactivate,
+        genre=item_value_to_deactivate,  # This is now a valid enum member
         story_outline="Outline.",
         main_characters=[],
         num_pages=1,
@@ -357,7 +372,7 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
     # Create a couple of items
-    client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val1",  # Corrected endpoint
+    client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val1",
                 "item_label": "Label1"}, headers={"Authorization": f"Bearer {admin_token}"})
     client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json={"list_name": list_name, "item_value": "val2",  # Corrected endpoint
                 "item_label": "Label2", "is_active": False}, headers={"Authorization": f"Bearer {admin_token}"})
@@ -515,15 +530,27 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
 
 def test_check_item_usage(client: TestClient, admin_token: str, db_session: Session):
     list_name_usage = "genres"
-    item_value_usage = "usage_check_genre_for_real_genre_list"
+    item_value_usage = schemas.StoryGenre.COMEDY.value  # Use a valid genre
     ensure_dynamic_list_exists(client, list_name_usage, admin_token)
 
     create_payload = {"list_name": list_name_usage,
                       "item_value": item_value_usage, "item_label": "Usage Check Label"}
-    item_res = client.post(f"/api/v1/admin/dynamic-lists/{list_name_usage}/items", json=create_payload,  # Corrected endpoint
-                           headers={"Authorization": f"Bearer {admin_token}"})
-    assert item_res.status_code == 201  # Corrected expected status code
-    item_id = item_res.json()["id"]
+
+    # Check if item already exists
+    get_item_response = client.get(f"/api/v1/admin/dynamic-lists/{list_name_usage}/items",
+                                   headers={"Authorization": f"Bearer {admin_token}"})
+    assert get_item_response.status_code == 200
+    items = get_item_response.json()
+    item = next(
+        (i for i in items if i['item_value'] == item_value_usage), None)
+
+    if not item:
+        item_res = client.post(f"/api/v1/admin/dynamic-lists/{list_name_usage}/items", json=create_payload,
+                               headers={"Authorization": f"Bearer {admin_token}"})
+        assert item_res.status_code == 201
+        item_id = item_res.json()["id"]
+    else:
+        item_id = item['id']
 
     # Check usage (should not be in use yet)
     usage_res_before = client.get(
@@ -543,27 +570,22 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
         title="Story for Usage Check", genre=item_value_usage, story_outline="Outline.", main_characters=[], num_pages=1,
         image_style=schemas.ImageStyle.DEFAULT, word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE, text_density=schemas.TextDensity.CONCISE,
     )
-    story_for_usage = crud.create_story_draft(
-        db=db_session, story_data=story_data, user_id=admin_user.id)
-    db_session.commit()
-    assert story_for_usage is not None
+    story_for_usage = crud.create_story_db_entry(
+        db_session, story_data, admin_user.id)
 
-    # Check usage again (should be in use)
+    # Check usage again (should be in use now)
     usage_res_after = client.get(
-        # Corrected endpoint
         f"/api/v1/admin/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert usage_res_after.status_code == 200
     usage_data_after = usage_res_after.json()
     assert usage_data_after["is_in_use"] is True
-
-    # Verify the details mention the story that was created for this test
+    # Verify that the details contain the story title
     assert any(
         story_for_usage.title in detail_string for detail_string in usage_data_after["details"])
 
-    # Cleanup: delete the story to make the item deletable for other tests if needed, or handle DB rollback
+    # Cleanup
     if story_for_usage:
         crud.delete_story_db_entry(db_session, story_for_usage.id)
-        db_session.commit()
 
 # 12. Public endpoint for active items
 

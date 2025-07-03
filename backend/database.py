@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint  # Added Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum  # Added Boolean
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
@@ -29,6 +29,9 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)  # New field
     role = Column(String, default="user")  # New field (e.g., "user", "admin")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
 
     stories = relationship("Story", back_populates="owner")
 
@@ -55,6 +58,8 @@ class Story(Base):
     owner_id = Column(Integer, ForeignKey("users.id"))
     # Represents draft creation or story generation time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
     # Time of actual story generation, null for drafts
     generated_at = Column(DateTime(timezone=True), nullable=True)
     # True if story is a draft, False if generated
@@ -101,25 +106,39 @@ class DynamicListItem(Base):
     __tablename__ = "dynamic_list_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    list_name = Column(String, ForeignKey(
-        "dynamic_lists.list_name"), nullable=False)
-    # The actual value, e.g., "sci_fi", "watercolor"
-    item_value = Column(String, nullable=False)
-    # User-friendly label, e.g., "Science Fiction", "Watercolor Art"
-    item_label = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    sort_order = Column(Integer, default=0, nullable=False)
-    # Optional: for specific mappings like OpenAI style 'vivid'/'natural'
-    additional_config = Column(JSON, nullable=True)
+    list_name = Column(String, ForeignKey("dynamic_lists.list_name"))
+    item_value = Column(String, nullable=False)  # The actual value of the item
+    item_label = Column(String, nullable=True)  # Optional user-friendly label
+    is_active = Column(Boolean, default=True)
+    # For ordering items within a list
+    sort_order = Column(Integer, default=100)
+    additional_config = Column(JSON, nullable=True)  # For extra configuration
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
 
     parent_list = relationship("DynamicList", back_populates="items")
 
-    # Add a unique constraint for item_value within a list_name
     __table_args__ = (UniqueConstraint(
-        'list_name', 'item_value', name='_list_name_item_value_uc'),)
+        'list_name', 'item_value', name='_list_value_uc'),)
+
+
+class StoryGenerationTask(Base):
+    __tablename__ = 'story_generation_tasks'
+
+    id = Column(String, primary_key=True, index=True)
+    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    status = Column(String, nullable=False, default='PENDING')
+    progress = Column(Integer, default=0)
+    current_step = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        onupdate=func.now(), server_default=func.now())
+
+    story = relationship("Story")
+    user = relationship("User")
 
 
 def create_db_and_tables():

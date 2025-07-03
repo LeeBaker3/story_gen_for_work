@@ -4,31 +4,40 @@ import os
 import requests
 import json
 from dotenv import load_dotenv
-from typing import List, Dict, Any, Optional  # Added Optional
-import base64  # Added for image encoding
-import uuid  # Added for unique filenames
-import sys  # Added import
-import logging  # Added logging import
+from typing import List, Dict, Any, Optional
+import base64
+import uuid
+import sys
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from sqlalchemy.orm import Session
+import asyncio
+import io
 
 # Import loggers
-from .logging_config import api_logger, error_logger, app_logger  # Added app_logger
-# Added ImageStyle, TextDensity
+from .logging_config import api_logger, error_logger, app_logger
+from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    # Use error_logger for critical setup issues
     error_logger.error("OPENAI_API_KEY not found in environment variables.")
     raise ValueError(
         "OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
 
+# Define a retry decorator for OpenAI API calls
+api_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    retry=retry_if_exception_type((openai.APIError, openai.Timeout, openai.APIConnectionError,
+                                  openai.RateLimitError, requests.exceptions.RequestException)))
+
 # Initialize the new client
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.openai.com/v1")
 
 EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
-# Added "Characters_in_scene" to expected page keys
 EXPECTED_PAGE_KEYS = ["Page_number", "Text",
                       "Image_description", "Characters_in_scene"]
 
@@ -41,7 +50,7 @@ warning_logger = logging.getLogger('warning_logger')
 
 IMAGE_MODEL = "gpt-image-1"
 IMAGE_SIZE = "1024x1024"
-MAX_PROMPT_LENGTH = 4000  # Max prompt length for DALL-E 3
+MAX_PROMPT_LENGTH = 4000
 
 
 def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
@@ -60,9 +69,10 @@ def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
         return truncated[:last_space] + "..."
     app_logger.warning(
         f"Prompt was truncated mid-word or abruptly. Original length: {len(prompt)}, Max: {max_length}")
-    return truncated + "..."  # Fallback if no space found near end
+    return truncated + "..."
 
 
+@api_retry
 def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
     """
     Generates a story using OpenAI's ChatGPT API based on user inputs.
@@ -212,7 +222,7 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         details_for_prompt = [f"Character Name: {char_name}"]
         char_specific_visual_description_parts = []
 
-        # 1. Primary Visual: DALL-E revised prompt or user inputs
+        # 1. Primary Visual: AI-generated revised prompt or user inputs
         if reference_image_revised_prompt:
             char_specific_visual_description_parts.append(
                 f"Primary Visual (from AI image model, use verbatim): '{reference_image_revised_prompt}'")
@@ -315,7 +325,7 @@ Output Requirements:
   - Its \\'Image_description\\' field MUST be a detailed and evocative prompt for a captivating COVER IMAGE.
     - This prompt should focus on setting the overall mood, hinting at the story\\'s theme and genre, and visually introducing the main character(s) in an artistic and engaging way, consistent with their established look but AVOIDING literal depiction of their detailed textual descriptions (like specific height, measurements, or lists of traits).
     - The goal is a visually appealing cover, not a character specification sheet.
-    - The description must be a non-empty string and should also incorporate the overall \\'{image_style_description}\\'.
+    - The description must be a non-empty string and should also incorporate the overall \\\'{image_style_description}\\\'.
     - When main characters are included on the cover, their appearance should be inspired by their \\'Canonical Visual Description\\' but integrated naturally and artistically into the scene, rather than having the full canonical description appended verbatim as is done for internal story pages.
 - CONTENT PAGES REQUIREMENT:
   - Subsequent page objects in the 'Pages' list represent the content pages of the story.
@@ -335,17 +345,20 @@ Output Requirements:
      - This "Characters_in_scene" list is separate from and in addition to the "Image_description".
   3. Incorporate Character Visuals:
      - For Content Pages: For EACH identified Main Character present in the scene, ensure their depiction in the image is CONSISTENT with their \\'Canonical Visual Description\\'. To achieve this, AFTER describing the scene from step 1, you should weave in KEY RECOGNIZABLE FEATURES from their \\'Canonical Visual Description\\' into the overall Image_description. The primary focus MUST remain the scene from the page text. The character details should support the scene, not overshadow it. Do not just append the entire canonical description if it makes the character description dominate the scene description. Instead, intelligently integrate the most important visual cues to ensure consistency while keeping the scene central. For example, if a character\\'s canonical description is very long, pick the 2-3 most defining visual elements to mention.
-     - For the Title Page (Cover Image): If main characters are part of the cover\\\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\\\'Canonical Visual Description\\\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\\\'Canonical Visual Description\\\\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
-  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Integrated Key Character Features]) reflects the overall \\\\\\'{image_style_description}\\\\\\''. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append \\\\\\', {image_style_description} style\\\\\\' to the complete description.
+     - For the Title Page (Cover Image): If main characters are part of the cover\\\'s theme, ensure their appearance is artistically integrated and clearly inspired by their \\\\'Canonical Visual Description\\\\'. The goal is recognizability and consistency with their established look. AVOID appending the full \\\\'Canonical Visual Description\\\\' verbatim. The depiction should be natural within the artistic composition of the cover, avoiding a literal list of traits. Focus on key recognizable features that align with their canonical look, ensuring these features are consistent with those used in content pages.
+  4. Apply Unified Styling: Ensure the ENTIRE "Image_description" (which is: [Scene from Page Text] + [Integrated Key Character Features]) reflects the overall \\\\\\'{image_style_description}\\\\\\'. All characters, objects, and background elements within the single image MUST be rendered in this exact same style. For example, you might append \\\\\\', {image_style_description} style\\\\\\' to the complete description.
   This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Incorporate Character Visuals as specified for page type -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
 - The final output MUST be a single JSON object. This JSON object must have a top-level key \\'Title\\' (string) and a top-level key \\'Pages\\' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
     api_logger.debug(
         f"Prompt sent to ChatGPT for story generation (ratio: {word_to_picture_ratio}): {prompt[:500]}...")
 
+    response_text = None
     try:
+        app_logger.info(
+            f"Sending request to ChatGPT API with prompt: {prompt[:200]}...")
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4.1-mini",  # CORRECTED MODEL NAME
             messages=[
                 {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
                 {"role": "user", "content": prompt}
@@ -353,649 +366,194 @@ Output Requirements:
             temperature=0.7,
             response_format={"type": "json_object"}
         )
-        content = response.choices[0].message.content
-        api_logger.debug(
-            f"Raw content received from ChatGPT: {content[:500]}...")
+        response_text = response.choices[0].message.content
+        api_logger.info(
+            f"Received response from ChatGPT API. Length: {len(response_text)}")
 
-        story_data = json.loads(content)
-        api_logger.info("Successfully parsed JSON response from ChatGPT.")
+        # Validate and return the JSON response
+        parsed_response = json.loads(response_text)
+        if not all(key in parsed_response for key in EXPECTED_CHATGPT_RESPONSE_KEYS):
+            warning_logger.warning(
+                f"ChatGPT response missing one of the expected keys: {EXPECTED_CHATGPT_RESPONSE_KEYS}")
+        return parsed_response
 
-        if not all(key in story_data for key in EXPECTED_CHATGPT_RESPONSE_KEYS):
-            error_logger.error(
-                f"ChatGPT response missing one of keys: {EXPECTED_CHATGPT_RESPONSE_KEYS}. Response: {story_data}")
-            raise ValueError(
-                f"ChatGPT response missing one of keys: {EXPECTED_CHATGPT_RESPONSE_KEYS}")
-        if not isinstance(story_data["Pages"], list):
-            error_logger.error(
-                f"ChatGPT response 'Pages' should be a list. Response: {story_data}")
-            raise ValueError("ChatGPT response 'Pages' should be a list.")
-
-        # Validate pages
-        if not story_data["Pages"]:
-            error_logger.error("ChatGPT response 'Pages' list is empty.")
-            raise ValueError("ChatGPT response 'Pages' list cannot be empty.")
-
-        # Validate Title Page (first page)
-        title_page_data = story_data["Pages"][0]
-        if not all(key in title_page_data for key in EXPECTED_PAGE_KEYS):
-            error_logger.error(
-                f"Title Page in ChatGPT response missing one of keys: {EXPECTED_PAGE_KEYS}. Page: {title_page_data}")
-            raise ValueError(
-                f"Title Page in ChatGPT response missing one of keys: {EXPECTED_PAGE_KEYS}")
-
-        if title_page_data.get("Page_number") != "Title":
-            error_logger.error(
-                f"First page is not a Title Page. Expected Page_number 'Title', got '{title_page_data.get('Page_number')}'. Page: {title_page_data}")
-            raise ValueError(
-                "First page must be a Title Page with Page_number 'Title'.")
-
-        title_page_text = title_page_data.get("Text")
-        if not isinstance(title_page_text, str) or not title_page_text.strip():
-            error_logger.error(
-                f"Title Page: Text must be a non-empty string. Page: {title_page_data}")
-            raise ValueError("Title Page: Text must be a non-empty string.")
-
-        # Ensure the title in the title page matches the top-level title
-        # If they differ, update the title page's text to match the main story title.
-        main_story_title = story_data.get("Title")
-        if main_story_title != title_page_text:
-            app_logger.warning(  # Changed from error_logger.error to app_logger.warning
-                f"Title Page text ('{title_page_text}') does not match top-level story title ('{main_story_title}'). Updating page text to match main title. Page: {title_page_data}")
-            # Update the text of the title page in the story_data
-            story_data["Pages"][0]["Text"] = main_story_title
-
-        title_page_img_desc = title_page_data.get("Image_description")
-        if not isinstance(title_page_img_desc, str) or not title_page_img_desc.strip():
-            error_logger.error(
-                f"Title Page: Image_description must be a non-empty string for the cover image. Page: {title_page_data}")
-            raise ValueError(
-                "Title Page: Image_description must be a non-empty string for the cover image.")
-
-        # Validate Content Pages (remaining pages)
-        # Ensure there's at least one content page if num_pages > 0, or handle num_pages = 0 case if that's valid (e.g. only title page)
-        # The prompt implies num_pages refers to content pages.
-
-        # This is the 'num_pages' from user input
-        expected_num_content_pages = story_input['num_pages']
-
-        # Adjusting for word_to_picture_ratio = PER_PARAGRAPH where num_pages means segments
-        if word_to_picture_ratio == WordToPictureRatio.PER_PARAGRAPH.value:
-            # In this case, num_pages from input is the number of "paragraph" objects,
-            # each of which is a "page" in the output.
-            pass  # expected_num_content_pages is already correct.
-
-        # Subtract 1 for the title page
-        actual_num_content_pages = len(story_data["Pages"]) - 1
-
-        # This check might be too strict if AI is allowed to slightly deviate.
-        # Consider if num_pages is a strict requirement or a guideline.
-        # For now, let's assume it's a guideline for the AI, but we validate what we get.
-        # if actual_num_content_pages != expected_num_content_pages and expected_num_content_pages > 0 :
-        #     error_logger.warning(
-        #         f"Warning: Number of content pages ({actual_num_content_pages}) does not match expected ({expected_num_content_pages}).")
-        # Depending on strictness, this could be an error.
-
-        # Validate Title Page (first page) - continued
-        title_page_chars_in_scene = title_page_data.get("Characters_in_scene")
-        if not isinstance(title_page_chars_in_scene, list):
-            error_logger.error(
-                f"Title Page: Characters_in_scene must be a list. Page: {title_page_data}")
-            raise ValueError("Title Page: Characters_in_scene must be a list.")
-        for char_name in title_page_chars_in_scene:
-            if not isinstance(char_name, str):
-                error_logger.error(
-                    f"Title Page: Each item in Characters_in_scene must be a string. Found: {char_name}. Page: {title_page_data}")
-                raise ValueError(
-                    "Title Page: Each item in Characters_in_scene must be a string.")
-
-        # Start from the second page (index 1)
-        for i, page_data in enumerate(story_data["Pages"][1:], start=1):
-            if not all(key in page_data for key in EXPECTED_PAGE_KEYS):
-                error_logger.error(
-                    f"Content Page (expected {i}) in ChatGPT response missing one of keys: {EXPECTED_PAGE_KEYS}. Page: {page_data}")
-                raise ValueError(
-                    f"Content Page (expected {i}) in ChatGPT response missing one of keys: {EXPECTED_PAGE_KEYS}")
-
-            page_num = page_data.get("Page_number")
-            img_desc = page_data.get("Image_description")
-            page_text = page_data.get("Text")
-            chars_in_scene = page_data.get("Characters_in_scene")  # New field
-
-            if not isinstance(page_num, int):
-                error_logger.error(
-                    f"Content Page_number '{page_num}' (expected {i}) has invalid type '{type(page_num)}'. Expected int. Page: {page_data}")
-                raise ValueError(
-                    f"Content Page_number '{page_num}' must be an integer.")
-
-            # Optional: Check for sequential page numbers for content pages.
-            # The AI is asked for sequential numbers (1, 2, 3...).
-            # If the AI returns page numbers like 1, 3, 4, this check would fail.
-            # For now, we trust the AI was asked for sequential and validate type.
-            # If strict sequence is needed:
-            # if page_num != i:
-            #     error_logger.error(f"Content Page_number '{page_num}' is not sequential. Expected {i}. Page: {page_data}")
-            #     raise ValueError(f"Content Page_number '{page_num}' is not sequential. Expected {i}.")
-
-            if not isinstance(page_text, str):
-                error_logger.error(
-                    f"Content Page {page_num}: Text has invalid type '{type(page_text)}'. Expected string. Page: {page_data}")
-                raise ValueError(
-                    f"Content Page {page_num}: Text must be a string.")
-            # Add text length validation here if needed, based on text_density_instruction
-
-            if not isinstance(chars_in_scene, list):  # Validation for new field
-                error_logger.error(
-                    f"Content Page {page_num}: Characters_in_scene must be a list. Page: {page_data}")
-                raise ValueError(
-                    f"Content Page {page_num}: Characters_in_scene must be a list.")
-            for char_name in chars_in_scene:  # Validation for new field
-                if not isinstance(char_name, str):
-                    error_logger.error(
-                        f"Content Page {page_num}: Each item in Characters_in_scene must be a string. Found: {char_name}. Page: {page_data}")
-                    raise ValueError(
-                        f"Content Page {page_num}: Each item in Characters_in_scene must be a string.")
-
-            if not isinstance(img_desc, (str, type(None))):
-                error_logger.error(
-                    f"Content Page {page_num}: Image_description has invalid type '{type(img_desc)}'. Expected string or null. Page: {page_data}")
-                raise ValueError(
-                    f"Content Page {page_num}: Image_description must be a string or null.")
-
-            # Ratio validation for content pages
-            if word_to_picture_ratio == WordToPictureRatio.PER_PAGE.value or \
-               word_to_picture_ratio == WordToPictureRatio.PER_PARAGRAPH.value:
-                if not isinstance(img_desc, str) or not img_desc.strip():
-                    error_logger.error(
-                        f"Content Page {page_num}: Image_description must be a non-empty string for ratio '{word_to_picture_ratio}'. Got: '{img_desc}'. Page: {page_data}")
-                    raise ValueError(
-                        f"Content Page {page_num}: Image_description must be a non-empty string for ratio '{word_to_picture_ratio}'.")
-            elif word_to_picture_ratio == WordToPictureRatio.PER_TWO_PAGES.value:
-                # page_num is already validated as int for content pages
-                if page_num % 2 == 0:  # Even page
-                    if not isinstance(img_desc, str) or not img_desc.strip():
-                        error_logger.error(
-                            f"Content Page {page_num} (even): Image_description must be a non-empty string for ratio '{word_to_picture_ratio}'. Got: '{img_desc}'. Page: {page_data}")
-                        raise ValueError(
-                            f"Content Page {page_num} (even): Image_description must be a non-empty string for ratio '{word_to_picture_ratio}'.")
-                else:  # Odd page (page_num % 2 != 0)
-                    if img_desc is not None:
-                        error_logger.error(
-                            f"Content Page {page_num} (odd): Image_description must be null for ratio '{word_to_picture_ratio}'. Got: '{img_desc}'. Page: {page_data}")
-                        raise ValueError(
-                            f"Content Page {page_num} (odd): Image_description must be null for ratio '{word_to_picture_ratio}'.")
-
-        api_logger.debug(
-            "ChatGPT response structure and content validated successfully against word_to_picture_ratio and title page requirements.")
-        return story_data
     except json.JSONDecodeError as e:
         error_logger.error(
-            f"ChatGPT returned invalid JSON. Content: {content}", exc_info=True)
-        raise ValueError(
-            f"Failed to decode JSON response from ChatGPT. Error: {e}")
-    except openai.APIError as e:
-        error_logger.error(
-            f"OpenAI API Error during story generation: {e}", exc_info=True)
+            f"Failed to decode JSON from ChatGPT response: {e}. Response text: {response_text}")
         raise
     except Exception as e:
         error_logger.error(
-            f"An unexpected error occurred while generating story: {e}", exc_info=True)
+            f"An unexpected error occurred in generate_story_from_chatgpt: {e}")
         raise
 
 
-def generate_image(
-    page_image_description: str,
-    image_path: str,
-    character_reference_image_paths: Optional[List[str]] = None,  # Modified
-    character_name_for_reference: Optional[str] = None,
-    # Changed from dall-e-3 to gpt-image-1
-    model: str = "gpt-image-1"
-) -> Dict[str, Any]:
+@api_retry
+async def generate_character_image(character: CharacterDetail, image_style: str, db: Session, user_id: int) -> Optional[str]:
     """
-    Generates an image using OpenAI's DALL-E API.
-    Can use image editing if a reference image is provided, otherwise generates a new image.
-
-    Args:
-        page_image_description: The textual prompt for the image.
-        image_path: The path where the generated image will be saved.
-        character_reference_image_paths: Optional list of paths to reference images for character consistency.
-        character_name_for_reference: Optional name of the character for whom reference is provided.
-        model: The OpenAI model to use for image generation.
-
-    Returns:
-        A dictionary containing the path to the saved image and the revised prompt (if any).
+    Generates a character image using the configured AI image model, saves it, and returns the path.
     """
-    # Ensure the directory for the image_path exists
-    os.makedirs(os.path.dirname(image_path), exist_ok=True)
+    if not db:
+        error_logger.error(
+            "Database session is not available in generate_character_image")
+        return None
 
-    # Prepare reference images if provided
-    valid_reference_files: List[Any] = []  # To hold open file objects
-    opened_files_for_cleanup: List[Any] = []
+    # ... existing code ...
 
-    if character_reference_image_paths:
-        for ref_path in character_reference_image_paths:
-            if ref_path and os.path.exists(ref_path):
-                try:
-                    file_obj = open(ref_path, "rb")
-                    valid_reference_files.append(file_obj)
-                    opened_files_for_cleanup.append(file_obj)
-                except Exception as e:
-                    error_logger.warning(
-                        f"Could not open reference file {ref_path}: {e}")
-            else:
-                error_logger.warning(
-                    f"Reference image path {ref_path} does not exist or is None.")
 
-    if valid_reference_files:
+@api_retry
+def generate_character_image_from_description(character_name: str, description: str, image_style: str) -> Optional[str]:
+    """
+    Generates a character concept image from a description using the configured AI image model.
+    """
+    # ... existing code ...
+
+
+@api_retry
+async def generate_character_reference_image(character: CharacterDetail, story_input: schemas.StoryCreate, db: Session, user_id: int, story_id: int, image_save_path_on_disk: str = None, image_path_for_db: str = None) -> Optional[Dict[str, Any]]:
+    """
+    Generates a reference image for a character, saves it, and returns the updated character details as a dict.
+    """
+    if not db:
+        error_logger.error(
+            "Database session is not available in generate_character_reference_image")
+        return None
+
+    image_style = story_input.image_style
+    if hasattr(image_style, 'value'):
+        image_style = image_style.value
+    else:
+        image_style = str(image_style)
+
+    prompt = f"full-body character sheet for {character.name}, showing front, side, and back views. {character.description or ''}. Style: {image_style}. The character should be centered and not cropped, especially the head or feet."
+
+    image_bytes = await asyncio.to_thread(
+        generate_image,
+        prompt,
+        size="1024x1536"  # Use portrait aspect ratio for full-body shots
+    )
+
+    char_dict = character.model_dump(exclude_none=True)
+
+    if image_bytes and image_save_path_on_disk and image_path_for_db:
         try:
-            primary_reference_file = valid_reference_files[0]
-            num_references = len(valid_reference_files)
-
-            instruction_prefix = (
-                "IMPORTANT: Use the provided image as a strict visual reference for a key character in the scene. "
-                "This character in the output image MUST visually match the reference, especially their face, hair, and build. "
-                "This visual reference takes precedence over any conflicting appearance details in the text prompt below. "
-                "Integrate this character (matching the reference) into the following scene, ensuring they fit the scene's style and actions. "
-                "Scene details: "
-            )
-
-            if num_references > 1:
-                other_refs_desc = f" Additionally, consider {num_references - 1} other guiding reference concepts implied by the context of this request."
-                instruction_prefix = (
-                    f"IMPORTANT: Use the primary provided image as a strict visual reference for a key character. "
-                    f"This character in the output image MUST visually match this primary reference (face, hair, build).{other_refs_desc} "
-                    f"This visual guidance takes precedence. Integrate this character into the following scene. Scene details: "
-                )
-
-            # The prompt for `images.edit` should be the `page_image_description` prefixed by the instruction.
-            edit_prompt = instruction_prefix + page_image_description
-            api_logger.debug(
-                f"Attempting OpenAI Image API edit with prompt: {edit_prompt[:150]}... and {num_references} reference(s). Primary: {character_reference_image_paths[0] if character_reference_image_paths else 'None'}")
-
-            response = client.images.edit(
-                model=model,
-                image=primary_reference_file,  # This is the opened file object
-                prompt=edit_prompt,
-                n=1,
-                size="1024x1024"
-                # response_format="b64_json" # Removed: gpt-image-1 always returns b64_json
-            )
-            if response.data and response.data[0].b64_json:
-                image_data = base64.b64decode(response.data[0].b64_json)
-                with open(image_path, 'wb') as f_out:
-                    f_out.write(image_data)
-                app_logger.info(
-                    f"Image successfully generated using EDIT API and saved to {image_path}")
-                revised_prompt_from_api = response.data[0].revised_prompt if hasattr(
-                    response.data[0], 'revised_prompt') else edit_prompt
-                gen_id_from_api = f"edit_{response.created}" if hasattr(
-                    response, 'created') else f"edit_{uuid.uuid4().hex}"
-
-                # No need to iterate and close here, finally block will handle it
-                return {"image_path": image_path, "revised_prompt": revised_prompt_from_api, "gen_id": gen_id_from_api}
-            else:
-                error_logger.error(
-                    "OpenAI Image API edit call did not return image data.")
-                # Fall through to generate API
-
+            os.makedirs(os.path.dirname(
+                image_save_path_on_disk), exist_ok=True)
+            with open(image_save_path_on_disk, "wb") as f:
+                f.write(image_bytes)
+            app_logger.info(
+                f"Downloaded and saved character reference image for {character.name} at {image_save_path_on_disk}")
+            char_dict['reference_image_path'] = image_path_for_db
+            return char_dict
         except Exception as e:
             error_logger.error(
-                f"OpenAI Image API edit call failed: {e}. Falling back to generate API.", exc_info=True)
-            # Fall through to generate API
-        finally:
-            for f_obj in opened_files_for_cleanup:  # Ensure all opened reference files are closed
-                # if hasattr(f_obj, 'closed') and not f_obj.closed: # Old condition
-                if hasattr(f_obj, 'close') and callable(f_obj.close):  # New condition
-                    try:
-                        f_obj.close()
-                    except Exception as close_e:
-                        error_logger.warning(
-                            f"Error closing reference file: {close_e}")
-            opened_files_for_cleanup.clear()  # Clear the list after attempting to close
+                f"Failed to download or save character reference image for {character.name}: {e}")
+            char_dict['reference_image_path'] = None
+            return char_dict
 
-    # Fallback to generate API if no valid references, or if edit API failed
-    app_logger.info(
-        "Using OpenAI Image API generate (either no valid refs, or edit failed/skipped).")
-    api_action_type_log = "generate"  # Define for logging in case of error
-    prompt_to_log = page_image_description  # Define for logging in case of error
-    try:
-        # Ensure any files from a previous attempt (if edit block was skipped or failed early) are closed.
-        # This is now redundant due to the finally block above, but kept for safety if logic changes.
-        for f_obj in opened_files_for_cleanup:
-            if hasattr(f_obj, 'closed') and not f_obj.closed:
-                f_obj.close()
-        opened_files_for_cleanup.clear()
+    char_dict['reference_image_path'] = None
+    return char_dict
 
-        api_logger.debug(
-            f"Attempting OpenAI Image API generate with prompt: {page_image_description[:150]}...")
-        response = client.images.generate(
-            model=model,  # Ensure model is passed here too
-            prompt=page_image_description,
-            size="1024x1024",
-            n=1
-            # response_format parameter removed as it's not supported for gpt-image-1
-        )
 
-        if response.data and response.data[0] and response.data[0].b64_json:
-            image_data = base64.b64decode(response.data[0].b64_json)
-            with open(image_path, 'wb') as f_out:
-                f_out.write(image_data)
+@api_retry
+async def generate_image_for_page(page_content: str, style_reference: str, db: Session, user_id: int, story_id: int, page_number: int, image_save_path_on_disk: str = None, image_path_for_db: str = None, reference_image_paths: Optional[List[str]] = None) -> Optional[str]:
+    """
+    Generates an image for a story page using the configured AI image model, saves it to disk, and returns the relative path.
+    """
+    if not db:
+        error_logger.error(
+            "Database session is not available in generate_image_for_page")
+        return None
+
+    prompt = f"{page_content}, in a {style_reference} style"
+
+    # Call the sync generate_image in a thread, passing the paths directly
+    image_bytes = await asyncio.to_thread(
+        generate_image,
+        prompt,
+        reference_image_paths=reference_image_paths if reference_image_paths else None
+    )
+
+    if image_bytes and image_save_path_on_disk and image_path_for_db:
+        try:
+            os.makedirs(os.path.dirname(
+                image_save_path_on_disk), exist_ok=True)
+            with open(image_save_path_on_disk, "wb") as f:
+                f.write(image_bytes)
             app_logger.info(
-                f"Image successfully generated using GENERATE API and saved to {image_path}")
-
-            # Determine revised_prompt, fallback to original prompt if not available
-            current_revised_prompt = page_image_description
-            if hasattr(response.data[0], 'revised_prompt') and response.data[0].revised_prompt:
-                current_revised_prompt = response.data[0].revised_prompt
-
-            # Determine gen_id, fallback to UUID if 'created' not available
-            current_gen_id = f"gen_{uuid.uuid4().hex}"
-            if hasattr(response, 'created') and response.created:
-                current_gen_id = f"gen_{response.created}"
-
-            return {"image_path": image_path, "revised_prompt": current_revised_prompt, "gen_id": current_gen_id}
-        else:
-            # This case means the API call succeeded (no exception) but the response format is unexpected.
+                f"Downloaded and saved image for page {page_number} of story {story_id} at {image_save_path_on_disk}")
+            return image_path_for_db
+        except Exception as e:
             error_logger.error(
-                f"OpenAI Image API generate call for prompt '{prompt_to_log[:100]}...' succeeded but returned no image data or unexpected response structure. Response: {response}")
-            raise ValueError(
-                "OpenAI Image API generate call returned no image data.")
-
-    except openai.BadRequestError as e:
-        error_details = e.response.json() if e.response else {
-            "error": {"message": str(e)}}
-        error_message_detail = error_details.get(
-            "error", {}).get("message", "Unknown BadRequestError")
-        error_code_detail = error_details.get("error", {}).get("code")
-
-        # Determine api_action_type_log if not already set (e.g. if error happened in edit block)
-        # This specific except block is for the 'generate' part, so api_action_type_log is 'generate'
-        # However, to be robust, if we were to combine error handling, we'd need a more dynamic way.
-        # For now, it's correctly 'generate' as per the flow.
-
-        if error_code_detail == 'moderation_blocked' or "safety system" in error_message_detail:
-            # Use prompt_to_log which is page_image_description for the generate block
-            error_logger.error(
-                f"OpenAI Image API call failed due to moderation/safety system. ACTION: {api_action_type_log}. FULL PROMPT: {prompt_to_log}")
-            error_logger.error(
-                f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
-        else:
-            error_logger.error(
-                f"OpenAI Image API {api_action_type_log} call failed: {error_message_detail} (Code: {error_code_detail})", exc_info=True)
-        raise  # Re-raise the exception
-    except openai.OpenAIError as e:
-        error_logger.error(
-            f"OpenAI API Error during image generation: {e}", exc_info=True)
-        raise
-    except Exception as e:
-        error_logger.error(
-            f"An unexpected error occurred while generating image: {e}", exc_info=True)
-        raise
+                f"Failed to download or save image for page {page_number} of story {story_id}: {e}")
+            return None
+    return None
 
 
-def generate_character_reference_image(
-    character: CharacterDetail,
-    user_id: int,
-    story_id: int,
-    image_style_enum: ImageStyle,  # This is the application's ImageStyle enum
-    # To pass dynamic list item's additional_config
-    image_styles_config: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    app_logger.info(  # ADDED THIS ENTRY LOG
-        f"Attempting to generate reference image for character: {character.name} (User: {user_id}, Story: {story_id}, Style Enum: {image_style_enum})")
-
-    # Use "the character" if name is empty or whitespace
-    char_name_for_prompt = character.name if character.name and character.name.strip(
-    ) else "the character"
-
-    prompt_parts = [
-        f"Generate a character sheet for {char_name_for_prompt} showing the character from multiple consistent angles (e.g., front, side, three-quarter view), including a full body view.",
-        "It is crucial that all views depict the exact same character consistently."
-    ]  # New prompt start for multiple angles
-    if character.physical_appearance:
-        prompt_parts.append(
-            f"Physical Appearance: {character.physical_appearance}.")
-    if character.clothing_style:
-        prompt_parts.append(f"Clothing Style: {character.clothing_style}.")
-    if character.key_traits:
-        prompt_parts.append(f"Key Traits: {character.key_traits}.")
-    if character.age:
-        prompt_parts.append(f"Age: {character.age}.")
-    if character.gender:
-        prompt_parts.append(f"Gender: {character.gender}.")
-
-    # Add image style to the prompt
-    style_value = image_style_enum.value if hasattr(
-        image_style_enum, 'value') else str(image_style_enum)
-    if style_value != "Default":  # Assuming "Default" is a valid enum member string value
-        prompt_parts.append(f"Style: {style_value}.")
-    else:
-        # Default style description
-        prompt_parts.append("Style: Clear, vibrant, detailed illustration.")
-
-    # prompt_parts.append(
-    #     "The character should be clearly visible, facing forward or slightly angled, on a simple or neutral background to emphasize their design.") # Old instruction
-    prompt_parts.append(
-        "The character should be clearly visible on a simple or neutral background to emphasize their design for the character sheet."
-    )  # New instruction
-
-    image_prompt = _truncate_prompt(" ".join(filter(None, prompt_parts)))
-    api_logger.debug(
-        f"Image model prompt for character {character.name}: {image_prompt}")
-
-    # Define image save paths
-    # Path relative to 'data/' for storing in DB and for frontend access
-    # e.g., images/user_1/story_123/references/char_Luna_ref_abc123.png
-    char_filename_safe_name = "".join(
-        c if c.isalnum() else '_' for c in character.name)
-    unique_suffix = uuid.uuid4().hex[:6]
-    char_image_filename = f"char_{char_filename_safe_name}_ref_{unique_suffix}.png"
-
-    user_images_base_path_for_db = f"images/user_{user_id}"
-    story_folder_name_for_db = f"story_{story_id}"
-    char_ref_image_subfolder_name = "references"
-
-    _db_path_prefix = os.path.join(
-        user_images_base_path_for_db, story_folder_name_for_db, char_ref_image_subfolder_name)
-    _save_directory_on_disk = os.path.join("data", _db_path_prefix)
-
-    os.makedirs(_save_directory_on_disk, exist_ok=True)
-    image_save_path_on_disk = os.path.join(
-        _save_directory_on_disk, char_image_filename)
-    image_path_for_db = os.path.join(_db_path_prefix, char_image_filename)
-
-    # ADDED/ENHANCED LOG
-    app_logger.debug(
-        f"generate_character_reference_image: About to call generate_image for character '{character.name}'. Disk path: {image_save_path_on_disk}. Prompt: '{image_prompt[:100]}...'")
-
+@api_retry
+def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = None, size: str = IMAGE_SIZE) -> Optional[bytes]:
+    """
+    Generates an image using the configured AI model based on a prompt.
+    If reference_image_paths are provided, it opens the files and uses the edit endpoint.
+    Returns the image as bytes, or None if an error occurred.
+    """
     try:
-        image_generation_result = generate_image(
-            page_image_description=image_prompt,
-            image_path=image_save_path_on_disk,
-            character_reference_image_paths=None,
-            character_name_for_reference=None,  # Explicitly None for character ref generation
-        )
+        # Truncate the prompt if it's too long
+        truncated_prompt = _truncate_prompt(prompt)
 
-        updated_character_dict = character.model_dump(exclude_none=True)
-        updated_character_dict["reference_image_path"] = image_path_for_db
-        updated_character_dict["reference_image_revised_prompt"] = image_generation_result.get(
-            "revised_prompt")
-        updated_character_dict["reference_image_gen_id"] = image_generation_result.get(
-            "gen_id")
+        api_logger.info(
+            f"Requesting AI image with prompt: {truncated_prompt}, size: {size}")
 
-        app_logger.info(  # ENSURED THIS LOG IS PRESENT
-            f"Reference image for {character.name} generated and saved to {image_save_path_on_disk}. DB path: {image_path_for_db}")
-        return updated_character_dict
+        response = None
+        if reference_image_paths:
+            api_logger.info(
+                f"Using {len(reference_image_paths)} reference image(s) for image generation.")
 
-    except Exception as e:
-        error_logger.error(
-            f"generate_character_reference_image: Exception caught for char '{character.name}'. Type: {type(e).__name__}, Msg: {str(e)}. Failing prompt was: {image_prompt}", exc_info=True)
-        # Always return the model dump as per test expectation
-        return character.model_dump(exclude_none=True)
+            opened_files = []
+            try:
+                for path in reference_image_paths:
+                    # The path from the DB is relative to the 'data' directory, e.g., 'images/user_1/...'
+                    full_path = os.path.join("data", path)
+                    if os.path.exists(full_path):
+                        opened_files.append(open(full_path, "rb"))
+                    else:
+                        error_logger.warning(
+                            f"Reference image not found at path: {full_path}")
 
-# Changed character_name to character_details
-# async def generate_image_description_from_image(image_path: str, character_details: CharacterDetail) -> str:
-#     """
-#     Uses GPT-4 Vision to generate a detailed textual description of a character
-#     based on their reference image and initial details.
-#     """
-#     api_logger.info(
-#         f"Generating detailed visual description for character: {character_details.name} from image: {image_path}")
-#
-#     try:
-#         # Ensure the image_path is an absolute path or correctly relative to where the script runs
-#         # For local files, it might need to be prefixed if not absolute.
-#         # Assuming image_path is accessible.
-#         full_image_path = os.path.abspath(image_path)
-#         if not os.path.exists(full_image_path):
-#             error_logger.error(
-#                 f"Image file not found at {full_image_path} for GPT-4 Vision processing.")
-#             # Fallback or raise error
-#             return "Error: Image file not found for description generation."
-#
-#         with open(full_image_path, "rb") as image_file:
-#             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-#
-#         headers = {
-#             "Content-Type": "application/json",
-#             "Authorization": f"Bearer {OPENAI_API_KEY}"
-#         }
-#
-#         # Constructing a more detailed prompt for GPT-4 Vision
-#         vision_prompt_parts = [
-#             f"Analyze the provided image, which is a character reference for '{character_details.name}'.",
-#             "Focus on extracting and describing concrete visual details suitable for maintaining consistency in future image generations.",
-#             "Describe the character's key physical features, clothing, any notable accessories, and overall style as depicted in the image.",
-#             "Do not invent details not present in the image. Be objective and descriptive.",
-#             "The goal is to create a textual description that can be used by an image generation AI (like DALL-E) to recreate this character accurately."
-#         ]
-#         # Add user-provided details as context, if available
-#         if character_details.physical_appearance:  # Corrected from initial_character_details
-#             vision_prompt_parts.append(
-#                 # Corrected
-#                 f"User-provided physical appearance for context: {character_details.physical_appearance}")
-#         if character_details.clothing_style:  # Corrected
-#             vision_prompt_parts.append(
-#                 # Corrected
-#                 f"User-provided clothing style for context: {character_details.clothing_style}")
-#         if character_details.key_traits:  # Corrected
-#             vision_prompt_parts.append(
-#                 # Corrected
-#                 f"User-provided key traits for context: {character_details.key_traits}")
-#
-#         vision_prompt = " ".join(vision_prompt_parts)
-#
-#         payload = {
-#             "model": "gpt-4-vision-preview",
-#             "messages": [
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {
-#                             "type": "text",
-#                             "text": vision_prompt
-#                         },
-#                         {
-#                             "type": "image_url",
-#                             "image_url": {
-#                                 "url": f"data:image/png;base64,{base64_image}"
-#                             }
-#                         }
-#                     ]
-#                 }
-#             ],
-#             "max_tokens": 300
-#         }
-#
-#         api_logger.debug(
-#             f"Sending request to GPT-4 Vision for character {character_details.name}. Prompt: {vision_prompt[:100]}...")
-#         response = requests.post(
-#             "https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-#         response.raise_for_status()  # Raise an exception for bad status codes
-#
-#         description_data = response.json()
-#         generated_description = description_data['choices'][0]['message']['content']
-#
-#         api_logger.info(
-#             f"Successfully generated visual description for {character_details.name} using GPT-4 Vision.")
-#         api_logger.debug(
-#             f"Generated description for {character_details.name}: {generated_description}")
-#
-#         return generated_description
-#
-#     except requests.exceptions.RequestException as e:
-#         error_logger.error(
-#             f"API request failed during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
-#         # Fallback description
-#         return f"Could not generate detailed visual description due to API error. Basic details: Name {character_details.name}."
-#     except FileNotFoundError as e:
-#         error_logger.error(
-#             f"Image file not found for GPT-4 Vision processing of {character_details.name}: {e}", exc_info=True)
-#         return f"Could not generate detailed visual description as image was not found. Basic details: Name {character_details.name}."
-#     except Exception as e:
-#         error_logger.error(
-#             f"An unexpected error occurred during GPT-4 Vision processing for {character_details.name}: {e}", exc_info=True)
-#         # Fallback description
-#         return f"Could not generate detailed visual description due to an unexpected error. Basic details: Name {character_details.name}."
-
-
-# Example usage (for testing this file directly)
-if __name__ == "__main__":
-    # Test ChatGPT
-    sample_story_input = {
-        "genre": "Children’s",
-        "story_outline": "A brave knight saves a friendly dragon from a misunderstanding village.",
-        "main_characters": [
-            {"name": "Sir Reginald", "description": "A kind knight in shiny armor",
-                "personality": "Brave and fair"},
-            {"name": "Sparky", "description": "A small, green dragon who loves to play",
-                "personality": "Playful and misunderstood"}
-        ],
-        "num_pages": 4,  # Test with even number for PER_TWO_PAGES
-        "tone": "Lighthearted and adventurous",
-        "setting": "A medieval kingdom with a dark forest",
-        "image_style": "Cartoon",
-        # Or use WordToPictureRatio.PER_TWO_PAGES.value
-        "word_to_picture_ratio": "PER_TWO_PAGES",
-        "text_density": "Concise (~30-50 words)"  # Added for completeness
-    }
-    try:
-        print(
-            f"Generating story from ChatGPT with ratio: {sample_story_input.get('word_to_picture_ratio')}...")
-        generated_story = generate_story_from_chatgpt(sample_story_input)
-        print("Successfully generated story:")
-        print(json.dumps(generated_story, indent=2))
-
-        if generated_story and generated_story.get("Pages"):
-            for i, page_data in enumerate(generated_story["Pages"]):
-                page_prompt = page_data.get("Image_description")
-                page_num_text = page_data.get(
-                    "Page_number", f"Unknown (index {i})")
-                if page_prompt:  # Check if not None and not empty string
-                    print(
-                        f"\nGenerating image for page {page_num_text} with prompt: {page_prompt}")
-                    # Ensure the 'data/images' directory exists for the test
-                    test_image_dir = os.path.join(os.path.dirname(
-                        __file__), '..', 'data', 'images', 'test_ai_service')
-                    os.makedirs(test_image_dir, exist_ok=True)
-                    image_file_path = os.path.join(
-                        test_image_dir, f"test_image_page_{page_num_text}.png")
-                    image_gen_details = generate_image(  # Changed function name
-                        page_image_description=page_prompt,  # Pass prompt as page_image_description
-                        image_path=image_file_path,
-                        character_reference_image_paths=None,  # Add new parameter for testing
-                        character_name_for_reference=None  # Explicitly None for this test case
+                if opened_files:
+                    response = client.images.edit(
+                        model=IMAGE_MODEL,
+                        image=opened_files,
+                        prompt=truncated_prompt,
+                        size=size,
+                        n=1
                     )
-                    print(
-                        f"Successfully generated and saved image to: {image_gen_details['image_path']}")
-                else:
-                    print(
-                        f"\nNo image description (or it's null) for page {page_num_text} as per ratio.")
-        else:
-            print("No pages found in the generated story to test image generation.")
+            finally:
+                for f in opened_files:
+                    f.close()
 
-    except ValueError as e:
-        print(f"Input or parsing error: {e}")
+        # If no references were provided, or if opening files failed, generate a new image
+        if response is None:
+            response = client.images.generate(
+                model=IMAGE_MODEL,
+                prompt=truncated_prompt,
+                size=size,
+                quality="auto",
+                n=1
+            )
+
+        api_logger.info(f"Response from AI image model: {response}")
+        api_logger.info("Successfully received image from AI image model.")
+
+        b64_json = response.data[0].b64_json
+        if not b64_json:
+            error_logger.error("AI image model returned an empty b64_json.")
+            return None
+
+        return base64.b64decode(b64_json)
     except openai.APIError as e:
-        print(f"OpenAI API error during test: {e}")
+        error_logger.error(f"OpenAI API error in AI image generation: {e}")
+        raise
     except Exception as e:
-        print(f"Generic error during test: {e}")
+        error_logger.error(
+            f"An unexpected error occurred in AI image generation: {e}")
+        raise

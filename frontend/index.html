@@ -148,6 +148,13 @@
                 <button type="button" id="save-draft-button">Save Draft</button>
                 <button type="submit" id="generate-story-button">Generate Story</button>
             </form>
+            <div id="generation-progress-area" style="display:none; margin-top: 20px;">
+                <h3>Generating Story...</h3>
+                <p id="generation-status-message" style="font-style: italic; margin-bottom: 5px;"></p>
+                <div class="progress-bar-container">
+                    <div id="generation-progress-bar" class="progress-bar">0%</div>
+                </div>
+            </div>
         </section>
 
         <section id="story-preview-section" style="display:none;">
