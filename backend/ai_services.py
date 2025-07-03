@@ -424,7 +424,19 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     else:
         image_style = str(image_style)
 
-    prompt = f"full-body character sheet for {character.name}, showing front, side, and back views. {character.description or ''}. Style: {image_style}. The character should be centered and not cropped, especially the head or feet."
+    # Construct a detailed prompt
+    prompt_parts = [f"full-body character sheet for {character.name}"]
+    if character.physical_appearance:
+        prompt_parts.append(character.physical_appearance)
+    if character.clothing_style:
+        prompt_parts.append(f"wearing {character.clothing_style}")
+    if character.key_traits:
+        prompt_parts.append(f"Key traits: {character.key_traits}")
+    if character.description:
+        prompt_parts.append(character.description)
+
+    prompt = ", ".join(prompt_parts)
+    prompt += f". Style: {image_style}. The character should be centered, showing front, side, and back views, and not cropped, especially the head or feet."
 
     image_bytes = await asyncio.to_thread(
         generate_image,

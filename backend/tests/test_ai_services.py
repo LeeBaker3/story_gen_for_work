@@ -50,6 +50,9 @@ async def test_generate_character_reference_image_size(mock_open, mock_makedirs,
     mock_character = MagicMock()
     mock_character.name = "Lila"
     mock_character.description = "A brave explorer"
+    mock_character.physical_appearance = None
+    mock_character.clothing_style = None
+    mock_character.key_traits = None
     mock_character.model_dump.return_value = {
         'name': 'Lila', 'description': 'A brave explorer'}
 
@@ -82,3 +85,67 @@ async def test_generate_character_reference_image_size(mock_open, mock_makedirs,
     assert args[0] == ai_services.generate_image
     assert 'size' in kwargs
     assert kwargs['size'] == '1024x1536'
+
+
+@pytest.mark.asyncio
+@patch('backend.ai_services.asyncio.to_thread')
+async def test_generate_character_reference_image_prompt_construction(mock_to_thread):
+    """
+    Test that generate_character_reference_image constructs the prompt correctly, including all character details.
+    """
+    # Mock inputs
+    mock_character = MagicMock()
+    mock_character.name = "Anya"
+    mock_character.description = "A mysterious sorceress."
+    mock_character.physical_appearance = "tall with silver hair"
+    mock_character.clothing_style = "dark robes"
+    mock_character.key_traits = "carries a glowing orb"
+    mock_character.model_dump.return_value = {
+        'name': 'Anya',
+        'description': 'A mysterious sorceress.',
+        'physical_appearance': 'tall with silver hair',
+        'clothing_style': 'dark robes',
+        'key_traits': 'carries a glowing orb'
+    }
+
+    mock_story_input = MagicMock()
+    mock_story_input.image_style = "photorealistic"
+
+    mock_db = MagicMock()
+    user_id = 1
+    story_id = 1
+    image_save_path = "/fake/path/img.png"
+    image_db_path = "images/user_1/story_1/char_1.png"
+
+    mock_to_thread.return_value = b"fake_image_data"
+
+    # Call the function
+    await ai_services.generate_character_reference_image(
+        character=mock_character,
+        story_input=mock_story_input,
+        db=mock_db,
+        user_id=user_id,
+        story_id=story_id,
+        image_save_path_on_disk=image_save_path,
+        image_path_for_db=image_db_path
+    )
+
+    # Assert that asyncio.to_thread was called with a correctly constructed prompt
+    mock_to_thread.assert_called_once()
+    args, kwargs = mock_to_thread.call_args
+
+    # The prompt is the second positional argument to generate_image
+    generated_prompt = args[1]
+
+    expected_prompt_parts = [
+        "full-body character sheet for Anya",
+        "tall with silver hair",
+        "wearing dark robes",
+        "Key traits: carries a glowing orb",
+        "A mysterious sorceress.",
+        ". Style: photorealistic.",
+        "showing front, side, and back views"
+    ]
+
+    for part in expected_prompt_parts:
+        assert part in generated_prompt
