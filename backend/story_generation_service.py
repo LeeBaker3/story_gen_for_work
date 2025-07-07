@@ -14,29 +14,29 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         crud.update_story_generation_task_status(
             db, task_id, schemas.GenerationTaskStatus.IN_PROGRESS, "Starting story generation...")
 
-        # Step 1: Generate Character Images
+        # Step 1: Generate Character Images and build a lookup map
         crud.update_story_generation_task_progress(
-            db, task_id, 10, "Generating character images...")
+            db, task_id, 10, "Generating character reference images...")
 
-        generated_character_details = []
+        character_details_map = {}
         for character_input in story_input.main_characters:
-            character_image_url = await ai_services.generate_character_reference_image(
+            # The service now returns a dictionary of the character's details
+            char_details = await ai_services.generate_character_reference_image(
                 character_input, story_input, db, user_id, story_id
             )
-            if character_image_url:
-                generated_character_details.append({
-                    "name": character_input.name,
-                    "image_url": character_image_url
-                })
+            if char_details and char_details.get('reference_image_path'):
+                character_details_map[character_input.name] = char_details
 
         app_logger.info(
-            f"Completed character image generation for task_id: {task_id}")
+            f"Completed character image generation for task_id: {task_id}. Details: {character_details_map}")
 
         # Step 2: Generate Story Content
         crud.update_story_generation_task_progress(
             db, task_id, 30, "Generating story content...")
         story_content_input = story_input.model_dump()
-        story_content_input['generated_character_details'] = generated_character_details
+        # Pass the full character details map to the story generation prompt if needed
+        story_content_input['main_characters'] = list(
+            character_details_map.values())
 
         story_content = await ai_services.generate_story_from_chatgpt(story_content_input)
         app_logger.info(
@@ -49,15 +49,31 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             for i, page in enumerate(story_content['Pages']):
                 progress = 60 + int((i + 1) / len(story_content['Pages']) * 35)
                 crud.update_story_generation_task_progress(
-                    db, task_id, progress, f"Generating image for page {i+1}...")
+                    db, task_id, progress, f"Generating image for page {page.get('Page_number', i+1)}...")
+
+                # Determine which reference images to use for this page
+                characters_in_scene = page.get('Characters_in_scene', [])
+                reference_paths_for_page = []
+                for char_name in characters_in_scene:
+                    if char_name in character_details_map and character_details_map[char_name].get('reference_image_path'):
+                        reference_paths_for_page.append(
+                            character_details_map[char_name]['reference_image_path'])
+
+                # Extract image style from Pydantic enum
+                image_style = story_input.image_style
+                if hasattr(image_style, 'value'):
+                    image_style = image_style.value
 
                 page_image_url = await ai_services.generate_image_for_page(
-                    page_content=page['Text'],
-                    style_reference=story_input.artstyle,
+                    # Use the detailed Image_description
+                    page_content=page['Image_description'],
+                    style_reference=image_style,
+                    characters_in_scene=characters_in_scene,
                     db=db,
                     user_id=user_id,
                     story_id=story_id,
-                    page_number=i+1
+                    page_number=page.get('Page_number', i+1),
+                    reference_image_paths=reference_paths_for_page
                 )
                 page['image_url'] = page_image_url
 

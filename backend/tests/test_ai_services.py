@@ -1,5 +1,5 @@
 import base64
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 import pytest
 from backend import ai_services
 
@@ -89,9 +89,13 @@ async def test_generate_character_reference_image_size(mock_open, mock_makedirs,
 
 @pytest.mark.asyncio
 @patch('backend.ai_services.asyncio.to_thread')
-async def test_generate_character_reference_image_prompt_construction(mock_to_thread):
+@patch('backend.ai_services.os.makedirs')
+@patch('builtins.open', new_callable=MagicMock)
+async def test_generate_character_reference_image_prompt_and_file_saving(mock_open, mock_makedirs, mock_to_thread):
     """
-    Test that generate_character_reference_image constructs the prompt correctly, including all character details.
+    Test that generate_character_reference_image:
+    1. Constructs the prompt correctly with the style at the forefront.
+    2. Saves the prompt to a corresponding text file.
     """
     # Mock inputs
     mock_character = MagicMock()
@@ -114,10 +118,23 @@ async def test_generate_character_reference_image_prompt_construction(mock_to_th
     mock_db = MagicMock()
     user_id = 1
     story_id = 1
-    image_save_path = "/fake/path/img.png"
+    image_save_path = "/fake/path/Anya_ref_story_1.png"
     image_db_path = "images/user_1/story_1/char_1.png"
+    fake_image_data = b"fake_image_data"
+    mock_to_thread.return_value = fake_image_data
 
-    mock_to_thread.return_value = b"fake_image_data"
+    # Create separate mock handles for each file that will be opened
+    mock_image_handle = MagicMock()
+    mock_prompt_handle = MagicMock()
+
+    # When open is called, return the correct handle based on the file path
+    def open_side_effect(path, *args, **kwargs):
+        if path == image_save_path:
+            return mock_image_handle
+        else:
+            # The other call is for the prompt file
+            return mock_prompt_handle
+    mock_open.side_effect = open_side_effect
 
     # Call the function
     await ai_services.generate_character_reference_image(
@@ -130,22 +147,90 @@ async def test_generate_character_reference_image_prompt_construction(mock_to_th
         image_path_for_db=image_db_path
     )
 
-    # Assert that asyncio.to_thread was called with a correctly constructed prompt
+    # 1. Assert prompt construction
     mock_to_thread.assert_called_once()
     args, kwargs = mock_to_thread.call_args
-
-    # The prompt is the second positional argument to generate_image
+    # The called function is the first arg, the prompt is the second positional argument
+    assert args[0] == ai_services.generate_image
     generated_prompt = args[1]
 
-    expected_prompt_parts = [
-        "full-body character sheet for Anya",
-        "tall with silver hair",
-        "wearing dark robes",
-        "Key traits: carries a glowing orb",
-        "A mysterious sorceress.",
-        ". Style: photorealistic.",
-        "showing front, side, and back views"
-    ]
+    assert generated_prompt.startswith(
+        "A photorealistic style full-body character sheet for Anya")
+    assert "tall with silver hair" in generated_prompt
+    assert "wearing dark robes" in generated_prompt
+    assert "Key traits: carries a glowing orb" in generated_prompt
+    assert "A mysterious sorceress." in generated_prompt
+    assert "showing front, side, and back views" in generated_prompt
 
-    for part in expected_prompt_parts:
-        assert part in generated_prompt
+    # 2. Assert file and prompt saving
+    prompt_save_path = "/fake/path/Anya_ref_prompt_story_1.txt"
+
+    # Check that open was called for both files
+    mock_open.assert_has_calls([
+        call(image_save_path, "wb"),
+        call(prompt_save_path, "w", encoding='utf-8')
+    ], any_order=True)
+
+    # Check that the correct data was written to each mock handle
+    mock_image_handle.__enter__().write.assert_called_once_with(fake_image_data)
+    mock_prompt_handle.__enter__().write.assert_called_once_with(generated_prompt)
+
+
+@pytest.mark.asyncio
+@patch('backend.ai_services.asyncio.to_thread')
+@patch('backend.ai_services.os.makedirs')
+@patch('builtins.open', new_callable=MagicMock)
+async def test_generate_image_for_page_saves_prompt(mock_open, mock_makedirs, mock_to_thread):
+    """
+    Test that generate_image_for_page saves the prompt to a text file.
+    """
+    # Mock inputs
+    page_content = "A dragon flies over a castle."
+    style_reference = "fantasy art"
+    # This is the exact prompt constructed in the function
+    prompt = f"A {style_reference} style image of {page_content}"
+    image_save_path = "/fake/path/page_1_image.png"
+    prompt_save_path = "/fake/path/page_1_image_prompt.txt"
+
+    mock_db = MagicMock()
+    user_id = 1
+    story_id = 1
+    page_number = 1
+    image_db_path = "images/user_1/story_1/page_1.png"
+    fake_image_data = b"fake_image_data"
+
+    mock_to_thread.return_value = fake_image_data
+
+    # Create separate mock handles for each file that will be opened
+    mock_image_handle = MagicMock()
+    mock_prompt_handle = MagicMock()
+
+    # When open is called, return the correct handle based on the file path
+    def open_side_effect(path, *args, **kwargs):
+        if path == image_save_path:
+            return mock_image_handle
+        else:
+            return mock_prompt_handle
+    mock_open.side_effect = open_side_effect
+
+    # Call the function
+    await ai_services.generate_image_for_page(
+        page_content=page_content,
+        style_reference=style_reference,
+        db=mock_db,
+        user_id=user_id,
+        story_id=story_id,
+        page_number=page_number,
+        image_save_path_on_disk=image_save_path,
+        image_path_for_db=image_db_path
+    )
+
+    # Assert file writing
+    mock_open.assert_has_calls([
+        call(image_save_path, "wb"),
+        call(prompt_save_path, "w", encoding='utf-8')
+    ], any_order=True)
+
+    # Check that the correct data was written to each mock handle
+    mock_image_handle.__enter__().write.assert_called_once_with(fake_image_data)
+    mock_prompt_handle.__enter__().write.assert_called_once_with(prompt)

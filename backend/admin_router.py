@@ -149,7 +149,7 @@ def read_dynamic_list_items_endpoint(
 
 
 # Changed path for clarity
-@admin_router.get("/items/{item_id}", response_model=schemas.DynamicListItem)
+@admin_router.get("/dynamic-lists/items/{item_id}", response_model=schemas.DynamicListItem)
 def read_single_dynamic_list_item_endpoint(
     item_id: int,
     db: Session = Depends(get_db)
@@ -161,7 +161,7 @@ def read_single_dynamic_list_item_endpoint(
     return db_item
 
 
-@admin_router.put("/items/{item_id}", response_model=schemas.DynamicListItem)
+@admin_router.put("/dynamic-lists/items/{item_id}", response_model=schemas.DynamicListItem)
 def update_dynamic_list_item_endpoint(
     item_id: int,
     item_update: schemas.DynamicListItemUpdate,
@@ -191,7 +191,7 @@ def update_dynamic_list_item_endpoint(
     return updated_item
 
 
-@admin_router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@admin_router.delete("/dynamic-lists/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_dynamic_list_item_endpoint(
     item_id: int,
     db: Session = Depends(get_db)
@@ -217,7 +217,7 @@ def delete_dynamic_list_item_endpoint(
     return
 
 
-@admin_router.get("/items/{item_id}/in-use", response_model=schemas.DynamicListItemUsage)
+@admin_router.get("/dynamic-lists/items/{item_id}/in-use", response_model=schemas.DynamicListItemUsage)
 def check_dynamic_list_item_in_use(
     item_id: int,
     db: Session = Depends(get_db)
@@ -234,26 +234,11 @@ def check_dynamic_list_item_in_use(
 
     usage_info = crud.is_dynamic_list_item_in_use(db, item_id)
 
-    # Ensure usage_info is always a dictionary matching DynamicListItemUsage schema
-    if isinstance(usage_info, bool):  # Case where crud returns simple boolean (item not in use)
-        return schemas.DynamicListItemUsage(is_in_use=usage_info, details=[])
-    elif isinstance(usage_info, dict) and "is_in_use" in usage_info:
-        # Ensure details is a list, even if crud might sometimes not include it when not in use
-        details = usage_info.get("details", [])
-        if not isinstance(details, list):
-            # Log a warning if details is not a list as expected by schema
-            app_logger.warning(
-                f"Usage details for item {item_id} was not a list: {details}. Defaulting to empty list.")
-            details = []
-        return schemas.DynamicListItemUsage(is_in_use=usage_info["is_in_use"], details=details)
-
-    # Fallback or error if the return type is unexpected
-    error_logger.error(
-        f"Unexpected return type from crud.is_dynamic_list_item_in_use for item {item_id}: {type(usage_info)}, value: {usage_info}")
-    # Return a default "not in use" state with an error logged, or raise 500
-    # Raising 500 might be better to signal an unexpected state from CRUD.
-    raise HTTPException(
-        status_code=500, detail="Error checking item usage status due to unexpected data format from CRUD.")
+    # Ensure the response conforms to the DynamicListItemUsage schema
+    return schemas.DynamicListItemUsage(
+        is_in_use=usage_info.get("is_in_use", False),
+        details=usage_info.get("details", [])
+    )
 
 
 # --- Admin User Management Router ---

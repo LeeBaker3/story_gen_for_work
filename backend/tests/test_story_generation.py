@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock, ANY, call, AsyncMock
 from sqlalchemy.orm import Session
 from backend.main import app
 from backend import schemas, crud, auth, database
@@ -172,3 +172,104 @@ def test_get_generation_status_not_found(client, db_session_mock):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_passes_correct_references():
+    """
+    Tests that the background task correctly identifies characters in a scene
+    and passes the correct reference image paths and character names to the
+    image generation function.
+    """
+    # Arrange
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-123"
+    story_id = 1
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Test Story",
+        genre="Sci-Fi",
+        story_outline="A space adventure.",
+        main_characters=[
+            schemas.CharacterDetail(
+                name="Captain Eva", description="Brave leader"),
+            schemas.CharacterDetail(
+                name="Robot X-1", description="Witty sidekick"),
+            schemas.CharacterDetail(
+                name="Alien Zorp", description="Mysterious alien")
+        ],
+        num_pages=2,
+        image_style=schemas.ImageStyle.SCI_FI_CONCEPT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD
+    )
+
+    # Mock the database dependency
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        # Mock CRUD operations
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            # Mock AI service calls
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                # Setup mock return values for AI services
+                mock_ai_services.generate_character_reference_image = AsyncMock(side_effect=[
+                    {"name": "Captain Eva",
+                        "reference_image_path": "images/user_1/story_1/eva_ref.png"},
+                    {"name": "Robot X-1",
+                        "reference_image_path": "images/user_1/story_1/x1_ref.png"},
+                    {"name": "Alien Zorp",
+                        "reference_image_path": "images/user_1/story_1/zorp_ref.png"},
+                ])
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                    "Title": "Test Story",
+                    "Pages": [
+                        {
+                            "Page_number": 1, "Text": "Eva and X-1 on the bridge.",
+                            "Image_description": "A vibrant image of Captain Eva and Robot X-1 on the bridge of a starship, looking out at a nebula.",
+                            "Characters_in_scene": ["Captain Eva", "Robot X-1"]
+                        },
+                        {
+                            "Page_number": 2, "Text": "Zorp appears!",
+                            "Image_description": "The mysterious Alien Zorp emerging from a shadowy corner of the cargo bay.",
+                            "Characters_in_scene": ["Alien Zorp"]
+                        }
+                    ]
+                })
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value="images/user_1/story_1/page_1.png")
+
+                # Import the service to be tested
+                from backend.story_generation_service import generate_story_as_background_task
+
+                # Act
+                await generate_story_as_background_task(task_id, story_id, user_id, story_input)
+
+                # Assert
+                # Check that generate_image_for_page was called with the correct arguments for each page
+                expected_calls = [
+                    call(
+                        page_content="A vibrant image of Captain Eva and Robot X-1 on the bridge of a starship, looking out at a nebula.",
+                        style_reference="Sci-Fi Concept Art",
+                        db=db_session_mock,
+                        user_id=user_id,
+                        story_id=story_id,
+                        page_number=1,
+                        reference_image_paths=[
+                            "images/user_1/story_1/eva_ref.png", "images/user_1/story_1/x1_ref.png"],
+                        characters_in_scene=["Captain Eva", "Robot X-1"]
+                    ),
+                    call(
+                        page_content="The mysterious Alien Zorp emerging from a shadowy corner of the cargo bay.",
+                        style_reference="Sci-Fi Concept Art",
+                        db=db_session_mock,
+                        user_id=user_id,
+                        story_id=story_id,
+                        page_number=2,
+                        reference_image_paths=[
+                            "images/user_1/story_1/zorp_ref.png"],
+                        characters_in_scene=["Alien Zorp"]
+                    )
+                ]
+                mock_ai_services.generate_image_for_page.assert_has_calls(
+                    expected_calls, any_order=True)

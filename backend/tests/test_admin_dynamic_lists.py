@@ -104,7 +104,7 @@ def test_admin_edit_dynamic_list_item(client: TestClient, admin_token: str):
         "sort_order": 3
     }
     response = client.put(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -135,7 +135,7 @@ def test_admin_delete_dynamic_list_item_not_in_use(client: TestClient, admin_tok
 
     # Delete
     response = client.delete(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert response.status_code == 204
@@ -199,7 +199,7 @@ def test_admin_cannot_delete_in_use_dynamic_list_item(client: TestClient, admin_
 
     # Attempt to delete the item, which should fail
     delete_response = client.delete(
-        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert delete_response.status_code == 409
     assert "is currently in use and cannot be deleted" in delete_response.json()[
         "detail"]
@@ -267,7 +267,7 @@ def test_admin_can_deactivate_in_use_dynamic_list_item(client: TestClient, admin
     # Deactivate the item (is_active: False)
     update_payload = {"is_active": False}
     response = client.put(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -319,7 +319,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
     # without first creating an item as admin. For simplicity, we can skip or mock.
     # Let's assume an item with ID 1 exists for the sake of testing the endpoint protection.
     response_item_update = client.put(
-        f"/api/v1/admin/items/1",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/1",  # Corrected endpoint
         json={"item_label": "Attempted Update"},
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
@@ -327,7 +327,7 @@ def test_non_admin_cannot_manage_dynamic_list_items(client: TestClient, regular_
 
     # Non-admin tries to DELETE an item
     response_item_delete = client.delete(
-        f"/api/v1/admin/items/1",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/1",  # Corrected endpoint
         headers={"Authorization": f"Bearer {regular_user_token}"}
     )
     assert response_item_delete.status_code == 403  # Forbidden (or 404)
@@ -421,7 +421,7 @@ def test_admin_get_specific_item_by_id(client: TestClient, admin_token: str):
 
     response = client.get(
         # Corrected endpoint
-        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == item_id
@@ -431,9 +431,63 @@ def test_admin_get_specific_item_by_id(client: TestClient, admin_token: str):
 
 
 def test_admin_get_non_existent_item_returns_404(client: TestClient, admin_token: str):
-    response = client.get("/api/v1/admin/items/999999", headers={  # Corrected endpoint
+    response = client.get("/api/v1/admin/dynamic-lists/items/999999", headers={  # Corrected endpoint
                           "Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 404
+
+
+def test_admin_check_item_in_use(client: TestClient, admin_token: str, db_session: Session):
+    # Similar setup to the delete test
+    list_name = "genres"
+    item_value_in_use = schemas.StoryGenre.SCI_FI.value
+    ensure_dynamic_list_exists(client, list_name, admin_token)
+
+    # Find or create the item
+    get_items_response = client.get(f"/api/v1/admin/dynamic-lists/{list_name}/items", headers={"Authorization": f"Bearer {admin_token}"})
+    item = next((i for i in get_items_response.json() if i['item_value'] == item_value_in_use), None)
+
+    if not item:
+        create_payload = {"list_name": list_name, "item_value": item_value_in_use, "item_label": "Sci-Fi"}
+        create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload, headers={"Authorization": f"Bearer {admin_token}"})
+        assert create_response.status_code == 201
+        item_id = create_response.json()["id"]
+    else:
+        item_id = item['id']
+
+    # Check when not in use
+    in_use_response_false = client.get(f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+    assert in_use_response_false.status_code == 200
+    response_data_false = in_use_response_false.json()
+    assert response_data_false["is_in_use"] is False
+    assert "details" in response_data_false
+
+    # Create a story to make it "in use"
+    admin_user = crud.get_user_by_username(db_session, "adminuser")
+    if not admin_user:
+        admin_user = crud.create_user(db_session, schemas.UserCreate(
+            username="adminuser", password="adminpassword", email="admin_usage_test@example.com", role="admin"))
+
+    story_data = schemas.StoryCreate(
+        title="Story to Check In-Use Status",
+        genre=item_value_in_use,
+        story_outline="An outline.",
+        main_characters=[],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.CONCISE,
+    )
+    story = crud.create_story_db_entry(db_session, story_data, admin_user.id, title=story_data.title)
+
+    # Check again when in use
+    in_use_response_true = client.get(f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+    assert in_use_response_true.status_code == 200
+    response_data_true = in_use_response_true.json()
+    assert response_data_true["is_in_use"] is True
+    assert len(response_data_true["details"]) > 0
+
+    # Cleanup
+    crud.delete_story_db_entry(db_session, story.id)
 
 
 def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient, admin_token: str):
@@ -474,7 +528,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "sort_order": 101
     }
     edit_response = client.put(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         json=update_payload,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -495,11 +549,11 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "additional_config": {"openai_style": "vivid", "other_key": "other_value"}
     }
     edit_response_other_config = client.put(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         json=update_payload_other_config,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
-    assert edit_response_other_config.status_code == 200, f"Failed to edit item with other config: {edit_response_other_config.text}"
+    assert edit_response_other_config.status_code == 200, f"Failed to edit item: {edit_response_other_config.text}"
     edited_item_other_config = edit_response_other_config.json()
     assert edited_item_other_config["additional_config"] == {
         "openai_style": "vivid", "other_key": "other_value"}
@@ -509,7 +563,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
         "additional_config": {}
     }
     edit_response_empty_config = client.put(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         json=update_payload_empty_config,
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -519,7 +573,7 @@ def test_admin_create_edit_image_style_item_with_openai_style(client: TestClient
 
     # Cleanup: Delete the created item
     delete_response = client.delete(
-        f"/api/v1/admin/items/{item_id}",  # Corrected endpoint
+        f"/api/v1/admin/dynamic-lists/items/{item_id}",  # Corrected endpoint
         headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert delete_response.status_code == 204
@@ -555,7 +609,7 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
     # Check usage (should not be in use yet)
     usage_res_before = client.get(
         # Corrected endpoint
-        f"/api/v1/admin/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert usage_res_before.status_code == 200
     usage_data_before = usage_res_before.json()
     assert usage_data_before["is_in_use"] is False
@@ -575,7 +629,7 @@ def test_check_item_usage(client: TestClient, admin_token: str, db_session: Sess
 
     # Check usage again (should be in use now)
     usage_res_after = client.get(
-        f"/api/v1/admin/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert usage_res_after.status_code == 200
     usage_data_after = usage_res_after.json()
     assert usage_data_after["is_in_use"] is True
@@ -748,7 +802,7 @@ def test_admin_delete_dynamic_list(client: TestClient, admin_token: str):
 
     # Verify item is also gone (due to cascade)
     get_item_response = client.get(
-        f"/api/v1/admin/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
+        f"/api/v1/admin/dynamic-lists/items/{item_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert get_item_response.status_code == 404
 
 

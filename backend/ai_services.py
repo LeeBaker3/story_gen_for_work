@@ -424,8 +424,9 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     else:
         image_style = str(image_style)
 
-    # Construct a detailed prompt
-    prompt_parts = [f"full-body character sheet for {character.name}"]
+    # Construct a detailed prompt with style at the forefront
+    prompt_parts = [
+        f"A {image_style} style full-body character sheet for {character.name}"]
     if character.physical_appearance:
         prompt_parts.append(character.physical_appearance)
     if character.clothing_style:
@@ -436,7 +437,7 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
         prompt_parts.append(character.description)
 
     prompt = ", ".join(prompt_parts)
-    prompt += f". Style: {image_style}. The character should be centered, showing front, side, and back views, and not cropped, especially the head or feet."
+    prompt += ". The character should be centered, showing front, side, and back views, and not cropped, especially the head or feet."
 
     image_bytes = await asyncio.to_thread(
         generate_image,
@@ -454,6 +455,15 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
                 f.write(image_bytes)
             app_logger.info(
                 f"Downloaded and saved character reference image for {character.name} at {image_save_path_on_disk}")
+
+            # Save the prompt to a text file
+            prompt_path = os.path.splitext(image_save_path_on_disk)[
+                0].replace('_ref_', '_ref_prompt_') + ".txt"
+            with open(prompt_path, "w", encoding="utf-8") as f:
+                f.write(prompt)
+            app_logger.info(
+                f"Saved character reference prompt to {prompt_path}")
+
             char_dict['reference_image_path'] = image_path_for_db
             return char_dict
         except Exception as e:
@@ -467,7 +477,7 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
 
 
 @api_retry
-async def generate_image_for_page(page_content: str, style_reference: str, db: Session, user_id: int, story_id: int, page_number: int, image_save_path_on_disk: str = None, image_path_for_db: str = None, reference_image_paths: Optional[List[str]] = None) -> Optional[str]:
+async def generate_image_for_page(page_content: str, style_reference: str, db: Session, user_id: int, story_id: int, page_number: int, image_save_path_on_disk: str = None, image_path_for_db: str = None, reference_image_paths: Optional[List[str]] = None, characters_in_scene: Optional[List[str]] = None) -> Optional[str]:
     """
     Generates an image for a story page using the configured AI image model, saves it to disk, and returns the relative path.
     """
@@ -476,7 +486,11 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
             "Database session is not available in generate_image_for_page")
         return None
 
-    prompt = f"{page_content}, in a {style_reference} style"
+    prompt_parts = [f"A {style_reference} style image of {page_content}"]
+    if characters_in_scene:
+        prompt_parts.append(
+            f"The scene features the following characters: {', '.join(characters_in_scene)}.")
+    prompt = ". ".join(prompt_parts)
 
     # Call the sync generate_image in a thread, passing the paths directly
     image_bytes = await asyncio.to_thread(
@@ -493,6 +507,14 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
                 f.write(image_bytes)
             app_logger.info(
                 f"Downloaded and saved image for page {page_number} of story {story_id} at {image_save_path_on_disk}")
+
+            # Save the prompt to a text file
+            prompt_path = os.path.splitext(image_save_path_on_disk)[
+                0] + "_prompt.txt"
+            with open(prompt_path, "w", encoding="utf-8") as f:
+                f.write(prompt)
+            app_logger.info(f"Saved page image prompt to {prompt_path}")
+
             return image_path_for_db
         except Exception as e:
             error_logger.error(
