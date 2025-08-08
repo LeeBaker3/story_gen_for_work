@@ -6,7 +6,7 @@ from backend import crud
 
 def get_token(client: TestClient, username, password):
     response = client.post(
-        "/token", data={"username": username, "password": password})
+        "/api/v1/token", data={"username": username, "password": password})
     assert response.status_code == 200, f"Failed to get token for {username}. Response: {response.json()}"
     return response.json()["access_token"]
 

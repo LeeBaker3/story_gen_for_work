@@ -72,16 +72,13 @@ document.addEventListener("DOMContentLoaded", function () {
     async function populateDropdown(selectElementId, listName) {
         const selectElement = document.getElementById(selectElementId);
         if (!selectElement) {
-            console.error(
-                `[populateDropdown] Select element with ID '${selectElementId}' not found.`,
-            );
+            console.error(`[populateDropdown] Select element with ID '${selectElementId}' not found.`);
             return;
         }
 
         try {
-            const items = await apiRequest(
-                `/api/v1/dynamic-lists/${listName}/items`
-            );
+            // Use the public endpoint for fetching active items
+            const items = await apiRequest(`/api/v1/dynamic-lists/${listName}/active-items`);
 
             // Clear existing options (except for a potential placeholder)
             selectElement.innerHTML = '';
@@ -95,12 +92,17 @@ document.addEventListener("DOMContentLoaded", function () {
             selectElement.appendChild(defaultOption);
 
             // Populate with fetched items
-            items.forEach(item => {
-                const option = document.createElement("option");
-                option.value = item.item_value; // Corrected from item.value
-                option.textContent = item.item_label; // Corrected from item.label
-                selectElement.appendChild(option);
-            });
+            if (items && items.length > 0) {
+                items.forEach(item => {
+                    const option = document.createElement("option");
+                    option.value = item.item_value;
+                    option.textContent = item.item_label;
+                    selectElement.appendChild(option);
+                });
+            } else {
+                console.warn(`[populateDropdown] No active items found for list: ${listName}`);
+                selectElement.innerHTML = '<option value="">No options available</option>';
+            }
         } catch (error) {
             console.error(`[populateDropdown] Error populating ${listName}:`, error);
             // Optionally, display an error message to the user in the dropdown
@@ -112,10 +114,7 @@ document.addEventListener("DOMContentLoaded", function () {
         console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
         populateDropdown("story-genre", "story_genres");
         populateDropdown("story-image-style", "image_styles_app");
-        populateDropdown(
-            "story-word-to-picture-ratio",
-            "word_to_picture_ratio",
-        );
+        populateDropdown("story-word-to-picture-ratio", "word_to_picture_ratio");
         populateDropdown("story-text-density", "text_density");
     }
 
@@ -706,7 +705,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
         try {
-            const user = await apiRequest("/api/v1/users/me/");
+            const user = await apiRequest("/api/v1/users/me");
             if (user && user.role === "admin") {
                 if (navAdminPanel) navAdminPanel.style.display = "inline-block";
             } else {
@@ -893,7 +892,7 @@ document.addEventListener("DOMContentLoaded", function () {
         showSpinner();
         try {
             const updatedStory = await apiRequest(
-                `/stories/${storyId}/title`,
+                `/api/v1/stories/${storyId}/title`,
                 "PUT",
                 { title: newTitle },
             );
@@ -942,7 +941,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         try {
-            const items = await apiRequest(`/dynamic-lists/${listName}/active-items`);
+            const items = await apiRequest(`/api/v1/dynamic-lists/${listName}/active-items`);
 
             selectElement.innerHTML = '<option value="">Select an option</option>'; // Clear and add a placeholder
 
@@ -985,7 +984,7 @@ document.addEventListener("DOMContentLoaded", function () {
             let storyData;
             if (isDraft) {
                 console.log(`[viewOrEditStory] Fetching draft story ID: ${storyId}`);
-                storyData = await apiRequest(`/stories/drafts/${storyId}`);
+                storyData = await apiRequest(`/api/v1/stories/drafts/${storyId}`);
                 if (storyData) {
                     populateCreateFormWithStoryData(storyData, true); // true for isEditingDraft
                     showSection(storyCreationSection);
@@ -996,7 +995,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 console.log(
                     `[viewOrEditStory] Fetching finalized story ID: ${storyId}`,
                 );
-                storyData = await apiRequest(`/stories/${storyId}`);
+                storyData = await apiRequest(`/api/v1/stories/${storyId}`);
                 if (storyData) {
                     showSection(storyPreviewSection);
                     displayStory(storyData);
@@ -1026,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // We use /stories/{story_id} as it returns the full story object including input params.
             // If it was a draft, its input params are what we want.
             // If it was a full story, its input params are also what we want.
-            const storyData = await apiRequest(`/stories/${storyId}`);
+            const storyData = await apiRequest(`/api/v1/stories/${storyId}`);
             if (storyData) {
                 populateCreateFormWithStoryData(storyData, false); // false for isEditingDraft, it's a template
                 showSection(storyCreationSection);
@@ -1061,7 +1060,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!confirm("Are you sure you want to delete this story?")) return;
         try {
             const token = localStorage.getItem("authToken");
-            const response = await fetch(`${API_BASE_URL}/stories/${storyId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/v1/stories/${storyId}`, {
                 method: "DELETE",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -1144,7 +1143,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const email = signupForm.email.value; // Get email value
         const password = signupForm.password.value;
         try {
-            await apiRequest("/users/", "POST", { username, email, password }); // Add email to payload
+            await apiRequest("/api/v1/users/", "POST", { username, email, password }); // Add email to payload
             displayMessage("Signup successful! Please login.", "success");
             signupForm.reset();
             loginForm.style.display = "block";
@@ -1162,7 +1161,7 @@ document.addEventListener("DOMContentLoaded", function () {
         formData.append("password", password);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/token`, {
+            const response = await fetch(`${API_BASE_URL}/api/v1/token`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
@@ -1284,13 +1283,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         `[SaveDraft] Updating existing draft ID: ${currentStoryId}`,
                     );
                     savedDraft = await apiRequest(
-                        `/stories/drafts/${currentStoryId}`,
+                        `/api/v1/stories/drafts/${currentStoryId}`,
                         "PUT",
                         storyData,
                     );
                 } else {
                     console.log("[SaveDraft] Creating new draft.");
-                    savedDraft = await apiRequest("/stories/drafts/", "POST", storyData);
+                    savedDraft = await apiRequest("/api/v1/stories/drafts/", "POST", storyData);
                 }
 
                 if (savedDraft && savedDraft.id) {
@@ -1333,190 +1332,109 @@ document.addEventListener("DOMContentLoaded", function () {
     if (generateStoryButton) {
         generateStoryButton.addEventListener("click", async function (event) {
             event.preventDefault();
-            updateStoryGenerationStatus("Generating story outline and text...");
             showSpinner();
+            displayMessage("Initiating story generation...", "info");
+
             const storyData = getStoryDataFromForm();
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 0 - storyDataFromForm obtained >>>>>');
-            try {
-                // console.log('[FormSubmit] storyData from form (cleaned):', JSON.parse(JSON.stringify(storyData)));
-            } catch (e) {
-                // This specific try-catch for logging can be removed if it causes issues or is not needed.
-                // console.error('[FormSubmit] Could not stringify/parse storyData for logging (initial log):', e, storyData);
-            }
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 1 - After getting storyData >>>>>');
 
-            let payload;
-            let endpoint;
-            let method;
-
+            // If we are editing a draft, add its ID to the payload.
             if (currentStoryId && currentStoryIsDraft) {
-                console.log(
-                    "[FormSubmit] Finalizing draft. currentStoryId:",
-                    currentStoryId,
-                );
-                payload = {
-                    story_input: storyData,
-                    draft_id: parseInt(currentStoryId),
-                };
-                endpoint = `/stories/`;
-                method = "POST";
-            } else if (currentStoryId && !currentStoryIsDraft) {
-                console.warn(
-                    '[FormSubmit] Form was populated from a finalized story, but "Generate Story" was clicked. Treating as new story creation.',
-                );
-                payload = { story_input: storyData };
-                endpoint = "/stories/";
-                method = "POST";
-                currentStoryId = null;
-                currentStoryIsDraft = false;
+                storyData.draft_id = parseInt(currentStoryId);
+                console.log("[FormSubmit] Finalizing draft. Payload includes draft_id:", storyData.draft_id);
             } else {
                 console.log("[FormSubmit] Creating a new story from scratch.");
-                payload = { story_input: storyData };
-                endpoint = "/stories/";
-                method = "POST";
             }
 
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 2 - Payload constructed >>>>>');
             try {
-                // console.log('[FormSubmit] Payload to be sent to apiRequest (cleaned):', JSON.parse(JSON.stringify(payload)));
-            } catch (e) {
-                // This specific try-catch for logging can be removed.
-                // console.error('[FormSubmit] Could not stringify/parse payload for logging:', e, payload);
-            }
-            // console.log('[FormSubmit] Endpoint:', endpoint, 'Method:', method);
+                // Always use the public endpoint that starts a background task.
+                const endpoint = "/api/v1/stories/";
+                const method = "POST";
 
-            try {
-                // Main try for API call and processing
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 3 - Calling apiRequest >>>>>');
-                const result = await apiRequest(endpoint, method, payload);
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4 - apiRequest returned >>>>>');
-                // console.log('[FormSubmit] API Result (type):', typeof result, 'Is null?', result === null, 'Content:', result);
+                // The endpoint returns a task object.
+                const task = await apiRequest(endpoint, method, storyData);
 
-                if (result && typeof result === "object" && result.id) {
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.1 - Result has ID:', result.id, 'Title:', result.title);
-                    displayMessage("Story generated successfully!", "success"); // This message will be briefly visible
-                    showSection(storyPreviewSection); // This clears the messageArea
-
-                    try {
-                        displayStory(result);
-                        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 5 - Story processed, displayStory called >>>>>');
-                    } catch (displayError) {
-                        console.error("Error during displayStory:", displayError);
-                        // Display a message to the user that story display failed, but generation might have succeeded.
-                        displayMessage(
-                            `Error displaying story content: ${displayError.message}. The story might have been created; check 'Browse Stories'.`,
-                            "error",
-                        );
-                        // The spinner will be hidden by the finally block.
-                    }
-
-                    currentStoryId = result.id;
-                    currentStoryIsDraft = false;
-                    console.log(
-                        "[FormSubmit] Story generation successful. Current story ID:",
-                        currentStoryId,
-                        "Is Draft:",
-                        currentStoryIsDraft,
-                    );
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 7 - State updated >>>>>');
+                if (task && task.id) {
+                    console.log("[FormSubmit] Story generation task started successfully. Task ID:", task.id);
+                    hideSpinner(); // Hide spinner, polling UI will show progress.
+                    showSection(storyCreationSection); // Stay on this section to show progress
+                    pollForStoryStatus(task.id); // Start polling for status updates.
                 } else {
-                    // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - STEP 4.X - Result is null, undefined, not an object, or lacks id.');
-                    console.error(
-                        "[FormSubmit] Story generation/finalization failed or returned invalid/unexpected data:",
-                        result,
-                    );
-                    displayMessage(
-                        "Failed to generate story. The server response was not as expected. Please check console.",
-                        "error",
-                    );
+                    console.error("[FormSubmit] Failed to start story generation task. Invalid response:", task);
+                    displayMessage("Could not start story generation. The server response was not as expected.", "error");
+                    hideSpinner();
                 }
             } catch (error) {
-                // Catches errors from apiRequest itself or issues before it (e.g. payload stringify if uncommented)
-                // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - generateStoryButton - ERROR IN API REQUEST CALL OR SUBSEQUENT HANDLING >>>>>', error);
-                console.error(
-                    "[FormSubmit] Error during story generation process:",
-                    error,
-                );
-                // apiRequest usually displays a message on failure. This is a fallback or for more context.
-                if (
-                    !messageArea.textContent.includes("Failed") &&
-                    !messageArea.textContent.includes("error") &&
-                    !messageArea.textContent.includes("Error generating story")
-                ) {
-                    displayMessage(
-                        `Error generating story: ${error.message || "Unknown error"}. Please check console.`,
-                        "error",
-                    );
-                }
-            } finally {
+                console.error("[FormSubmit] Error during story generation initiation:", error);
+                // The apiRequest function should have already displayed an error message.
                 hideSpinner();
             }
         });
     }
 
-    // --- PROGRESS BAR UI ---
-    let progressBar = document.getElementById("story-progress-bar");
-    if (!progressBar) {
-        progressBar = document.createElement("div");
-        progressBar.id = "story-progress-bar";
-        progressBar.style.display = "none";
-        progressBar.style.width = "100%";
-        progressBar.style.background = "#eee";
-        progressBar.style.borderRadius = "6px";
-        progressBar.style.margin = "10px 0";
-        progressBar.innerHTML =
-            '<div id="story-progress-bar-inner" style="width:0%;height:18px;background:#4caf50;border-radius:6px;transition:width 0.4s;"></div>';
-        if (messageArea && messageArea.parentNode) {
-            messageArea.parentNode.insertBefore(progressBar, messageArea.nextSibling);
+    // --- STORY GENERATION PROGRESS POLLING ---
+    async function pollForStoryStatus(taskId) {
+        const progressArea = document.getElementById("generation-progress-area");
+        const statusMessage = document.getElementById("generation-status-message");
+        const progressBar = document.getElementById("generation-progress-bar");
+
+        if (!progressArea || !statusMessage || !progressBar) {
+            console.error("Polling UI elements not found!");
+            displayMessage("Could not show generation progress.", "warning");
+            return;
         }
-    }
-    function showProgressBar() {
-        progressBar.style.display = "block";
-        updateProgressBar(0);
-    }
-    function hideProgressBar() {
-        progressBar.style.display = "none";
-        updateProgressBar(0);
-    }
-    function updateProgressBar(percent) {
-        const inner = document.getElementById("story-progress-bar-inner");
-        if (inner) inner.style.width = percent + "%";
+
+        progressArea.style.display = "block";
+        let pollingInterval;
+
+        const poll = async () => {
+            try {
+                const task = await apiRequest(`/api/v1/stories/generation-status/${taskId}`);
+                if (task) {
+                    // Show progress if provided
+                    if (typeof task.progress === 'number') {
+                        progressBar.style.width = `${task.progress}%`;
+                        progressBar.textContent = `${task.progress}%`;
+                    }
+                    // Map status message or derive from current_step
+                    const step = task.current_step || '';
+                    const stepMap = {
+                        initializing: 'Initializing...',
+                        generating_text: 'Generating story content...',
+                        generating_character_images: 'Generating character reference images...',
+                        generating_page_images: 'Generating page images...',
+                        finalizing: 'Finalizing...'
+                    };
+                    statusMessage.textContent = task.status_message || stepMap[step] || 'Processing...';
+
+                    if (task.status === 'completed' || task.status === 'success') {
+                        clearInterval(pollingInterval);
+                        statusMessage.textContent = 'Story generation complete! Loading...';
+                        progressArea.style.display = 'none';
+                        if (task.story_id) {
+                            const storyData = await apiRequest(`/api/v1/stories/${task.story_id}`);
+                            showSection(storyPreviewSection);
+                            displayStory(storyData);
+                        } else {
+                            throw new Error("Polling complete, but no story_id was returned.");
+                        }
+                    } else if (task.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        progressArea.style.display = 'none';
+                        displayMessage(`Story generation failed: ${task.status_message || task.error_message || 'Unknown error'}`, 'error');
+                    }
+                }
+            } catch (error) {
+                clearInterval(pollingInterval);
+                progressArea.style.display = 'none';
+                console.error("Error during status polling:", error);
+                displayMessage(`An error occurred while checking story progress: ${error.message}`, 'error');
+            }
+        };
+
+        pollingInterval = setInterval(poll, 3000); // Poll every 3 seconds
+        poll(); // Initial poll immediately
     }
 
-    // --- STORY GENERATION PROGRESS FEEDBACK ---
-    function updateStoryGenerationStatus(message, percent) {
-        displayMessage(message, "info");
-        if (typeof percent === "number") updateProgressBar(percent);
-    }
-
-    // Patch: Simulate progress while waiting for backend
-    async function simulateStoryGenerationProgress(mainCharacters, numPages) {
-        showProgressBar();
-        let steps = [];
-        steps.push({ msg: "Generating story outline and text...", pct: 5 });
-        if (mainCharacters && mainCharacters.length > 0) {
-            mainCharacters.forEach((char, idx) => {
-                steps.push({
-                    msg: `Creating reference image for '${char.name || "character"}'...`,
-                    pct: 10 + idx * 10,
-                });
-            });
-        }
-        steps.push({ msg: "Creating cover page image...", pct: 30 });
-        let totalPages = numPages || 3;
-        for (let i = 1; i <= totalPages; i++) {
-            steps.push({
-                msg: `Creating image for page ${i}...`,
-                pct: 30 + Math.floor((i / totalPages) * 60),
-            });
-        }
-        steps.push({ msg: "Finalizing story...", pct: 98 });
-        for (let i = 0; i < steps.length; i++) {
-            updateStoryGenerationStatus(steps[i].msg, steps[i].pct);
-            await new Promise((r) => setTimeout(r, 1000));
-        }
-        updateProgressBar(100);
-    }
 
     // --- STORY BROWSING ---
     async function loadAndDisplayUserStories(includeDrafts = true) {
@@ -1533,7 +1451,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         try {
             const stories = await apiRequest(
-                `/stories/?include_drafts=${includeDrafts}&skip=0&limit=100`,
+                `/api/v1/stories/?include_drafts=${includeDrafts}&skip=0&limit=100`,
             );
             if (stories && stories.length > 0) {
                 stories.forEach((story) => {
@@ -1655,7 +1573,7 @@ document.addEventListener("DOMContentLoaded", function () {
             try {
                 const token = localStorage.getItem("authToken");
                 const response = await fetch(
-                    `${API_BASE_URL}/stories/${currentStoryId}/pdf`,
+                    `${API_BASE_URL}/api/v1/stories/${currentStoryId}/pdf`,
                     {
                         // Changed endpoint to /pdf
                         method: "GET",
@@ -1904,7 +1822,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!currentUserId) {
                     // Try to fetch and cache current user id
                     try {
-                        const me = await apiRequest('/users/me/');
+                        const me = await apiRequest('/api/v1/users/me');
                         if (me && me.id) {
                             currentUserId = String(me.id);
                             localStorage.setItem('currentUserId', currentUserId);
@@ -1959,7 +1877,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 let currentUserId = localStorage.getItem('currentUserId');
                 if (!currentUserId) {
                     try {
-                        const me = await apiRequest('/users/me/');
+                        const me = await apiRequest('/api/v1/users/me');
                         if (me && me.id) {
                             currentUserId = String(me.id);
                             localStorage.setItem('currentUserId', currentUserId);
@@ -1980,7 +1898,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!isSelf && role !== prevRole) {
                         updateCount++;
                         try {
-                            await apiRequest(`/admin/users/${id}/role`, "PUT", { role });
+                            await apiRequest(`/api/v1/admin/users/${id}/role`, "PUT", { role });
                             updateSuccess++;
                         } catch (err) {
                             updateErrors.push("role");
@@ -1990,7 +1908,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (active !== prevActive) {
                         updateCount++;
                         try {
-                            await apiRequest(`/admin/users/${id}/status`, "PUT", {
+                            await apiRequest(`/api/v1/admin/users/${id}/status`, "PUT", {
                                 is_active: active,
                             });
                             updateSuccess++;
@@ -2002,7 +1920,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (email !== prevEmail) {
                         updateCount++;
                         try {
-                            await apiRequest(`/admin/users/${id}`, "PATCH", { email });
+                            await apiRequest(`/api/v1/admin/users/${id}`, "PATCH", { email });
                             updateSuccess++;
                         } catch (err) {
                             updateErrors.push("email");
@@ -2059,7 +1977,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!adminUserTableBody) return;
         adminUserTableBody.innerHTML = '<tr><td colspan="6">Loading users...</td></tr>';
         try {
-            const users = await apiRequest("/admin/users");
+            const users = await apiRequest("/api/v1/admin/users");
             if (!users || users.length === 0) {
                 adminUserTableBody.innerHTML = '<tr><td colspan="6">No users found.</td></tr>';
                 return;
@@ -2088,7 +2006,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!dynamicListsContainer) return;
         dynamicListsContainer.innerHTML = '<div>Loading dynamic lists...</div>';
         try {
-            const lists = await apiRequest("/admin/dynamic-lists/");
+            const lists = await apiRequest("/api/v1/admin/dynamic-lists/");
             if (!lists || lists.length === 0) {
                 dynamicListsContainer.innerHTML = '<div>No dynamic lists found.</div>';
                 return;
@@ -2124,7 +2042,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!itemsDiv) return;
         itemsDiv.innerHTML = '<div>Loading items...</div>';
         try {
-            const items = await apiRequest(`/admin/dynamic-lists/${listName}/items`);
+            const items = await apiRequest(`/api/v1/admin/dynamic-lists/${listName}/items`);
             if (!items || items.length === 0) {
                 itemsDiv.innerHTML = '<div style="color:#aaa;">No items found.</div>';
                 return;
@@ -2170,7 +2088,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const label = form.querySelectorAll('input')[1].value.trim();
             if (!value || !label) return;
             try {
-                await apiRequest(`/admin/dynamic-lists/${listName}/items`, 'POST', { item_value: value, item_label: label, list_name: listName });
+                await apiRequest(`/api/v1/admin/dynamic-lists/${listName}/items`, 'POST', { item_value: value, item_label: label, list_name: listName });
                 displayMessage('Item added!', 'success');
                 loadDynamicListItems(listName);
             } catch (err) {
@@ -2202,7 +2120,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const label = form.querySelectorAll('input')[1].value.trim();
             if (!value || !label) return;
             try {
-                await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'PUT', { item_value: value, item_label: label });
+                await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'PUT', { item_value: value, item_label: label });
                 displayMessage('Item updated!', 'success');
                 loadDynamicListItems(listName);
             } catch (err) {
@@ -2218,7 +2136,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.deleteDynamicListItem = async function (listName, itemId) {
         if (!confirm('Are you sure you want to delete this item?')) return;
         try {
-            await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'DELETE');
+            await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE');
             displayMessage('Item deleted!', 'success');
             loadDynamicListItems(listName);
         } catch (err) {
@@ -2229,7 +2147,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // --- ADMIN: TOGGLE ACTIVE/INACTIVE ---
     window.toggleDynamicListItemActive = async function (listName, itemId, isActive) {
         try {
-            await apiRequest(`/admin/dynamic-lists/items/${itemId}`, 'PUT', { is_active: !isActive });
+            await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'PUT', { is_active: !isActive });
             displayMessage('Item status updated!', 'success');
             loadDynamicListItems(listName);
         } catch (err) {

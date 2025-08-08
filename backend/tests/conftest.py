@@ -134,3 +134,15 @@ def regular_user_token() -> str:
         data={"sub": "user@example.com", "role": UserRole.USER.value},
         expires_delta=timedelta(minutes=30)
     )
+
+
+@pytest.fixture(scope="session")
+def admin_auth_headers(admin_token: str) -> dict:
+    """Provides authorization headers for an admin user."""
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture(scope="session")
+def regular_user_auth_headers(regular_user_token: str) -> dict:
+    """Provides authorization headers for a regular user."""
+    return {"Authorization": f"Bearer {regular_user_token}"}

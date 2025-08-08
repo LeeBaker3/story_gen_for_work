@@ -1,10 +1,9 @@
+from backend.monitoring_router import monitoring_router
 from fastapi import FastAPI, Depends, HTTPException, status, Body, BackgroundTasks
-from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from datetime import timedelta
 import uuid
 import asyncio
 import os
@@ -41,8 +40,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# This must be defined before it's used in the router inclusion.
+
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(public_router, prefix="/api/v1", tags=["public"])
+app.include_router(monitoring_router, prefix="/api/v1/admin",
+                   tags=["admin-monitoring"])
 
 
 # Mount static files directory for frontend
@@ -86,25 +89,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return crud.create_user(db=db, user=user)
 
 
-@app.post("/token", response_model=schemas.Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = auth.authenticate_user(db, form_data.username, form_data.password)
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
 @app.get("/")
 async def root():
     return {"message": "Story Generator API"}
@@ -125,45 +109,10 @@ async def admin_placeholder_endpoint(current_user: schemas.User = Depends(auth.g
 # @app.delete("/admin/users/{user_id}", status_code=204, tags=["Admin - User Management"]) ...
 
 
-@app.get("/stories/", response_model=List[schemas.Story])
-async def read_user_stories(
-    db: Session = Depends(get_db),
-    current_user: database.User = Depends(auth.get_current_active_user),
-    skip: int = 0,
-    limit: int = 100,  # Default to 100 stories, can be adjusted
-    include_drafts: bool = True  # FR24: Added to fetch drafts or only published
-):
-    app_logger.info(
-        f"User {current_user.username} requested their stories. Skip: {skip}, Limit: {limit}, Include Drafts: {include_drafts}")
-    stories = crud.get_stories_by_user(
-        db, user_id=current_user.id, skip=skip, limit=limit, include_drafts=include_drafts)
-    if not stories:
-        app_logger.info(f"No stories found for user {current_user.username}.")
-    # Return empty list if no stories, frontend handles this.
-    return stories
+# This endpoint was moved to public_router.py to be included in the /api/v1 prefix.
 
 
-@app.get("/stories/{story_id}", response_model=schemas.Story)
-async def read_story(
-    story_id: int,
-    db: Session = Depends(get_db),
-    current_user: database.User = Depends(auth.get_current_active_user)
-):
-    app_logger.info(
-        f"User {current_user.username} requested story with ID: {story_id}")
-    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
-    if db_story is None:
-        error_logger.warning(
-            f"Story with ID {story_id} not found for user {current_user.username}.")
-        raise HTTPException(status_code=404, detail="Story not found")
-    if db_story.owner_id != current_user.id:
-        error_logger.warning(
-            f"User {current_user.username} attempted to access unauthorized story {story_id}.")
-        raise HTTPException(
-            status_code=403, detail="Not authorized to access this story")
-    app_logger.info(
-        f"Story {story_id} ({db_story.title}) retrieved for user {current_user.username}.")
-    return db_story
+# This endpoint was moved to public_router.py to be included in the /api/v1 prefix.
 
 
 @app.put("/stories/{story_id}/title", response_model=schemas.Story)

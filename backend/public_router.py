@@ -1,13 +1,34 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Body
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import timedelta
 
-from backend import crud, schemas, auth
+from backend import crud, schemas, auth, database
 from backend.database import get_db
-from backend.logging_config import app_logger
+from backend.logging_config import app_logger, error_logger
 from backend.story_generation_service import generate_story_as_background_task
 
 public_router = APIRouter()
+
+
+@public_router.post("/token", response_model=schemas.Token, tags=["authentication"])
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = auth.authenticate_user(db, form_data.username, form_data.password)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 @public_router.post("/stories/", response_model=schemas.StoryGenerationTask, status_code=status.HTTP_202_ACCEPTED)
@@ -58,6 +79,57 @@ async def get_generation_status(
         raise HTTPException(
             status_code=403, detail="Not authorized to view this task")
     return task
+
+
+@public_router.get("/stories/", response_model=List[schemas.Story])
+async def read_user_stories(
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+    skip: int = 0,
+    limit: int = 100,
+    include_drafts: bool = True
+):
+    """
+    Fetches a list of stories for the currently authenticated user.
+    - **skip**: Number of stories to skip for pagination.
+    - **limit**: Maximum number of stories to return.
+    - **include_drafts**: Whether to include stories marked as drafts.
+    """
+    app_logger.info(
+        f"User {current_user.username} requested their stories. Skip: {skip}, Limit: {limit}, Include Drafts: {include_drafts}")
+    stories = crud.get_stories_by_user(
+        db, user_id=current_user.id, skip=skip, limit=limit, include_drafts=include_drafts)
+    if not stories:
+        app_logger.info(f"No stories found for user {current_user.username}.")
+    return stories
+
+
+@public_router.get("/stories/{story_id}", response_model=schemas.Story)
+async def read_story(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    """
+    Fetches a single story by its ID.
+    Ensures the story belongs to the current user.
+    """
+    app_logger.info(
+        f"User {current_user.username} requested story with ID: {story_id}")
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
+    if db_story is None:
+        error_logger.warning(
+            f"Story with ID {story_id} not found for user {current_user.username}.")
+        raise HTTPException(status_code=404, detail="Story not found")
+    # This check is redundant if get_story already enforces ownership, but it's good for defense-in-depth
+    if db_story.owner_id != current_user.id:
+        error_logger.warning(
+            f"User {current_user.username} attempted to access unauthorized story {story_id}.")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this story")
+    app_logger.info(
+        f"Story {story_id} ({db_story.title}) retrieved for user {current_user.username}.")
+    return db_story
 
 
 @public_router.get("/users/me/", response_model=schemas.User)

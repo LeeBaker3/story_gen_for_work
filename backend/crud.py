@@ -569,15 +569,29 @@ def update_story_with_generated_content(db: Session, story_id: int, story_conten
     # Create new pages
     if 'Pages' in story_content and isinstance(story_content['Pages'], list):
         for page_data in story_content['Pages']:
-            page_number_str = str(page_data.get('Page_number'))
+            # Coerce page number: use 0 for title page, else integer
+            raw_page_num = page_data.get('Page_number')
+            page_number: int
+            if isinstance(raw_page_num, str):
+                if raw_page_num.lower() == 'title':
+                    page_number = 0
+                else:
+                    try:
+                        page_number = int(raw_page_num)
+                    except (TypeError, ValueError):
+                        page_number = 0
+            else:
+                try:
+                    page_number = int(
+                        raw_page_num) if raw_page_num is not None else 0
+                except (TypeError, ValueError):
+                    page_number = 0
 
             new_page = Page(
                 story_id=story_id,
-                page_number=page_number_str,
+                page_number=page_number,
                 text=page_data.get('Text'),
                 image_description=page_data.get('Image_description'),
-                characters_in_scene=jsonable_encoder(
-                    page_data.get('Characters_in_scene', [])),
                 image_path=page_data.get('image_url')
             )
             db.add(new_page)
@@ -607,12 +621,27 @@ def get_story_generation_task(db: Session, task_id: str) -> Optional[StoryGenera
     return db.query(StoryGenerationTask).filter(StoryGenerationTask.id == task_id).first()
 
 
+def update_story_generation_task_progress(
+    db: Session,
+    task_id: str,
+    progress: Optional[int] = None,
+    current_step: Optional[str] = None,
+) -> Optional[StoryGenerationTask]:
+    """Convenience helper to update just progress and/or current_step."""
+    return update_story_generation_task(
+        db,
+        task_id,
+        progress=progress,
+        current_step=current_step,
+    )
+
+
 def update_story_generation_task(
     db: Session,
     task_id: str,
     status: Optional[schemas.GenerationTaskStatus] = None,
     progress: Optional[int] = None,
-    current_step: Optional[str] = None,
+    current_step: Optional[object] = None,
     error_message: Optional[str] = None
 ) -> Optional[StoryGenerationTask]:
     task = get_story_generation_task(db, task_id)
@@ -620,11 +649,15 @@ def update_story_generation_task(
         return None
 
     if status is not None:
-        task.status = status.value
+        task.status = status.value if hasattr(status, "value") else str(status)
     if progress is not None:
         task.progress = progress
     if current_step is not None:
-        task.current_step = current_step
+        # Allow passing either enum or string
+        if hasattr(current_step, "value"):
+            task.current_step = current_step.value
+        else:
+            task.current_step = str(current_step)
     if error_message is not None:
         task.error_message = error_message
 

@@ -133,7 +133,7 @@ def test_create_story_with_existing_title_fails(client, db_session_mock, story_c
     assert "already exists" in response.json()["detail"]
 
 
-def test_get_generation_status(client, db_session_mock):
+def test_get_story_status(client, db_session_mock):
     """
     Test polling the generation status of a task.
     """
@@ -161,7 +161,7 @@ def test_get_generation_status(client, db_session_mock):
     assert response_data["current_step"] == "generating_page_images"
 
 
-def test_get_generation_status_not_found(client, db_session_mock):
+def test_get_story_status_not_found(client, db_session_mock):
     """
     Test polling for a task that does not exist.
     """
@@ -172,6 +172,30 @@ def test_get_generation_status_not_found(client, db_session_mock):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found"
+
+
+def test_get_story_status_unauthorized(client, db_session_mock, current_user_mock):
+    """
+    Test that a user cannot poll for a task that belongs to another user.
+    """
+    mock_task_id = str(uuid.uuid4())
+    mock_task = schemas.StoryGenerationTask(
+        id=mock_task_id,
+        story_id=1,
+        user_id=999,  # Different user ID
+        status=schemas.GenerationTaskStatus.IN_PROGRESS,
+        progress=50,
+        current_step=schemas.GenerationTaskStep.GENERATING_PAGE_IMAGES,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
+    )
+
+    crud.get_story_generation_task = MagicMock(return_value=mock_task)
+
+    response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not authorized to view this task"
 
 
 @pytest.mark.asyncio
@@ -257,7 +281,9 @@ async def test_generate_story_as_background_task_passes_correct_references():
                         page_number=1,
                         reference_image_paths=[
                             "images/user_1/story_1/eva_ref.png", "images/user_1/story_1/x1_ref.png"],
-                        characters_in_scene=["Captain Eva", "Robot X-1"]
+                        characters_in_scene=["Captain Eva", "Robot X-1"],
+                        image_save_path_on_disk=ANY,
+                        image_path_for_db=ANY,
                     ),
                     call(
                         page_content="The mysterious Alien Zorp emerging from a shadowy corner of the cargo bay.",
@@ -268,7 +294,9 @@ async def test_generate_story_as_background_task_passes_correct_references():
                         page_number=2,
                         reference_image_paths=[
                             "images/user_1/story_1/zorp_ref.png"],
-                        characters_in_scene=["Alien Zorp"]
+                        characters_in_scene=["Alien Zorp"],
+                        image_save_path_on_disk=ANY,
+                        image_path_for_db=ANY,
                     )
                 ]
                 mock_ai_services.generate_image_for_page.assert_has_calls(
