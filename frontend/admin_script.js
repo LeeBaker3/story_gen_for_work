@@ -401,12 +401,15 @@ document.addEventListener("DOMContentLoaded", function () {
                         <label for="log-tail-lines">Tail lines (10 - 5000)</label>
                         <input type="number" id="log-tail-lines" class="admin-form-control" min="10" max="5000" value="1000">
                     </div>
-                    <div class="form-group" style="display:flex; gap:8px;">
+                    <div class="form-group" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                         <button id="refresh-logs-list" class="admin-button-secondary" title="Refresh log files list">Refresh List</button>
                         <button id="view-log-button" class="admin-button" title="View selected log">View</button>
                         <button id="download-log-button" class="admin-button-secondary" title="Download full log">Download</button>
                         <label style="display:flex; align-items:center; gap:6px; margin-left:8px;">
                             <input type="checkbox" id="auto-refresh-log" /> Auto refresh
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="follow-tail" /> Follow tail
                         </label>
                     </div>
                 </div>
@@ -430,6 +433,20 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>
         `;
 
+        // Preferences helpers
+        const PREFS_KEY = 'adminMonitoringPrefs';
+        const loadPrefs = () => {
+            try {
+                const raw = localStorage.getItem(PREFS_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch { return {}; }
+        };
+        const savePrefs = (patch) => {
+            const current = loadPrefs();
+            const next = { ...current, ...patch };
+            try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch {}
+        };
+
         // Load stats and logs list in parallel
         try {
             await Promise.all([renderSystemStats(), populateLogsList()]);
@@ -446,11 +463,32 @@ document.addEventListener("DOMContentLoaded", function () {
         const tailEl = document.getElementById("log-tail-lines");
         const autoRefreshStatsEl = document.getElementById("auto-refresh-stats");
         const autoRefreshLogEl = document.getElementById("auto-refresh-log");
+        const followTailEl = document.getElementById("follow-tail");
         const filterInput = document.getElementById("log-filter-input");
         const filterRegex = document.getElementById("filter-regex");
         const filterInvert = document.getElementById("filter-invert");
         const applyFilterBtn = document.getElementById("apply-filter-button");
         const clearFilterBtn = document.getElementById("clear-filter-button");
+
+        // Initialize from saved prefs
+        const prefs = loadPrefs();
+        if (typeof prefs.tailLines === 'number') {
+            tailEl.value = Math.max(10, Math.min(5000, prefs.tailLines));
+        }
+        if (typeof prefs.autoRefreshStats === 'boolean') autoRefreshStatsEl.checked = prefs.autoRefreshStats;
+        if (typeof prefs.autoRefreshLog === 'boolean') autoRefreshLogEl.checked = prefs.autoRefreshLog;
+        if (typeof prefs.followTail === 'boolean') followTailEl.checked = prefs.followTail;
+        if (typeof prefs.filterQuery === 'string') filterInput.value = prefs.filterQuery;
+        if (typeof prefs.filterRegex === 'boolean') filterRegex.checked = prefs.filterRegex;
+        if (typeof prefs.filterInvert === 'boolean') filterInvert.checked = prefs.filterInvert;
+
+        // If auto-refresh preferences are enabled, start timers now
+        if (autoRefreshStatsEl.checked && !statsTimer) {
+            statsTimer = setInterval(renderSystemStats, 5000);
+        }
+        if (autoRefreshLogEl.checked && !logTimer) {
+            logTimer = setInterval(fetchAndRenderSelectedLog, 3000);
+        }
 
         viewBtn.addEventListener("click", async () => {
             await fetchAndRenderSelectedLog();
@@ -484,7 +522,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Auto-load first log if available after list populates
         selectEl.addEventListener("change", async () => {
-            // No auto fetch on every change; keep it explicit unless already loaded once
+            savePrefs({ selectedLogFile: selectEl.value || null });
+            // No auto fetch on every change; explicit view click or auto-refresh handles updates
         });
 
         // Auto-refresh timers
@@ -498,6 +537,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 clearInterval(statsTimer);
                 statsTimer = null;
             }
+            savePrefs({ autoRefreshStats: autoRefreshStatsEl.checked });
         });
 
         autoRefreshLogEl.addEventListener('change', () => {
@@ -507,15 +547,36 @@ document.addEventListener("DOMContentLoaded", function () {
                 clearInterval(logTimer);
                 logTimer = null;
             }
+            savePrefs({ autoRefreshLog: autoRefreshLogEl.checked });
+        });
+
+        followTailEl.addEventListener('change', () => {
+            savePrefs({ followTail: followTailEl.checked });
+            if (followTailEl.checked) maybeScrollLogToBottom();
+        });
+
+        tailEl.addEventListener('change', () => {
+            const v = Math.max(10, Math.min(5000, parseInt(tailEl.value || '1000', 10)));
+            tailEl.value = v;
+            savePrefs({ tailLines: v });
         });
 
         // Filter handlers
-        applyFilterBtn.addEventListener('click', () => applyLogFilter());
+        applyFilterBtn.addEventListener('click', () => {
+            savePrefs({
+                filterQuery: filterInput.value || '',
+                filterRegex: !!filterRegex.checked,
+                filterInvert: !!filterInvert.checked,
+            });
+            applyLogFilter();
+            if (followTailEl.checked) maybeScrollLogToBottom();
+        });
         clearFilterBtn.addEventListener('click', () => {
             filterInput.value = '';
             filterRegex.checked = false;
             filterInvert.checked = false;
             applyLogFilter();
+            savePrefs({ filterQuery: '', filterRegex: false, filterInvert: false });
         });
 
         async function renderSystemStats() {
@@ -543,7 +604,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-        async function populateLogsList() {
+    async function populateLogsList() {
             const select = document.getElementById("log-file-select");
             select.innerHTML = '<option value="">-- Loading log files --</option>';
             try {
@@ -553,8 +614,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     document.getElementById("log-content").textContent = "";
                     return;
                 }
-                select.innerHTML = files.map((f, idx) => `<option value="${escapeHTML(f)}" ${idx === 0 ? 'selected' : ''}>${escapeHTML(f)}</option>`).join("");
-                // After populating, auto-view the first log
+        const prefs = loadPrefs();
+        const preferred = prefs.selectedLogFile && files.includes(prefs.selectedLogFile) ? prefs.selectedLogFile : files[0];
+        select.innerHTML = files.map((f) => `<option value="${escapeHTML(f)}" ${f === preferred ? 'selected' : ''}>${escapeHTML(f)}</option>`).join("");
+        // After populating, auto-view the preferred log
                 await fetchAndRenderSelectedLog();
             } catch (error) {
                 console.error("Failed to load log list:", error);
@@ -584,6 +647,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const text = await response.text();
                 document.getElementById("log-content").textContent = text || "(no content)";
                 applyLogFilter();
+        if (document.getElementById("follow-tail").checked) maybeScrollLogToBottom();
             } catch (error) {
                 console.error("Failed to fetch log content:", error);
                 document.getElementById("log-content").textContent = `Error loading log: ${error.message}`;
@@ -633,6 +697,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 return filterInvert.checked ? !matched : matched;
             });
             document.getElementById('log-content').textContent = filtered.join('\n');
+        }
+
+        function maybeScrollLogToBottom() {
+            const pre = document.getElementById('log-content');
+            // Scroll to bottom to follow tail
+            pre.scrollTop = pre.scrollHeight;
         }
     }
 
