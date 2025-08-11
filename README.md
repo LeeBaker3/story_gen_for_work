@@ -1,110 +1,198 @@
 # Story Generator API
 
-## Project Overview
+FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A minimal frontend lives under `frontend/` and static content is served by the API when enabled.
 
-This project is a FastAPI-based backend application that allows users to generate stories with accompanying images based on various inputs. Users can define story outlines, characters, genres, and desired image styles. The application leverages AI services (specifically OpenAI's GPT for text generation and DALL-E for image generation) to create unique story content.
+## Quick start
 
-The system supports:
-- User authentication (signup and login).
-- Creating new stories from scratch.
-- Saving story ideas as drafts.
-- Finalizing drafts into complete stories.
-- Using existing stories as templates for new ones.
-- Generating character reference images.
-- Generating images for each page of the story.
-- Viewing and browsing created stories.
-- Exporting stories to PDF.
+Prereqs
+- Python 3.13
+- OpenAI API key
 
-The frontend is a single-page application built with HTML, CSS, and JavaScript, interacting with the backend API.
+Setup
+- python3.13 -m venv .venv; source .venv/bin/activate
+- pip install -r backend/requirements.txt
+- Create backend/.env with at least OPENAI_API_KEY and SECRET_KEY
 
-## Environment Setup
+Run (dev)
+- uvicorn backend.main:app --reload
+- Open http://127.0.0.1:8000/docs for API docs
 
-### Prerequisites
+## API shape and routes
+- API prefix: default /api/v1 (configurable)
+- Auth: POST /api/v1/token (OAuth2 password) returns bearer token
+- Public story flow:
+    - POST /api/v1/stories/ to create and start generation (202)
+    - GET /api/v1/stories/ to list user stories
+    - GET /api/v1/stories/{id} to fetch a story
+    - GET /api/v1/stories/generation-status/{task_id} to check background progress
+- Health: GET /healthz
+- Admin monitoring (admin token required):
+    - GET /api/v1/admin/monitoring/logs/ (list)
+    - GET /api/v1/admin/monitoring/logs/{file}
+    - GET /api/v1/admin/monitoring/metrics
 
-- Python 3.13 (as indicated by the project's virtual environment)
-- An OpenAI API Key
+Static content
+- Frontend static (if mounted): GET /static/* serves files from frontend/
+- User data (if mounted): GET /static_content/* serves files from DATA_DIR
+- Image paths stored in DB are relative to DATA_DIR (e.g., images/user_1/story_2/...)
 
-### Backend Setup
+## Configuration
+All configuration is centralized in backend/settings.py and read from environment variables. Sensible defaults are provided. See docs/CONFIG.md for a full guide and .env usage.
 
-1.  **Clone the repository (if you haven't already):**
-    ```bash
-    git clone <your-repository-url>
-    cd story_gen_for_work
-    ```
+Core
+- RUN_ENV: dev|test|prod (default: dev). Test disables static mounts unless overridden.
+- API_PREFIX: API base path (default: /api/v1)
+- SECRET_KEY: JWT signing key (required in production)
 
-2.  **Create and activate a Python virtual environment:**
-    The project appears to use a virtual environment located in a directory named `#` (or potentially `.venv` if created with standard tools). If you need to recreate it or set it up fresh:
+Static & storage
+- FRONTEND_DIR: directory for frontend static (default: frontend)
+- DATA_DIR: base directory for generated data (default: data)
+- MOUNT_FRONTEND_STATIC: 1/true to mount /static (default: true unless RUN_ENV=test)
+- MOUNT_DATA_STATIC: 1/true to mount /static_content (default: true unless RUN_ENV=test)
 
-    ```bash
-    python3.13 -m venv .venv 
-    source .venv/bin/activate
-    ```
-    *(On Windows, use `.venv\Scripts\activate`)*
+Logging
+- LOGS_DIR: directory for logs (default: DATA_DIR/logs)
+- LOGGING_CONFIG: path to YAML (default: config/logging.yaml)
+    - Daily rotation handlers for app, api, error logs
+    - Levels can be overridden via env per logger name if configured in YAML
 
-3.  **Install dependencies:**
-    Navigate to the backend directory and install the required packages.
-    ```bash
-    cd backend
-    pip install -r requirements.txt
-    cd .. 
-    ```
+OpenAI models and retries
+- OPENAI_API_KEY: key for OpenAI
+- TEXT_MODEL: default gpt-4.1-mini
+- IMAGE_MODEL: default gpt-image-1
+- RETRY_MAX_ATTEMPTS: default 3
+- RETRY_BACKOFF_BASE: default 1.5
 
-4.  **Set up Environment Variables:**
-    The application requires an OpenAI API key. Create a `.env` file in the `backend` directory (`story_gen_for_work/backend/.env`) and add your API key:
-    ```env
-    OPENAI_API_KEY="your_openai_api_key_here"
-    ```
+CORS
+- CORS_ORIGINS: comma-separated origins (optional)
 
-## Running the Application
+Database
+- DATABASE_URL: database connection string (default sqlite:///./story_generator.db)
+- SQLite is supported out of the box; for Postgres, install a suitable driver (e.g., psycopg)
+- Tables auto-created on startup; seed data is applied during app startup lifespan
 
-1.  **Start the FastAPI Backend Server:**
-    Navigate to the `backend` directory and run Uvicorn:
-    ```bash
-    cd backend
-    uvicorn main:app --reload
-    ```
-    The backend server will typically start on `http://127.0.0.1:8000`.
+## Running
+Dev server
+- From repo root with venv active:
+    - uvicorn backend.main:app --reload
 
-2.  **Access the Frontend:**
-    Open the `index.html` file from the `frontend` directory in your web browser:
-    ```
-    file:///path/to/your/project/story_gen_for_work/frontend/index.html
-    ```
-    Or, if you serve the `frontend` directory via a simple HTTP server, access it through that server's address. The application is configured to serve static files, so once the backend is running, the frontend should be able to make API calls to `http://127.0.0.1:8000`.
+Static mounts
+- By default, static mounts are enabled unless RUN_ENV=test.
+- To force in any environment: set MOUNT_FRONTEND_STATIC=true and/or MOUNT_DATA_STATIC=true.
+
+Docs
+- Swagger UI: /docs
+- ReDoc: /redoc
+
+## Authentication
+- OAuth2 Password Bearer; obtain token via POST /api/v1/token.
+- Use Authorization: Bearer <token> for subsequent requests.
+- Admin-only endpoints require a user with role=admin.
+- A helper script `create_admin.py` exists to create an admin user if needed.
 
 ## Testing
+Test runner: pytest
 
-The project uses Pytest for running automated tests.
+Run all tests
+- From repo root with venv active: pytest -q
 
-1.  **Ensure your virtual environment is activated** and you are in the root directory of the project (`story_gen_for_work`).
+Run a single test
+- pytest -q backend/tests/test_public_endpoints.py::test_login_flow
 
-2.  **Run the tests:**
-    Navigate to the `backend` directory and execute Pytest:
-    ```bash
-    cd backend
-    pytest
-    ```
-    This command will discover and run all tests located in the `backend/tests` directory.
+Notes
+- Tests use an in-memory SQLite DB and override the app DB dependency; no local DB file is modified.
+- Some tests rely on /static_content being mounted. If RUN_ENV=test is set, also set MOUNT_DATA_STATIC=true to enable static serving in tests.
+- Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
 
-## Project Structure
+## Storage paths
+- Images are stored under DATA_DIR/images/user_{id}/story_{id}/...
+- Character references under .../references
+- Filenames are sanitized and include short IDs for uniqueness.
+- Paths saved to DB are always relative to DATA_DIR, so they can be served at /static_content/...
 
--   `backend/`: Contains the FastAPI application (Python).
-    -   `main.py`: Main FastAPI application file with API endpoints.
-    -   `crud.py`: Functions for database interactions (Create, Read, Update, Delete).
-    -   `schemas.py`: Pydantic models for data validation and serialization.
-    -   `ai_services.py`: Modules for interacting with OpenAI (GPT and DALL-E).
-    -   `auth.py`: Authentication logic (OAuth2).
-    -   `database.py`: Database setup and session management.
-    -   `pdf_generator.py`: Logic for creating PDF versions of stories.
-    -   `requirements.txt`: Python dependencies for the backend.
-    -   `tests/`: Contains Pytest unit and integration tests.
-    -   `.env` (to be created by user): For storing environment variables like API keys.
--   `frontend/`: Contains the static HTML, CSS, and JavaScript files for the user interface.
-    -   `index.html`: The main HTML file.
-    -   `script.js`: JavaScript logic for frontend interactions and API calls.
-    -   `style.css`: CSS styles for the frontend.
--   `data/`: Directory for storing generated data.
-    -   `images/`: Stores generated images for stories and characters.
-    -   `logs/`: Stores application logs.
--   `story_generator.db`: SQLite database file (created automatically).
--   `README.md`: This file.
+## Logging
+- Configured via YAML at config/logging.yaml with dictConfig.
+- Default logs write to DATA_DIR/logs with daily rotation.
+- Adjust levels via environment or YAML per logger.
+
+## Deployment
+Minimal
+- Set RUN_ENV=prod, provide SECRET_KEY and OPENAI_API_KEY, and point DATA_DIR/LOGS_DIR to writable paths.
+- Start with uvicorn:
+    - uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+With a process manager/proxy
+- Use systemd, Docker, or a supervisor to run uvicorn/gunicorn.
+- Put a reverse proxy (e.g., Nginx) in front for TLS and caching static files.
+- Ensure DATA_DIR and LOGS_DIR are persisted (volumes).
+
+## Project structure (high level)
+- backend/
+    - main.py (includes routers, static mounts, /healthz)
+    - public_router.py, admin_router.py, monitoring_router.py
+    - ai_services.py, story_generation_service.py, storage_paths.py
+    - logging_config.py (+ config/logging.yaml), settings.py
+    - auth.py, crud.py, database.py, database_seeding.py, pdf_generator.py
+    - tests/
+- frontend/ (static assets)
+- data/ (generated images, logs; configurable via DATA_DIR)
+- story_generator.db (SQLite, dev default)
+
+## CI with GitHub Actions
+You can run tests on every push or pull request using GitHub Actions.
+
+Key points
+- Python 3.13 runtime
+- Install backend requirements only
+- Use RUN_ENV=test and enable MOUNT_DATA_STATIC so static routes work in tests
+- OpenAI calls are mocked in tests, so no OPENAI_API_KEY is required for CI
+
+Example workflow: .github/workflows/ci.yml
+```yaml
+name: CI
+
+on:
+    push:
+        branches: [ main ]
+    pull_request:
+        branches: [ main ]
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+                uses: actions/checkout@v4
+
+            - name: Set up Python
+                uses: actions/setup-python@v5
+                with:
+                    python-version: '3.13'
+
+            - name: Cache pip
+                uses: actions/cache@v4
+                with:
+                    path: ~/.cache/pip
+                    key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+                    restore-keys: |
+                        ${{ runner.os }}-pip-
+
+            - name: Install dependencies
+                run: |
+                    python -m pip install --upgrade pip
+                    pip install -r backend/requirements.txt
+
+            - name: Run tests
+                env:
+                    RUN_ENV: test
+                    MOUNT_DATA_STATIC: 'true'
+                    # Optional: set DATA_DIR to a workspace path if desired
+                    # DATA_DIR: data
+                run: |
+                    pytest -q
+```
+
+Notes
+- If you later add linting or type checks, append steps before running tests.
+- If you add integration tests requiring external services, gate those with a label or separate job.
+

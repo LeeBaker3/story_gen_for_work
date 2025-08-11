@@ -153,3 +153,45 @@ def test_get_log_file_content_last_1000_lines(client, tmp_path, monkeypatch, adm
     assert len(response_lines) == 1000
     assert response_lines[0] == "Line 500"
     assert response_lines[-1] == "Line 1499"
+
+
+def test_get_log_file_with_custom_tail_length(client, tmp_path, monkeypatch, admin_auth_headers):
+    """
+    Tests that the endpoint honors the 'lines' query parameter and bounds.
+    """
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_file = log_dir / "short.log"
+    lines = [f"Row {i}" for i in range(50)]
+    log_file.write_text("\n".join(lines))
+
+    monkeypatch.setattr(
+        "backend.monitoring_router.LOG_DIRECTORY", str(log_dir))
+
+    # Request last 20 lines
+    response = client.get(
+        "/api/v1/admin/monitoring/logs/short.log?lines=20", headers=admin_auth_headers)
+    assert response.status_code == 200
+    response_lines = response.text.splitlines()
+    assert len(response_lines) == 20
+    assert response_lines[0] == "Row 30"
+    assert response_lines[-1] == "Row 49"
+
+
+def test_system_stats_endpoint(client, tmp_path, monkeypatch, admin_auth_headers):
+    """Basic validation that /stats returns expected keys and types."""
+    # Point logs directory to a temp path
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(
+        "backend.monitoring_router.LOG_DIRECTORY", str(log_dir))
+
+    response = client.get("/api/v1/admin/monitoring/stats",
+                          headers=admin_auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    # Check a few key fields
+    assert "server_time_utc" in data
+    assert isinstance(data["uptime_seconds"], int)
+    assert "python_version" in data
+    assert data["logs_dir"] == str(log_dir)

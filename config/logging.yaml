@@ -1,0 +1,72 @@
+version: 1
+disable_existing_loggers: false
+
+filters:
+  redact_b64:
+    (): backend.logging_config.NoB64JsonFilter
+
+formatters:
+  standard:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  verbose:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+  app_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: data/logs/app.log
+    when: midnight
+    interval: 1
+    backupCount: 14
+    utc: true
+    delay: true
+  api_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: verbose
+    filename: data/logs/api.log
+    when: midnight
+    interval: 1
+    backupCount: 14
+    utc: true
+    delay: true
+    filters: [redact_b64]
+  error_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: ERROR
+    formatter: verbose
+    filename: data/logs/error.log
+    when: midnight
+    interval: 1
+    backupCount: 30
+    utc: true
+    delay: true
+
+loggers:
+  story_generator_app:
+    level: INFO
+    handlers: [app_file]
+    propagate: false
+  story_generator_api:
+    level: INFO
+    handlers: [api_file]
+    propagate: false
+  story_generator_error:
+    level: ERROR
+    handlers: [error_file]
+    propagate: false
+  uvicorn.error:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  uvicorn.access:
+    level: WARNING
+    handlers: [console]
+    propagate: false

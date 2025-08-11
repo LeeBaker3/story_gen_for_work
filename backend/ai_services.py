@@ -16,12 +16,16 @@ import io
 
 # Import loggers
 from .logging_config import api_logger, error_logger, app_logger
+from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
+from .image_style_mapping import map_style
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Load settings and OpenAI API key
+_settings = get_settings()
+OPENAI_API_KEY = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     error_logger.error("OPENAI_API_KEY not found in environment variables.")
     raise ValueError(
@@ -29,8 +33,9 @@ if not OPENAI_API_KEY:
 
 # Define a retry decorator for OpenAI API calls
 api_retry = retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
+    stop=stop_after_attempt(getattr(_settings, "retry_max_attempts", 5)),
+    wait=wait_exponential(multiplier=getattr(
+        _settings, "retry_backoff_base", 1.0), min=2, max=60),
     retry=retry_if_exception_type((openai.APIError, openai.Timeout, openai.APIConnectionError,
                                   openai.RateLimitError, requests.exceptions.RequestException)))
 
@@ -48,7 +53,8 @@ logger = logging.getLogger(__name__)
 error_logger = logging.getLogger('error_logger')
 warning_logger = logging.getLogger('warning_logger')
 
-IMAGE_MODEL = "gpt-image-1"
+TEXT_MODEL = getattr(_settings, "text_model", "gpt-4.1-mini")
+IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1")
 IMAGE_SIZE = "1024x1024"
 MAX_PROMPT_LENGTH = 4000
 
@@ -358,7 +364,7 @@ Output Requirements:
         app_logger.info(
             f"Sending request to ChatGPT API with prompt: {prompt[:200]}...")
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",  # CORRECTED MODEL NAME
+            model=TEXT_MODEL,
             messages=[
                 {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
                 {"role": "user", "content": prompt}
@@ -424,6 +430,16 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     else:
         image_style = str(image_style)
 
+    # Optionally map business style to a more descriptive OpenAI style phrase
+    try:
+        if getattr(_settings, "enable_image_style_mapping", False):
+            mapped = map_style(image_style)
+            if mapped:
+                image_style = mapped
+    except Exception:
+        # Mapping issues should not break generation; fallback to original
+        pass
+
     # Construct a detailed prompt with style at the forefront
     prompt_parts = [
         f"A {image_style} style full-body character sheet for {character.name}"]
@@ -485,6 +501,15 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
         error_logger.error(
             "Database session is not available in generate_image_for_page")
         return None
+
+    # Optionally map the style reference to a richer prompt modifier
+    try:
+        if getattr(_settings, "enable_image_style_mapping", False):
+            mapped = map_style(style_reference)
+            if mapped:
+                style_reference = mapped
+    except Exception:
+        pass
 
     prompt_parts = [f"A {style_reference} style image of {page_content}"]
     if characters_in_scene:

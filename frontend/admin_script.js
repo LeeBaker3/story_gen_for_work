@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 adminViewPanel.innerHTML = "<h2>Content Moderation</h2><p>Functionality to review and manage user-generated stories will be here.</p>";
                 break;
             case "system-monitoring":
-                adminViewPanel.innerHTML = "<h2>System Monitoring</h2><p>Basic stats and log viewing capabilities will be here.</p>";
+                loadSystemMonitoring();
                 break;
             case "app-config":
                 adminViewPanel.innerHTML = "<h2>Application Configuration</h2><p>Settings for API keys, application behavior, and broadcast messages will be here.</p>";
@@ -372,6 +372,267 @@ document.addEventListener("DOMContentLoaded", function () {
             console.error("Error loading dynamic lists:", error);
             container.innerHTML = '<p class="error-message">Failed to load dynamic lists.</p>';
             displayAdminMessage("Failed to load dynamic lists: " + error.message, "error");
+        }
+    }
+
+    // --- System Monitoring Section ---
+    async function loadSystemMonitoring() {
+        adminViewPanel.innerHTML = `
+            <h2>System Monitoring</h2>
+            <div id="system-stats" class="table-responsive-container">
+                <div style="display:flex; justify-content: space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <p style="margin:0;">Loading system stats...</p>
+                    <label class="admin-form" style="display:flex; align-items:center; gap:8px; margin:0;">
+                        <input type="checkbox" id="auto-refresh-stats" />
+                        <span>Auto refresh stats</span>
+                    </label>
+                </div>
+            </div>
+            <div id="logs-viewer" class="table-responsive-container">
+                <h3>Logs</h3>
+                <div class="admin-form" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+                    <div class="form-group" style="min-width:260px; flex: 1 1 320px;">
+                        <label for="log-file-select">Select log file</label>
+                        <select id="log-file-select" class="admin-form-control">
+                            <option value="">-- Loading log files --</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="width:140px;">
+                        <label for="log-tail-lines">Tail lines (10 - 5000)</label>
+                        <input type="number" id="log-tail-lines" class="admin-form-control" min="10" max="5000" value="1000">
+                    </div>
+                    <div class="form-group" style="display:flex; gap:8px;">
+                        <button id="refresh-logs-list" class="admin-button-secondary" title="Refresh log files list">Refresh List</button>
+                        <button id="view-log-button" class="admin-button" title="View selected log">View</button>
+                        <button id="download-log-button" class="admin-button-secondary" title="Download full log">Download</button>
+                        <label style="display:flex; align-items:center; gap:6px; margin-left:8px;">
+                            <input type="checkbox" id="auto-refresh-log" /> Auto refresh
+                        </label>
+                    </div>
+                </div>
+                <div class="admin-form" style="margin:8px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <div class="form-group" style="flex:1 1 280px;">
+                        <label for="log-filter-input">Filter (client-side, regex or text)</label>
+                        <input type="text" id="log-filter-input" class="admin-form-control" placeholder="e.g. ERROR|WARN or keyword...">
+                    </div>
+                    <div class="form-group" style="width:auto; display:flex; gap:8px; align-items:center;">
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="filter-regex" /> Regex
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="filter-invert" /> Invert match
+                        </label>
+                        <button id="apply-filter-button" class="admin-button-secondary">Apply Filter</button>
+                        <button id="clear-filter-button" class="admin-button-secondary">Clear</button>
+                    </div>
+                </div>
+                <pre id="log-content" style="background:#111; color:#ddd; padding:12px; border:1px solid #333; border-radius:6px; max-height:420px; overflow:auto; white-space:pre-wrap;"></pre>
+            </div>
+        `;
+
+        // Load stats and logs list in parallel
+        try {
+            await Promise.all([renderSystemStats(), populateLogsList()]);
+            displayAdminMessage("Monitoring loaded.", "success");
+        } catch (e) {
+            console.warn("Monitoring load encountered issues:", e);
+        }
+
+        // Wire up controls
+        const viewBtn = document.getElementById("view-log-button");
+        const refreshListBtn = document.getElementById("refresh-logs-list");
+        const downloadBtn = document.getElementById("download-log-button");
+        const selectEl = document.getElementById("log-file-select");
+        const tailEl = document.getElementById("log-tail-lines");
+        const autoRefreshStatsEl = document.getElementById("auto-refresh-stats");
+        const autoRefreshLogEl = document.getElementById("auto-refresh-log");
+        const filterInput = document.getElementById("log-filter-input");
+        const filterRegex = document.getElementById("filter-regex");
+        const filterInvert = document.getElementById("filter-invert");
+        const applyFilterBtn = document.getElementById("apply-filter-button");
+        const clearFilterBtn = document.getElementById("clear-filter-button");
+
+        viewBtn.addEventListener("click", async () => {
+            await fetchAndRenderSelectedLog();
+        });
+
+        refreshListBtn.addEventListener("click", async () => {
+            await populateLogsList();
+        });
+
+        downloadBtn.addEventListener("click", async () => {
+            const file = selectEl.value;
+            if (!file) return;
+            const url = `${API_BASE_URL}/api/v1/admin/monitoring/logs/${encodeURIComponent(file)}/download`;
+            // Use a hidden link to preserve auth; since FileResponse is protected, attach auth via fetch+blob
+            try {
+                const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` } });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const blob = await resp.blob();
+                const a = document.createElement('a');
+                const objectUrl = URL.createObjectURL(blob);
+                a.href = objectUrl;
+                a.download = file;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(objectUrl);
+            } catch (err) {
+                displayAdminMessage("Failed to download log: " + err.message, "error");
+            }
+        });
+
+        // Auto-load first log if available after list populates
+        selectEl.addEventListener("change", async () => {
+            // No auto fetch on every change; keep it explicit unless already loaded once
+        });
+
+        // Auto-refresh timers
+        let statsTimer = null;
+        let logTimer = null;
+
+        autoRefreshStatsEl.addEventListener('change', () => {
+            if (autoRefreshStatsEl.checked) {
+                statsTimer = setInterval(renderSystemStats, 5000);
+            } else if (statsTimer) {
+                clearInterval(statsTimer);
+                statsTimer = null;
+            }
+        });
+
+        autoRefreshLogEl.addEventListener('change', () => {
+            if (autoRefreshLogEl.checked) {
+                logTimer = setInterval(fetchAndRenderSelectedLog, 3000);
+            } else if (logTimer) {
+                clearInterval(logTimer);
+                logTimer = null;
+            }
+        });
+
+        // Filter handlers
+        applyFilterBtn.addEventListener('click', () => applyLogFilter());
+        clearFilterBtn.addEventListener('click', () => {
+            filterInput.value = '';
+            filterRegex.checked = false;
+            filterInvert.checked = false;
+            applyLogFilter();
+        });
+
+        async function renderSystemStats() {
+            try {
+                const stats = await apiRequest("/api/v1/admin/monitoring/stats", "GET");
+                const el = document.getElementById("system-stats");
+                el.innerHTML = `
+                    <table>
+                        <tbody>
+                            <tr><th>Server Time (UTC)</th><td>${escapeHTML(stats.server_time_utc)}</td></tr>
+                            <tr><th>Uptime</th><td>${formatUptime(stats.uptime_seconds)}</td></tr>
+                            <tr><th>Platform</th><td>${escapeHTML(stats.platform)}</td></tr>
+                            <tr><th>Python</th><td>${escapeHTML(stats.python_version)}</td></tr>
+                            <tr><th>Load Average</th><td>${formatLoadAvg(stats.load_average)}</td></tr>
+                            <tr><th>Disk Used</th><td>${stats.disk_used_gb} GB / ${stats.disk_total_gb} GB (${stats.disk_percent}%)</td></tr>
+                            <tr><th>Logs Dir</th><td>${escapeHTML(stats.logs_dir)}</td></tr>
+                            <tr><th>Log Files</th><td>${stats.log_files_count}</td></tr>
+                        </tbody>
+                    </table>
+                `;
+            } catch (error) {
+                console.error("Failed to load system stats:", error);
+                document.getElementById("system-stats").innerHTML = '<p class="error-message">Failed to load system stats.</p>';
+                displayAdminMessage("Failed to load system stats: " + error.message, "error");
+            }
+        }
+
+        async function populateLogsList() {
+            const select = document.getElementById("log-file-select");
+            select.innerHTML = '<option value="">-- Loading log files --</option>';
+            try {
+                const files = await apiRequest("/api/v1/admin/monitoring/logs/", "GET");
+                if (!files || files.length === 0) {
+                    select.innerHTML = '<option value="">(no .log files found)</option>';
+                    document.getElementById("log-content").textContent = "";
+                    return;
+                }
+                select.innerHTML = files.map((f, idx) => `<option value="${escapeHTML(f)}" ${idx === 0 ? 'selected' : ''}>${escapeHTML(f)}</option>`).join("");
+                // After populating, auto-view the first log
+                await fetchAndRenderSelectedLog();
+            } catch (error) {
+                console.error("Failed to load log list:", error);
+                select.innerHTML = '<option value="">(failed to load logs)</option>';
+                displayAdminMessage("Failed to load logs list: " + error.message, "error");
+            }
+        }
+
+        async function fetchAndRenderSelectedLog() {
+            const file = document.getElementById("log-file-select").value;
+            const tail = Math.max(10, Math.min(5000, parseInt(document.getElementById("log-tail-lines").value || "1000", 10)));
+            if (!file) {
+                document.getElementById("log-content").textContent = "Select a log file to view.";
+                return;
+            }
+            try {
+                // Build URL with encoded filename and query param
+                const endpoint = `/api/v1/admin/monitoring/logs/${encodeURIComponent(file)}?lines=${tail}`;
+                const headers = {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                };
+                const response = await fetch(API_BASE_URL + endpoint, { method: 'GET', headers });
+                if (!response.ok) {
+                    let txt = await response.text();
+                    throw new Error(txt || `HTTP ${response.status}`);
+                }
+                const text = await response.text();
+                document.getElementById("log-content").textContent = text || "(no content)";
+                applyLogFilter();
+            } catch (error) {
+                console.error("Failed to fetch log content:", error);
+                document.getElementById("log-content").textContent = `Error loading log: ${error.message}`;
+                displayAdminMessage("Failed to load log content: " + error.message, "error");
+            }
+        }
+
+        function formatUptime(seconds) {
+            if (!Number.isFinite(seconds)) return 'n/a';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            const parts = [];
+            if (d) parts.push(`${d}d`);
+            if (h || d) parts.push(`${h}h`);
+            if (m || h || d) parts.push(`${m}m`);
+            parts.push(`${s}s`);
+            return parts.join(" ");
+        }
+
+        function formatLoadAvg(load) {
+            if (!load || !Array.isArray(load)) return 'n/a';
+            return load.map(v => typeof v === 'number' ? v.toFixed(2) : v).join(', ');
+        }
+
+        function applyLogFilter() {
+            const raw = document.getElementById('log-content').textContent || '';
+            const query = filterInput.value;
+            if (!query) {
+                // Show raw
+                document.getElementById('log-content').textContent = raw;
+                return;
+            }
+            let lines = raw.split(/\n/);
+            let matcher;
+            if (filterRegex.checked) {
+                try {
+                    matcher = new RegExp(query, 'i');
+                } catch (e) {
+                    displayAdminMessage('Invalid regex: ' + e.message, 'error');
+                    return;
+                }
+            }
+            const filtered = lines.filter(line => {
+                const matched = matcher ? matcher.test(line) : line.toLowerCase().includes(query.toLowerCase());
+                return filterInvert.checked ? !matched : matched;
+            });
+            document.getElementById('log-content').textContent = filtered.join('\n');
         }
     }
 

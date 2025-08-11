@@ -111,6 +111,11 @@ The Story Generator Web App is a web-based application that allows users to gene
     *   API timeouts/failures.
     *   Image generation errors.
     *   Invalid JSON responses.
+*   Centralized, config-driven logging:
+    *   Logging is configured via `config/logging.yaml` using `logging.config.dictConfig`.
+    *   Daily rotating files (UTC midnight) for app, api, and error logs stored under `data/logs/`.
+    *   Environment overrides for log levels: `APP_LOG_LEVEL`, `API_LOG_LEVEL`, `ERROR_LOG_LEVEL`.
+    *   Base64 image payloads are redacted from logs for safety.
 
 ## 3.5 State Management & Recovery Story Generation Process
 *  Process Tracking: The system shall track the progress of the story generation process, including the current step (e.g., "Generating reference images for characters") and the number of attempts made so far.
@@ -240,6 +245,14 @@ Requirements:
     *   SQLite DB
     *   HTML/CSS/JS frontend
     *   Local file system for storing images and logs
+*   Configuration:
+    *   The app reads settings from environment variables with sensible defaults.
+    *   A lightweight `backend/settings.py` provides a single source of truth for:
+        *   API prefix (default `/api/v1`), run env, paths for static content (`frontend`, `data`).
+        *   Logging config path (`config/logging.yaml`) and logs directory (`data/logs`).
+        *   OpenAI model names and retry/backoff defaults.
+        *   CORS origins.
+    *   Static mounts for `/static` and `/static_content` are disabled in tests and configurable via env.
 
 # 9. Development Progress
 
@@ -283,6 +296,7 @@ This section tracks the major milestones and completed work items.
 *   UI for inputting detailed character attributes (age, gender, physical appearance, clothing style, key traits) - **Completed Q2 2025**
 *   Backend processing of detailed character attributes for story generation prompts - **Completed Q2 2025**
 *   Generation of upfront character reference images to guide the AI image generation model for consistent character depiction - **Completed Q2 2025** (Logic implemented to generate images if missing during draft finalization. Addressed `TypeError` in `ai_services.py` related to `model` kwarg. Test cases updated.)
+*   Story generation background task now reliably saves images and prompt sidecar files to disk under `data/images/user_{id}/story_{id}` with DB paths persisted. Frontend serves via `/static_content`.
 ### 9.6.2 Adjustable Word-to-Picture Ratio (FR-STORY-04) - *Pending*
 ### 9.6.3 Selectable Image Styles (FR-STORY-05) - *Completed Q2 2025*
 ### 9.6.4 "Forgot Password" Functionality (FR-AUTH-04) - *Pending*

@@ -353,6 +353,19 @@ footer {
     border-top: 1px solid #333;
 }
 
+/* Logs viewer tweaks */
+#logs-viewer pre#log-content {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/* Small spacing tweaks for monitoring controls */
+#system-stats .admin-form label,
+#logs-viewer .admin-form label {
+    margin-bottom: 0.25rem;
+}
+
 /* Basic form styling */
 .admin-form label {
     /* More specific selector */

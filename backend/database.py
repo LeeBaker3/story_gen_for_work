@@ -1,12 +1,21 @@
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum  # Added Boolean
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
+from dotenv import load_dotenv
 
-# This will be ideally read from .env
-DATABASE_URL = "sqlite:///./story_generator.db"
+# Load .env for local development (harmless in prod/CI)
+load_dotenv()
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# DATABASE_URL can be provided via environment; default to local SQLite
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./story_generator.db")
+
+# For SQLite, we must pass check_same_thread=False for SQLAlchemy in multi-threaded apps
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith(
+    "sqlite") else {}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()  # Use the imported declarative_base
 

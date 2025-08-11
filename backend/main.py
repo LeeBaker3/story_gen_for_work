@@ -15,6 +15,7 @@ from backend import crud, schemas, auth, database, ai_services, pdf_generator
 from backend.admin_router import admin_router
 from backend.public_router import public_router
 from backend.logging_config import app_logger, error_logger
+from backend.settings import get_settings
 from backend.database_seeding import seed_database
 from backend.database import get_db, SessionLocal
 from backend.story_generation_service import generate_story_as_background_task
@@ -40,21 +41,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+settings = get_settings()
+
 # This must be defined before it's used in the router inclusion.
 
-app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
-app.include_router(public_router, prefix="/api/v1", tags=["public"])
-app.include_router(monitoring_router, prefix="/api/v1/admin",
+admin_prefix = f"{settings.api_prefix}/admin"
+app.include_router(admin_router, prefix=admin_prefix, tags=["admin"])
+app.include_router(public_router, prefix=settings.api_prefix, tags=["public"])
+app.include_router(monitoring_router, prefix=admin_prefix,
                    tags=["admin-monitoring"])
 
 
 # Mount static files directory for frontend
-# Conditionally mount based on an environment variable
-RUN_ENV = os.environ.get("RUN_ENV")
-if RUN_ENV != "test":
-    # Attempt to mount the frontend directory. If it doesn't exist, log an error but continue.
-    # This is to prevent crashes if the backend is run in an environment where 'frontend' isn't present.
-    frontend_dir = "frontend"
+# Conditionally mount based on settings
+if settings.mount_frontend_static:
+    frontend_dir = settings.frontend_static_dir
     if not os.path.exists(frontend_dir) or not os.path.isdir(frontend_dir):
         app_logger.warning(
             f"Frontend directory '{frontend_dir}' not found. Static files for frontend will not be served.")
@@ -64,10 +65,8 @@ if RUN_ENV != "test":
         app_logger.info(
             f"Mounted frontend static files from directory: {frontend_dir}")
 
-    # Mount static files directory (for images)
-    # This will serve files from the 'data' directory under the '/static_content' path
-    # e.g., an image at data/images/user_1/story_1/foo.png will be accessible at /static_content/images/user_1/story_1/foo.png
-    data_dir = "data"
+if settings.mount_data_static:
+    data_dir = settings.data_dir
     if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
         app_logger.warning(
             f"Data directory '{data_dir}' not found. Static content will not be served.")
@@ -75,9 +74,9 @@ if RUN_ENV != "test":
         app.mount("/static_content", StaticFiles(directory=data_dir),
                   name="static_content")
         app_logger.info(f"Mounted static content from directory: {data_dir}")
-else:
+if not settings.mount_frontend_static or not settings.mount_data_static:
     app_logger.info(
-        "Skipping mounting of frontend and data static files in test environment (RUN_ENV=test).")
+        "Skipping one or more static mounts based on environment settings.")
 
 
 @app.post("/users/", response_model=schemas.User)
@@ -87,6 +86,12 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=400, detail="Username already registered")
     return crud.create_user(db=db, user=user)
+
+
+@app.get("/healthz", tags=["health"])
+def healthz():
+    """Lightweight liveness/readiness probe."""
+    return {"status": "ok"}
 
 
 @app.get("/")
@@ -565,7 +570,7 @@ async def export_story_as_pdf(
 ):
     app_logger.info(
         f"User {current_user.username} requested PDF for story ID: {story_id}")
-    db_story = crud.get_story(db, story_id=story_id)
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
     if not db_story or db_story.owner_id != current_user.id:
         error_logger.warning(
             f"User {current_user.username} attempted to access unauthorized or non-existent story PDF: {story_id}")
