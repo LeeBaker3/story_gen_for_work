@@ -1142,6 +1142,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const username = signupForm.username.value;
         const email = signupForm.email.value; // Get email value
         const password = signupForm.password.value;
+        const confirm = signupForm.password_confirm ? signupForm.password_confirm.value : document.getElementById('signup-password-confirm')?.value;
+        if (confirm !== undefined && password !== confirm) {
+            displayMessage("Passwords do not match. Please re-enter.", "error");
+            return;
+        }
         try {
             await apiRequest("/api/v1/users/", "POST", { username, email, password }); // Add email to payload
             displayMessage("Signup successful! Please login.", "success");

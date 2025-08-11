@@ -33,13 +33,18 @@ The Story Generator Web App is a web-based application that allows users to gene
     *   Secure login and session management for regular and admin users. Admin users have distinct privileges.
     *   User dashboard showing saved stories.
     *   Forgot Password functionality.
+    *   Signup confirmation: Users must enter their password twice; client-side validation blocks submission on mismatch.
 *   **Admin Panel:** (New Section for FR-ADM-01, FR-ADM-05, FR-ADM-06)
     *   Accessible only to users with admin privileges.
     *   Interface for managing application-wide settings and dynamic content.
     *   Functionality to manage dropdown list items (e.g., genres, image styles).
     *   Interface for User Management (activate, deactivate, delete users).
     *   Interface for Content Moderation (review and remove stories).
-    *   Interface for System Monitoring (view basic health, usage stats, logs).
+    *   Interface for System Monitoring (view basic health, usage stats, logs). The logs viewer provides:
+        *   Tail length selection and auto-refresh.
+        *   Follow tail (auto-scroll) behavior when enabled.
+        *   Client-side filtering with plain text or regex, plus invert option.
+        *   Persistence of user preferences (selected log file, tail length, auto-refresh, filters) in localStorage.
     *   Interface for Application Configuration (e.g., API Keys, maintenance mode, broadcast messages).
 
 # 3. Technical Requirements

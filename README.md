@@ -33,6 +33,11 @@ Run (dev)
     - GET /api/v1/admin/monitoring/stats (basic system stats)
     - GET /api/v1/admin/monitoring/metrics (stubbed counter example)
 
+Admin monitoring UI highlights
+- Persisted preferences: selected log file, tail length, auto‑refresh, and filters are saved to localStorage.
+- Follow tail: when enabled, the viewer auto‑scrolls to the bottom after each refresh.
+- Client‑side filtering: plain text or regex, with invert option.
+
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
 - User data (if mounted): GET /static_content/* serves files from DATA_DIR
@@ -149,7 +154,8 @@ Key points
 - Python 3.13 runtime
 - Install backend requirements only
 - Use RUN_ENV=test and enable MOUNT_DATA_STATIC so static routes work in tests
-- OpenAI calls are mocked in tests, so no OPENAI_API_KEY is required for CI
+- OpenAI calls are mocked in tests. A harmless dummy OPENAI_API_KEY is set to avoid import‑time checks.
+- Async tests: pytest‑asyncio is included so async tests run under pytest.
 
 Example workflow: .github/workflows/ci.yml
 ```yaml
@@ -190,6 +196,7 @@ jobs:
                 env:
                     RUN_ENV: test
                     MOUNT_DATA_STATIC: 'true'
+                    OPENAI_API_KEY: 'dummy-ci-key'
                     # Optional: set DATA_DIR to a workspace path if desired
                     # DATA_DIR: data
                 run: |
