@@ -75,6 +75,21 @@ Logging
 - Configured via YAML (`config/logging.yaml`) and written to `LOGS_DIR` with daily rotation.
 - You can adjust logger levels and handlers in YAML; environment can override levels if wired in the YAML.
 
+Monitoring and admin logs
+- Admin monitoring endpoints (require admin auth) under `${API_PREFIX}/admin/monitoring`:
+  - `GET /logs/` → list `.log` files in `LOGS_DIR` (sorted newest first)
+  - `GET /logs/{log_file}?lines=N` → return the last N lines (bounds 10–5000; default 1000)
+  - `GET /logs/{log_file}/download` → download the full log as a text file
+  - `GET /stats` → basic system stats: server time, uptime, platform, Python version, disk usage, logs dir, log file count
+- Admin UI (admin.html) includes a System Monitoring section:
+  - Stats table with optional auto-refresh
+  - Logs viewer with tail length control, auto-refresh, client-side text/regex filter (with invert), and full-file download
+
+Notes
+- `LOGS_DIR` is honored for file destinations; app/api/error logs default to:
+  - `${LOGS_DIR}/app.log`, `${LOGS_DIR}/api.log`, `${LOGS_DIR}/error.log`
+- The logging filter that redacts `b64_json` is applied automatically; no YAML string import needed.
+
 Troubleshooting
 - “/static_content not found” in dev/test
   - Ensure MOUNT_DATA_STATIC=true and that your client was created after the mount (tests handle this automatically).
