@@ -27,9 +27,11 @@ Run (dev)
     - GET /api/v1/stories/generation-status/{task_id} to check background progress
 - Health: GET /healthz
 - Admin monitoring (admin token required):
-    - GET /api/v1/admin/monitoring/logs/ (list)
-    - GET /api/v1/admin/monitoring/logs/{file}
-    - GET /api/v1/admin/monitoring/metrics
+    - GET /api/v1/admin/monitoring/logs/ (list .log files)
+    - GET /api/v1/admin/monitoring/logs/{file}?lines=N (tail last N lines; bounds 10–5000)
+    - GET /api/v1/admin/monitoring/logs/{file}/download (download full log)
+    - GET /api/v1/admin/monitoring/stats (basic system stats)
+    - GET /api/v1/admin/monitoring/metrics (stubbed counter example)
 
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
@@ -83,6 +85,7 @@ Static mounts
 Docs
 - Swagger UI: /docs
 - ReDoc: /redoc
+ - Configuration Guide: docs/CONFIG.md (env, logging, monitoring endpoints/UI)
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.
@@ -114,6 +117,7 @@ Notes
 - Configured via YAML at config/logging.yaml with dictConfig.
 - Default logs write to DATA_DIR/logs with daily rotation.
 - Adjust levels via environment or YAML per logger.
+ - Admin UI → System Monitoring can list/tail/download logs; LOGS_DIR is honored.
 
 ## Deployment
 Minimal
