@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Body
+from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import asyncio
+import io
 from datetime import timedelta
 
-from backend import crud, schemas, auth, database
+from backend import crud, schemas, auth, database, pdf_generator
 from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.story_generation_service import generate_story_as_background_task
@@ -155,3 +158,41 @@ def get_public_list_items(list_name: str, db: Session = Depends(get_db)):
         # If the list exists but is empty, return an empty list.
         return []
     return items
+
+
+@public_router.get("/stories/{story_id}/pdf", status_code=status.HTTP_200_OK)
+async def export_story_as_pdf_api(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    """API-prefixed PDF export for frontend: /api/v1/stories/{story_id}/pdf
+
+    Mirrors the root-level endpoint in main.py, but lives under the public router.
+    """
+    app_logger.info(
+        f"User {current_user.username} requested PDF for story ID: {story_id}")
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
+    if not db_story or db_story.owner_id != current_user.id:
+        error_logger.warning(
+            f"User {current_user.username} attempted to access unauthorized or non-existent story PDF: {story_id}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Story not found or access denied.")
+
+    try:
+        pdf_content_bytes = await asyncio.to_thread(pdf_generator.create_story_pdf, db_story)
+        app_logger.info(
+            f"PDF generated for story {story_id} for user {current_user.username}")
+
+        # Sanitize title for filename
+        safe_title = "".join(c if c.isalnum() or c in (
+            ' ', '-', '_') else '' for c in db_story.title).rstrip()
+        if not safe_title:
+            safe_title = f"story_{db_story.id}"
+
+        return StreamingResponse(io.BytesIO(pdf_content_bytes), media_type="application/pdf",
+                                 headers={"Content-Disposition": f"attachment; filename={safe_title}.pdf"})
+    except Exception as e:
+        error_logger.error(
+            f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
