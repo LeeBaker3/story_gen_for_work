@@ -27,9 +27,9 @@ load_dotenv()
 _settings = get_settings()
 OPENAI_API_KEY = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    error_logger.error("OPENAI_API_KEY not found in environment variables.")
-    raise ValueError(
-        "OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
+    # Do not raise at import time; allow tests to patch client and non-AI code paths to import.
+    error_logger.warning(
+        "OPENAI_API_KEY not found in environment variables during import; AI services will be disabled until configured.")
 
 # Define a retry decorator for OpenAI API calls
 api_retry = retry(
@@ -39,8 +39,8 @@ api_retry = retry(
     retry=retry_if_exception_type((openai.APIError, openai.Timeout, openai.APIConnectionError,
                                   openai.RateLimitError, requests.exceptions.RequestException)))
 
-# Initialize the new client
-client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.openai.com/v1")
+# Initialize the client only if key is available; tests may patch `client`.
+client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.openai.com/v1") if OPENAI_API_KEY else None
 
 EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
 EXPECTED_PAGE_KEYS = ["Page_number", "Text",
@@ -57,6 +57,16 @@ TEXT_MODEL = getattr(_settings, "text_model", "gpt-4.1-mini")
 IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1")
 IMAGE_SIZE = "1024x1024"
 MAX_PROMPT_LENGTH = 4000
+def _ensure_client_available():
+    """
+    Ensures the OpenAI client is initialized before making API calls.
+    Raises a ValueError with a clear message if not configured.
+    """
+    if client is None:
+        error_logger.error("OpenAI client not configured. Missing OPENAI_API_KEY.")
+        raise ValueError(
+            "OpenAI API is not configured. Set OPENAI_API_KEY in environment or settings to enable AI features.")
+
 
 
 def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
@@ -84,6 +94,7 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
     Generates a story using OpenAI's ChatGPT API based on user inputs.
     story_input should contain: title (optional), genre, story_outline, main_characters, num_pages, tone, setting, image_style, word_to_picture_ratio, text_density.
     """
+    _ensure_client_available()
     # Prepare character descriptions
     character_lines = []
     for char_data in story_input['main_characters']:
