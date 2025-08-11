@@ -35,5 +35,6 @@ jobs:
         env:
           RUN_ENV: test
           MOUNT_DATA_STATIC: "true"
+          OPENAI_API_KEY: "dummy-ci-key"
         run: |
           pytest -q
