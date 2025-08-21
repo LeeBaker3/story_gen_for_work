@@ -1,6 +1,6 @@
-# Story Generator API
+# Story Generator API ![coverage](coverage_badge.svg)
 
-FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A minimal frontend lives under `frontend/` and static content is served by the API when enabled.
+FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, inline status feedback, and static content served by the API when enabled.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ Prereqs
 Setup
 - python3.13 -m venv .venv; source .venv/bin/activate
 - pip install -r backend/requirements.txt
-- Create backend/.env with at least OPENAI_API_KEY and SECRET_KEY
+- Copy `.env.example` to `.env` in the repo root and set at least OPENAI_API_KEY and SECRET_KEY (see CONFIG.md)
 
 Run (dev)
 - uvicorn backend.main:app --reload
@@ -44,7 +44,7 @@ Static content
 - Image paths stored in DB are relative to DATA_DIR (e.g., images/user_1/story_2/...)
 
 ## Configuration
-All configuration is centralized in backend/settings.py and read from environment variables. Sensible defaults are provided. See docs/CONFIG.md for a full guide and .env usage.
+All configuration is centralized in backend/settings.py and read from environment variables. Sensible defaults are provided. Use a single root-level `.env`. See CONFIG.md for a full guide and .env usage.
 
 Core
 - RUN_ENV: dev|test|prod (default: dev). Test disables static mounts unless overridden.
@@ -104,6 +104,11 @@ Test runner: pytest
 Run all tests
 - From repo root with venv active: pytest -q
 
+Run with coverage (terminal + XML, updates coverage.xml; badge manual regeneration):
+- pytest --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml
+
+Automated badge: GitHub Action (coverage.yml) runs on pushes/PRs to main, regenerating coverage.xml and coverage_badge.svg.
+
 Run a single test
 - pytest -q backend/tests/test_public_endpoints.py::test_login_flow
 
@@ -117,6 +122,95 @@ Notes
 - Character references under .../references
 - Filenames are sanitized and include short IDs for uniqueness.
 - Paths saved to DB are always relative to DATA_DIR, so they can be served at /static_content/...
+
+## Characters import (JSON)
+You can bulk add or update characters from a JSON file via the Characters page in the frontend.
+
+Where to start
+- Open the app and navigate to Characters.
+- Click "Import from JSON" and select a file.
+- The importer accepts either a single object or an array of objects.
+
+Sample file
+- See frontend/samples/characters_import.sample.json for a ready-to-use example.
+
+Accepted fields per character
+- name (required): string. Used for per-user, case-insensitive deduping/upserts.
+- description: string. If missing, physical_appearance is used when present.
+- age: number or string (will be parsed to int when possible).
+- gender: string.
+- clothing_style: string.
+- key_traits: string. If missing, traits is used when present.
+- image_style: string. Should match one of the dynamic list values under "image_styles".
+- generate_image: boolean (default false). When true, triggers image generation for the character.
+
+Behavior
+- Import performs an upsert by name (case-insensitive) for the current user; existing characters are updated.
+- Items without a name are skipped.
+- After import, the list refreshes and a snackbar shows counts of saved vs failed items.
+
+Related API
+- POST /api/v1/characters/ with the fields above. The backend applies the same name-based dedupe per user.
+
+## Frontend overview
+- Wizard flow with steps: Basics → Characters → Options → Review
+- Characters library: search, pagination, edit/duplicate, regenerate image
+- Inline status messages in modals to avoid hidden snackbars
+- Sticky glass header, themed buttons, animated progress bar (respects reduced motion)
+
+Screenshots (TODO)
+- wizard.png — basic steps
+- characters.png — library grid and modal
+- progress.png — story generation progress bar
+
+## How to run the frontend via backend static mounts
+
+The backend can serve the frontend directly using static mounts.
+
+Quick start
+1) Create and activate a venv, then install deps.
+2) Copy `.env.example` to `.env` in repo root and set required values.
+3) Ensure static mounts are enabled (default in dev) or export flags.
+4) Start the API server and open the served frontend.
+
+Example
+
+```bash
+# from repo root
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+
+# Root .env is preferred. Enable static mounts if needed.
+export RUN_ENV=dev MOUNT_FRONTEND_STATIC=1 MOUNT_DATA_STATIC=1
+
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Visit
+- Frontend: http://127.0.0.1:8000/static/index.html
+- User data (images): http://127.0.0.1:8000/static_content/
+
+Notes
+- In dev, static mounts are on by default; in tests they’re off unless explicitly enabled.
+- Image paths in the DB are relative to `DATA_DIR` and resolve under `/static_content/` when mounted.
+
+## Troubleshooting 401s (OpenAI)
+
+If you see 401 responses when generating content:
+- Single source of truth: ensure OPENAI_API_KEY is set in the root `.env` (not `backend/.env`).
+- Restart the server after changing `.env` so settings reload.
+- Verify via admin diagnostics: GET `/api/v1/admin/monitoring/config` (admin auth) — it shows whether a key is present (masked).
+- Confirm no stray environment variables override the key; root `.env` loads first, then shell env, then any backend fallback.
+- In CI/tests, a dummy key is fine; calls are mocked. For local real calls, use a valid key and ensure your network doesn’t block API access.
+
+## Admin diagnostics
+- Endpoint: GET /api/v1/admin/monitoring/config (admin only)
+- Purpose: Verify configuration quickly without exposing secrets
+    - Shows whether OPENAI_API_KEY is present (masked prefix only)
+    - Displays selected models, mounts, and directories
+    - Indicates if the OpenAI client is initialized
+    - Useful for resolving 401/ENV issues (see CONFIG.md)
 
 ## Logging
 - Configured via YAML at config/logging.yaml with dictConfig.
