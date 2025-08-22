@@ -72,12 +72,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 break;
             case "content-moderation":
                 adminViewPanel.innerHTML = "<h2>Content Moderation</h2><p>Functionality to review and manage user-generated stories will be here.</p>";
+                displayAdminMessage("Content moderation loaded.", "success");
                 break;
             case "system-monitoring":
                 loadSystemMonitoring();
                 break;
             case "app-config":
                 adminViewPanel.innerHTML = "<h2>Application Configuration</h2><p>Settings for API keys, application behavior, and broadcast messages will be here.</p>";
+                displayAdminMessage("Application config loaded.", "success");
                 break;
             default:
                 adminViewPanel.innerHTML = "<p>Section not found.</p>";
@@ -90,6 +92,8 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const users = await apiRequest("/api/v1/admin/management/users/", "GET");
             renderUserTable(users);
+            // Show a consistent success notification when the section is ready
+            displayAdminMessage("User management loaded.", "success");
         } catch (error) {
             console.error("Error loading users:", error);
             displayAdminMessage("Failed to load users: " + error.message, "error");
@@ -217,7 +221,10 @@ document.addEventListener("DOMContentLoaded", function () {
                             <label for=\"edit_is_active\" style=\"display: inline-block; margin-right: 10px;\">Is Active:</label>
                             <input type=\"checkbox\" id=\"edit_is_active\" name=\"is_active\" ${is_active ? 'checked' : ''} style=\"width: auto; vertical-align: middle;\">
                         </div>
-                        <button type=\"submit\" class=\"admin-button\">Save Changes</button>
+                        <div class=\"modal-actions\">
+                            <button type=\"submit\" class=\"admin-button-success\">Save Changes</button>
+                            <button type=\"button\" class=\"admin-button-secondary\" onclick=\"document.getElementById('${modalId}').remove();\">Cancel</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -276,6 +283,8 @@ document.addEventListener("DOMContentLoaded", function () {
         setupDynamicContentTabs();
         await populateListsForManagement();
         await populateListSelectorForItems();
+        // Indicate the section is ready
+        displayAdminMessage("Dynamic content loaded.", "success");
 
         document.getElementById('add-new-list-btn').addEventListener('click', () => showAddEditDynamicListModal());
 
@@ -444,18 +453,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const savePrefs = (patch) => {
             const current = loadPrefs();
             const next = { ...current, ...patch };
-            try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch {}
+            try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch { }
         };
 
-        // Load stats and logs list in parallel
-        try {
-            await Promise.all([renderSystemStats(), populateLogsList()]);
-            displayAdminMessage("Monitoring loaded.", "success");
-        } catch (e) {
-            console.warn("Monitoring load encountered issues:", e);
-        }
-
-        // Wire up controls
+        // Wire up controls (query elements first so downstream calls can use them)
         const viewBtn = document.getElementById("view-log-button");
         const refreshListBtn = document.getElementById("refresh-logs-list");
         const downloadBtn = document.getElementById("download-log-button");
@@ -470,23 +471,27 @@ document.addEventListener("DOMContentLoaded", function () {
         const applyFilterBtn = document.getElementById("apply-filter-button");
         const clearFilterBtn = document.getElementById("clear-filter-button");
 
+        // Timers must be declared before any checks to avoid TDZ errors
+        let statsTimer = null;
+        let logTimer = null;
+
         // Initialize from saved prefs
         const prefs = loadPrefs();
         if (typeof prefs.tailLines === 'number') {
             tailEl.value = Math.max(10, Math.min(5000, prefs.tailLines));
         }
-        if (typeof prefs.autoRefreshStats === 'boolean') autoRefreshStatsEl.checked = prefs.autoRefreshStats;
-        if (typeof prefs.autoRefreshLog === 'boolean') autoRefreshLogEl.checked = prefs.autoRefreshLog;
-        if (typeof prefs.followTail === 'boolean') followTailEl.checked = prefs.followTail;
+        if (typeof prefs.autoRefreshStats === 'boolean' && autoRefreshStatsEl) autoRefreshStatsEl.checked = prefs.autoRefreshStats;
+        if (typeof prefs.autoRefreshLog === 'boolean' && autoRefreshLogEl) autoRefreshLogEl.checked = prefs.autoRefreshLog;
+        if (typeof prefs.followTail === 'boolean' && followTailEl) followTailEl.checked = prefs.followTail;
         if (typeof prefs.filterQuery === 'string') filterInput.value = prefs.filterQuery;
-        if (typeof prefs.filterRegex === 'boolean') filterRegex.checked = prefs.filterRegex;
-        if (typeof prefs.filterInvert === 'boolean') filterInvert.checked = prefs.filterInvert;
+        if (typeof prefs.filterRegex === 'boolean' && filterRegex) filterRegex.checked = prefs.filterRegex;
+        if (typeof prefs.filterInvert === 'boolean' && filterInvert) filterInvert.checked = prefs.filterInvert;
 
         // If auto-refresh preferences are enabled, start timers now
-        if (autoRefreshStatsEl.checked && !statsTimer) {
+        if (autoRefreshStatsEl && autoRefreshStatsEl.checked && !statsTimer) {
             statsTimer = setInterval(renderSystemStats, 5000);
         }
-        if (autoRefreshLogEl.checked && !logTimer) {
+        if (autoRefreshLogEl && autoRefreshLogEl.checked && !logTimer) {
             logTimer = setInterval(fetchAndRenderSelectedLog, 3000);
         }
 
@@ -525,10 +530,6 @@ document.addEventListener("DOMContentLoaded", function () {
             savePrefs({ selectedLogFile: selectEl.value || null });
             // No auto fetch on every change; explicit view click or auto-refresh handles updates
         });
-
-        // Auto-refresh timers
-        let statsTimer = null;
-        let logTimer = null;
 
         autoRefreshStatsEl.addEventListener('change', () => {
             if (autoRefreshStatsEl.checked) {
@@ -604,7 +605,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-    async function populateLogsList() {
+        async function populateLogsList() {
             const select = document.getElementById("log-file-select");
             select.innerHTML = '<option value="">-- Loading log files --</option>';
             try {
@@ -614,10 +615,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     document.getElementById("log-content").textContent = "";
                     return;
                 }
-        const prefs = loadPrefs();
-        const preferred = prefs.selectedLogFile && files.includes(prefs.selectedLogFile) ? prefs.selectedLogFile : files[0];
-        select.innerHTML = files.map((f) => `<option value="${escapeHTML(f)}" ${f === preferred ? 'selected' : ''}>${escapeHTML(f)}</option>`).join("");
-        // After populating, auto-view the preferred log
+                const prefs = loadPrefs();
+                const preferred = prefs.selectedLogFile && files.includes(prefs.selectedLogFile) ? prefs.selectedLogFile : files[0];
+                select.innerHTML = files.map((f) => `<option value="${escapeHTML(f)}" ${f === preferred ? 'selected' : ''}>${escapeHTML(f)}</option>`).join("");
+                // After populating, auto-view the preferred log
                 await fetchAndRenderSelectedLog();
             } catch (error) {
                 console.error("Failed to load log list:", error);
@@ -647,7 +648,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const text = await response.text();
                 document.getElementById("log-content").textContent = text || "(no content)";
                 applyLogFilter();
-        if (document.getElementById("follow-tail").checked) maybeScrollLogToBottom();
+                if (document.getElementById("follow-tail").checked) maybeScrollLogToBottom();
             } catch (error) {
                 console.error("Failed to fetch log content:", error);
                 document.getElementById("log-content").textContent = `Error loading log: ${error.message}`;
@@ -703,6 +704,15 @@ document.addEventListener("DOMContentLoaded", function () {
             const pre = document.getElementById('log-content');
             // Scroll to bottom to follow tail
             pre.scrollTop = pre.scrollHeight;
+        }
+
+        // Now that controls and timers are set up, load stats and logs
+        try {
+            await renderSystemStats();
+            await populateLogsList();
+            displayAdminMessage("Monitoring loaded.", "success");
+        } catch (e) {
+            console.warn("Monitoring load encountered issues:", e);
         }
     }
 
@@ -837,7 +847,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <textarea id="dl_description" name="description" class="admin-form-control">${isEdit ? escapeHTML(currentDescription) : ''}</textarea>
                         </div>
                         <div class="modal-actions">
-                            <button type="submit" id="saveDynamicListButton" class="admin-button">${isEdit ? 'Save Changes' : 'Create List'}</button>
+                            <button type="submit" id="saveDynamicListButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create List'}</button>
                             ${isEdit ? `<button type="button" id="deleteDynamicListButton" class="admin-button-danger">Delete List</button>` : ''}
                             <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" onclick="document.getElementById('${modalId}').remove();">Cancel</button>
                         </div>
@@ -1008,7 +1018,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <textarea id="item_additional_config" name="item_additional_config" rows="3" class="admin-form-control">${escapeHTML(additionalConfigString)}</textarea>
                         </div>
                         <div class="modal-actions">
-                            <button type="submit" id="saveDynamicListItemButton" class="admin-button">${isEdit ? 'Save Changes' : 'Create Item'}</button>
+                            <button type="submit" id="saveDynamicListItemButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create Item'}</button>
                             ${isEdit ? `<button type="button" id="deleteDynamicListItemButton" class="admin-button-danger">Delete Item</button>` : ''}
                             <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" onclick="document.getElementById(\\'${modalId}\\').remove();">Cancel</button>
                         </div>
@@ -1240,30 +1250,38 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     return response.json();
 }
 
-function displayAdminMessage(message, type = 'info', modalId = null) {
-    let messageArea;
-    if (modalId) {
-        messageArea = document.getElementById(`${modalId}-message-area`);
-    } else {
-        messageArea = document.getElementById('admin-message-area');
+function displayAdminMessage(message, type = 'info', modalId = null, { toast = false, persistMs = 5000 } = {}) {
+    // Update the admin page panel for context/ARIA
+    let messageArea = null;
+    if (modalId) messageArea = document.getElementById(`${modalId}-message-area`);
+    if (!messageArea) messageArea = document.getElementById('admin-message-area');
+    if (messageArea) {
+        messageArea.textContent = message || '';
+        messageArea.className = 'admin-message';
+        if (type) messageArea.classList.add(type);
+        messageArea.style.display = message ? 'block' : 'none';
     }
 
-    if (!messageArea) {
-        // Fallback to global message area if modal-specific one isn't found (should not happen if HTML is correct)
-        messageArea = document.getElementById('admin-message-area');
-        if (!messageArea) return; // Still no message area, abort.
-        console.warn("Modal message area not found, using global.");
+    // Mirror to global snackbar/toast so behavior matches the main app
+    const snackbarEl = document.getElementById('snackbar');
+    if (snackbarEl && message) {
+        snackbarEl.textContent = String(message);
+        snackbarEl.className = `snackbar snackbar--${type}`;
+        snackbarEl.style.display = 'block';
+        clearTimeout(displayAdminMessage._snackbarTimer);
+        displayAdminMessage._snackbarTimer = setTimeout(() => {
+            snackbarEl.style.display = 'none';
+        }, persistMs);
     }
-
-    messageArea.textContent = message;
-    messageArea.className = 'admin-message'; // Reset classes
-    if (type) {
-        messageArea.classList.add(type); // e.g., 'success', 'error', 'warning', 'info'
-    }
-
-    if (message) {
-        messageArea.style.display = 'block';
-    } else {
-        messageArea.style.display = 'none';
+    if (toast) {
+        const tc = document.getElementById('toast-container');
+        if (tc && message) {
+            const node = document.createElement('div');
+            node.className = `toast toast--${type}`;
+            node.textContent = String(message);
+            tc.appendChild(node);
+            const t = setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 3200);
+            node.addEventListener('click', () => { clearTimeout(t); if (node.parentNode) node.parentNode.removeChild(node); });
+        }
     }
 }

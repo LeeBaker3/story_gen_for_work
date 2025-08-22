@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from backend.auth import get_current_admin_user
 from backend.logging_config import app_logger, error_logger
 from backend.settings import get_settings
+from backend import ai_services
 
 _settings = get_settings()
 LOG_DIRECTORY = _settings.logs_dir or "data/logs"
@@ -55,9 +56,17 @@ def list_log_files():
             detail="Log directory configured incorrectly."
         )
     try:
-        # Filter for .log files and sort them by modification date
-        files = [f for f in os.listdir(
-            LOG_DIRECTORY) if f.endswith('.log')]
+        # Collect files matching current and legacy rotation patterns
+        all_entries = os.listdir(LOG_DIRECTORY)
+        files = []
+        for f in all_entries:
+            # Include primary .log files and new rotated (name.YYYY-MM-DD.log)
+            if f.endswith('.log'):
+                files.append(f)
+                continue
+            # Include legacy rotated files like 'name.log.YYYY-MM-DD'
+            if '.log.' in f:
+                files.append(f)
         # Sort by modification time, newest first
         files.sort(key=lambda f: os.path.getmtime(
             os.path.join(LOG_DIRECTORY, f)), reverse=True)
@@ -207,3 +216,39 @@ def system_stats():
         error_logger.exception("Failed to compute system stats")
         raise HTTPException(
             status_code=500, detail="Failed to compute system stats")
+
+
+@monitoring_router.get("/config")
+def config_diagnostics():
+    """Return safe configuration diagnostics for admins.
+
+    Exposes only non-sensitive, masked details useful for debugging configuration issues.
+    """
+    try:
+        settings = _settings
+        raw_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY") or ""
+        key_present = bool(raw_key)
+        # Only reveal a tiny prefix for debugging (avoid leaking the full key)
+        masked = f"{raw_key[:7]}******" if key_present else ""
+
+        # Check if the OpenAI client is initialized without making any calls
+        client_initialized = getattr(ai_services, "client", None) is not None
+
+        return {
+            "openai_key_present": key_present,
+            "openai_key_masked": masked,
+            "text_model": settings.text_model,
+            "image_model": settings.image_model,
+            "run_env": settings.run_env,
+            "enable_image_style_mapping": settings.enable_image_style_mapping,
+            "mount_frontend_static": settings.mount_frontend_static,
+            "mount_data_static": settings.mount_data_static,
+            "frontend_static_dir": settings.frontend_static_dir,
+            "data_dir": settings.data_dir,
+            "logs_dir": LOG_DIRECTORY,
+            "client_initialized": client_initialized,
+        }
+    except Exception:
+        error_logger.exception("Failed to build config diagnostics")
+        raise HTTPException(
+            status_code=500, detail="Failed to load diagnostics")

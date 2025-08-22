@@ -195,3 +195,32 @@ def test_system_stats_endpoint(client, tmp_path, monkeypatch, admin_auth_headers
     assert isinstance(data["uptime_seconds"], int)
     assert "python_version" in data
     assert data["logs_dir"] == str(log_dir)
+
+
+def test_config_diagnostics_endpoint(client, monkeypatch, admin_auth_headers):
+    """Validate /config returns masked key and expected fields without leaking secrets."""
+    # Ensure OPENAI_API_KEY is present in env for this test
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-abcdefg1234567890")
+
+    response = client.get("/api/v1/admin/monitoring/config",
+                          headers=admin_auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+
+    # Presence flags
+    assert "openai_key_present" in data and data["openai_key_present"] is True
+    assert "openai_key_masked" in data
+    # Masking should only reveal a tiny prefix and then stars (no full key exposure)
+    masked = data["openai_key_masked"]
+    assert masked.endswith("******")
+    assert len(masked) >= 6  # has at least the stars
+    assert "*" in masked
+
+    # Expected fields present
+    for key in [
+        "text_model", "image_model", "run_env",
+        "enable_image_style_mapping", "mount_frontend_static",
+        "mount_data_static", "frontend_static_dir", "data_dir",
+        "logs_dir", "client_initialized"
+    ]:
+        assert key in data

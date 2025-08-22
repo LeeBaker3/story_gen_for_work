@@ -91,6 +91,7 @@ Docs
 - Swagger UI: /docs
 - ReDoc: /redoc
  - Configuration Guide: docs/CONFIG.md (env, logging, monitoring endpoints/UI)
+ - API Contracts: see docs/PRODUCT_REQUIREMENTS_DOCUMENT.md (Section 6)
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.
@@ -115,7 +116,13 @@ Run a single test
 Notes
 - Tests use an in-memory SQLite DB and override the app DB dependency; no local DB file is modified.
 - Some tests rely on /static_content being mounted. If RUN_ENV=test is set, also set MOUNT_DATA_STATIC=true to enable static serving in tests.
-- Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
+ - Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
+
+### Frontend tests (Jest)
+- Location: `frontend/tests`
+- Run locally: npm install && npm test
+- Environment: jsdom with Testing Library; fetch is mocked by default.
+- CI: `.github/workflows/frontend-tests.yml` runs tests on push/PR.
 
 ## Storage paths
 - Images are stored under DATA_DIR/images/user_{id}/story_{id}/...

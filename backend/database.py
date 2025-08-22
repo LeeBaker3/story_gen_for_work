@@ -150,5 +150,75 @@ class StoryGenerationTask(Base):
     user = relationship("User")
 
 
+# --- Characters Domain (Phase 2) ---
+
+
+class Character(Base):
+    __tablename__ = "characters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"),
+                     nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    age = Column(Integer, nullable=True)
+    gender = Column(String, nullable=True)
+    clothing_style = Column(String, nullable=True)
+    key_traits = Column(Text, nullable=True)
+    image_style = Column(String, nullable=True)
+    # use_alter=True marks this FK as part of a known cycle so metadata.drop/create won't warn
+    current_image_id = Column(
+        Integer,
+        ForeignKey("character_images.id", use_alter=True,
+                   name="fk_characters_current_image_id"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    owner = relationship("User")
+    images = relationship(
+        "CharacterImage",
+        back_populates="character",
+        cascade="all, delete-orphan",
+        # Disambiguate: CharacterImage.character_id points to Character.id
+        foreign_keys="CharacterImage.character_id",
+        primaryjoin=lambda: Character.id == CharacterImage.character_id,
+    )
+    current_image = relationship(
+        "CharacterImage",
+        foreign_keys=[current_image_id],
+        post_update=True,
+        uselist=False,
+    )
+
+
+class CharacterImage(Base):
+    __tablename__ = "character_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    character_id = Column(
+        Integer,
+        ForeignKey("characters.id", use_alter=True,
+                   name="fk_character_images_character_id"),
+        nullable=False,
+        index=True,
+    )
+    # Relative to data/ (e.g., images/user_1/characters/5/uuid.png)
+    file_path = Column(String, nullable=False)
+    prompt_used = Column(Text, nullable=True)
+    image_style = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Disambiguate relationship path back to Character
+    character = relationship(
+        "Character",
+        back_populates="images",
+        foreign_keys=[character_id],
+        primaryjoin=lambda: CharacterImage.character_id == Character.id,
+    )
+
+
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)

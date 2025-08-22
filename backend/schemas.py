@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict  # Added ConfigDict
 from typing import List, Optional
 from enum import Enum  # Added for StoryGenre
 from datetime import datetime  # Ensure datetime is imported
+from pydantic import Field
 
 
 class UserRole(str, Enum):  # Added UserRole Enum
@@ -129,6 +130,8 @@ class StoryBase(BaseModel):
 
 class StoryCreate(StoryBase):  # This schema is for user input to generate a story
     draft_id: Optional[int] = None
+    # Phase 3: allow reusing existing saved Characters by id; these are merged with main_characters
+    character_ids: Optional[List[int]] = None
 
 
 class StoryTitleUpdate(BaseModel):  # New Schema for updating title
@@ -300,3 +303,70 @@ class StoryGenerationTask(StoryGenerationTaskBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Characters Domain (Phase 2) ---
+
+
+class CharacterBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    clothing_style: Optional[str] = None
+    key_traits: Optional[str] = None
+    image_style: Optional[str] = None
+
+
+class CharacterCreate(CharacterBase):
+    generate_image: Optional[bool] = False
+
+
+class CharacterUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    clothing_style: Optional[str] = None
+    key_traits: Optional[str] = None
+    image_style: Optional[str] = None
+
+
+class CharacterImageOut(BaseModel):
+    id: int
+    file_path: str
+    prompt_used: Optional[str] = None
+    image_style: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CharacterOut(CharacterBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    current_image: Optional[CharacterImageOut] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CharacterListItem(BaseModel):
+    id: int
+    name: str
+    updated_at: datetime
+    thumbnail_path: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedCharacters(BaseModel):
+    items: List[CharacterListItem]
+    total: int
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=100)
+
+
+class RegenerateImageRequest(BaseModel):
+    description: Optional[str] = None
+    image_style: Optional[str] = None

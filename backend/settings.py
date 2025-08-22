@@ -1,5 +1,17 @@
 import os
 from typing import List
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure environment is populated from the repo root .env before creating settings.
+_here = Path(__file__).resolve().parent
+_root_env = _here.parent / ".env"
+# Load root .env if present (do not override already-set env vars)
+if _root_env.exists():
+    load_dotenv(dotenv_path=str(_root_env), override=False)
+else:
+    # Fallback: attempt default search from CWD/parents
+    load_dotenv()
 
 
 class BaseSettings:

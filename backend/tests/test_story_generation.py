@@ -89,6 +89,9 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
     # No existing story
     crud.get_story_by_title_and_owner = MagicMock(return_value=None)
     crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+    # FastAPI response_model validation will call model_validate and expects attributes accessible.
+    # Ensure refresh is a no-op that leaves timestamps intact.
+    db_session_mock.refresh = MagicMock()
 
     # Mock the CRUD function for creating the task
     crud.create_story_generation_task = MagicMock(return_value=schemas.StoryGenerationTask(
@@ -131,6 +134,86 @@ def test_create_story_with_existing_title_fails(client, db_session_mock, story_c
     print("Response JSON:", response.json())
     assert response.status_code == 400
     assert "already exists" in response.json()["detail"]
+
+
+def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock):
+    """Ensure that when character_ids are provided, existing character data is merged with new main_characters without duplication and reference image paths are preserved."""
+    mock_story_id = 42
+    now = datetime.now(UTC)
+
+    existing_character_obj = MagicMock()
+    existing_character_obj.id = 7
+    existing_character_obj.user_id = current_user_mock.id
+    existing_character_obj.name = "ExistingHero"
+    existing_character_obj.description = "Brave"
+    existing_character_obj.age = 30
+    existing_character_obj.gender = "female"
+    existing_character_obj.clothing_style = "cloak"
+    existing_character_obj.key_traits = "fearless"
+    existing_character_obj.current_image = MagicMock(
+        file_path="images/user_1/characters/7/img.png")
+
+    incoming_payload = {
+        "title": "Merged Story",
+        "genre": "Fantasy",
+        "story_outline": "An epic merge.",
+        "main_characters": [{"name": "NewCompanion"}],
+        "character_ids": [existing_character_obj.id],
+        "num_pages": 1,
+        "image_style": "Default",
+        "word_to_picture_ratio": "One image per page",
+        "text_density": "Concise (~30-50 words)"
+    }
+
+    crud.get_story_by_title_and_owner = MagicMock(return_value=None)
+
+    class FakeStory:
+        def __init__(self):
+            self.id = mock_story_id
+            self.owner_id = current_user_mock.id
+            self.title = "[AI Title Pending...]"
+            self.genre = incoming_payload["genre"]
+            self.story_outline = incoming_payload["story_outline"]
+            self.main_characters = incoming_payload["main_characters"]
+            self.num_pages = incoming_payload["num_pages"]
+            self.image_style = incoming_payload["image_style"]
+            self.word_to_picture_ratio = incoming_payload["word_to_picture_ratio"]
+            self.text_density = incoming_payload["text_density"]
+            self.is_draft = False
+            self.created_at = now
+            self.updated_at = now
+            self.pages = []
+
+    mock_story_db = FakeStory()
+    crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+
+    def _update_story_title(db, story_id, new_title):
+        mock_story_db.title = new_title
+        mock_story_db.updated_at = datetime.now(UTC)
+        return mock_story_db
+    crud.update_story_title = MagicMock(side_effect=_update_story_title)
+
+    filter_mock = MagicMock()
+    filter_mock.filter.return_value = filter_mock
+    filter_mock.all.return_value = [existing_character_obj]
+    db_session_mock.query.return_value = filter_mock
+
+    # NOTE: The synchronous story creation with character merge logic lives at root /stories/ (not /api/v1) in main.py.
+    with patch("backend.ai_services.generate_story_from_chatgpt", return_value={"Title": "Merged Story Final", "Pages": []}):
+        response = client.post(
+            "/stories/",
+            json={"story_input": incoming_payload},
+            headers={"X-Token": "testtoken"}
+        )
+    assert response.status_code in (200, 201), response.text
+    data = response.json()
+    assert data["title"] == "Merged Story Final"
+    returned_names = {c["name"] for c in data.get("main_characters", [])}
+    assert {"ExistingHero", "NewCompanion"}.issubset(returned_names)
+    existing_entry = next((c for c in data.get(
+        "main_characters", []) if c["name"] == "ExistingHero"), {})
+    assert existing_entry.get(
+        "reference_image_path") == "images/user_1/characters/7/img.png"
 
 
 def test_get_story_status(client, db_session_mock):

@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Story Generator</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/admin_style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20250820.1">
+    <link rel="stylesheet" href="/static/admin_style.css?v=20250820.1">
 </head>
 <body>
     <header>
@@ -14,6 +14,7 @@
             <div class="nav-buttons">
                 <a href="/static/index.html" class="nav-button">Create New Story</a>
                 <a href="/static/index.html#browse" class="nav-button">My Stories</a>
+                <a href="/static/index.html#characters" class="nav-button">Characters</a>
                 <a href="/static/admin.html" class="nav-button active">Admin Panel</a>
                 <button id="nav-logout" class="nav-button">Logout</button>
             </div>
@@ -47,7 +48,10 @@
     <footer>
         <p>&copy; 2025 Story Generator Admin</p>
     </footer>
+    <!-- Global snackbar and toasts (consistent with main app) -->
+    <div id="snackbar" class="snackbar" role="status" aria-live="polite" style="display:none;"></div>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="/static/admin_script.js"></script>
+    <script src="/static/admin_script.js?v=20250820.1"></script>
 </body>
 </html>

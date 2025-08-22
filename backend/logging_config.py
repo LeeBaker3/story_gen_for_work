@@ -16,6 +16,25 @@ class NoB64JsonFilter(logging.Filter):
         return True
 
 
+def date_suffix_namer(default_name: str) -> str:
+    """Rename rotated files from 'name.log.YYYY-MM-DD' to 'name.YYYY-MM-DD.log'.
+
+    TimedRotatingFileHandler by default appends the date to the end of the
+    filename (after the extension), e.g., 'api.log.2025-08-14'. This helper
+    moves the '.log' extension to the end so the file becomes
+    'api.2025-08-14.log'. Other filenames are returned unchanged.
+    """
+    try:
+        dirpath, fname = os.path.split(default_name)
+        if '.log.' in fname:
+            # Only replace the first occurrence to avoid touching content with '.log.' in other parts
+            fname = fname.replace('.log.', '.', 1) + '.log'
+        return os.path.join(dirpath, fname)
+    except Exception:
+        # If anything goes wrong, return the original name
+        return default_name
+
+
 class DailyCounterRotatingFileHandler(logging.FileHandler):
     """
     Backward-compatibility handler used by tests.
@@ -131,6 +150,40 @@ def _load_logging_config(path: Optional[str] = None):
     override_level('story_generator_error', 'ERROR_LOG_LEVEL')
 
     dictConfig(cfg)
+
+    # Post-config tweak: attach namer to TimedRotatingFileHandlers
+    try:
+        for handler in logging.getLogger().handlers:
+            pass
+        # Also check all handlers referenced by our configured loggers
+        root_logger = logging.getLogger()
+        seen = set()
+        stack = [root_logger]
+        while stack:
+            logger = stack.pop()
+            if logger in seen:
+                continue
+            seen.add(logger)
+            for h in list(logger.handlers):
+                try:
+                    from logging.handlers import TimedRotatingFileHandler
+                    if isinstance(h, TimedRotatingFileHandler):
+                        h.namer = date_suffix_namer
+                except Exception:
+                    continue
+            # Include child named loggers explicitly by names known in config
+        for name in ('story_generator_app', 'story_generator_api', 'story_generator_error'):
+            lg = logging.getLogger(name)
+            for h in list(lg.handlers):
+                try:
+                    from logging.handlers import TimedRotatingFileHandler
+                    if isinstance(h, TimedRotatingFileHandler):
+                        h.namer = date_suffix_namer
+                except Exception:
+                    continue
+    except Exception:
+        # Non-fatal if we can't attach namers
+        pass
 
 
 # Initialize logging on import

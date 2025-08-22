@@ -22,6 +22,19 @@ from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensit
 from .image_style_mapping import map_style
 
 load_dotenv()
+# Explicitly load project root .env (preferred). For backward compatibility,
+# if a backend/.env exists, it's loaded only for missing values.
+_here = os.path.dirname(__file__)
+_root_env_path = os.path.abspath(os.path.join(_here, '..', '.env'))
+if os.path.exists(_root_env_path):
+    # Do not override if already set; root .env should win
+    load_dotenv(dotenv_path=_root_env_path, override=False)
+
+# Also try loading a .env that lives next to this backend module (backend/.env)
+_local_env_path = os.path.join(_here, '.env')
+if os.path.exists(_local_env_path):
+    # Fill only missing values from backend/.env; do not override root or shell
+    load_dotenv(dotenv_path=_local_env_path, override=False)
 
 # Load settings and OpenAI API key
 _settings = get_settings()
@@ -40,7 +53,8 @@ api_retry = retry(
                                   openai.RateLimitError, requests.exceptions.RequestException)))
 
 # Initialize the client only if key is available; tests may patch `client`.
-client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.openai.com/v1") if OPENAI_API_KEY else None
+client = OpenAI(api_key=OPENAI_API_KEY,
+                base_url="https://api.openai.com/v1") if OPENAI_API_KEY else None
 
 EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
 EXPECTED_PAGE_KEYS = ["Page_number", "Text",
@@ -57,16 +71,18 @@ TEXT_MODEL = getattr(_settings, "text_model", "gpt-4.1-mini")
 IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1")
 IMAGE_SIZE = "1024x1024"
 MAX_PROMPT_LENGTH = 4000
+
+
 def _ensure_client_available():
     """
     Ensures the OpenAI client is initialized before making API calls.
     Raises a ValueError with a clear message if not configured.
     """
     if client is None:
-        error_logger.error("OpenAI client not configured. Missing OPENAI_API_KEY.")
+        error_logger.error(
+            "OpenAI client not configured. Missing OPENAI_API_KEY.")
         raise ValueError(
             "OpenAI API is not configured. Set OPENAI_API_KEY in environment or settings to enable AI features.")
-
 
 
 def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
@@ -567,6 +583,8 @@ def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = Non
     Returns the image as bytes, or None if an error occurred.
     """
     try:
+        # Ensure client is configured early with a clear error
+        _ensure_client_available()
         # Truncate the prompt if it's too long
         truncated_prompt = _truncate_prompt(prompt)
 
@@ -620,6 +638,13 @@ def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = Non
             return None
 
         return base64.b64decode(b64_json)
+    except openai.AuthenticationError as e:
+        # Invalid API key or auth failure
+        error_logger.error(
+            f"OpenAI authentication error during image generation: {e}")
+        # Raise a standard permission-related error for upstream HTTP mapping
+        raise PermissionError(
+            "OpenAI authentication failed. Check OPENAI_API_KEY.")
     except openai.APIError as e:
         error_logger.error(f"OpenAI API error in AI image generation: {e}")
         raise

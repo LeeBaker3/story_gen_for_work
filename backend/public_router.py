@@ -15,6 +15,22 @@ from backend.story_generation_service import generate_story_as_background_task
 public_router = APIRouter()
 
 
+@public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
+async def register_user(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db)
+):
+    """Public endpoint to register a new user (sign up)."""
+    # Enforce unique username (and optionally email if provided)
+    if crud.get_user_by_username(db, username=user.username):
+        raise HTTPException(
+            status_code=400, detail="Username already registered")
+    if user.email and crud.get_user_by_email(db, email=user.email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    created = crud.create_user(db=db, user=user)
+    return created
+
+
 @public_router.post("/token", response_model=schemas.Token, tags=["authentication"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = auth.authenticate_user(db, form_data.username, form_data.password)
@@ -195,4 +211,5 @@ async def export_story_as_pdf_api(
     except Exception as e:
         error_logger.error(
             f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate PDF: {e}")

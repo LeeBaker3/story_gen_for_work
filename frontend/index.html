@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Story Generator</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20250820">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <!-- <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png"> -->
     <!-- <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png"> -->
@@ -19,6 +19,7 @@
                 <button id="nav-login-signup" class="nav-button">Login / Sign Up</button>
                 <button id="nav-create-story" class="nav-button" style="display:none;">Create New Story</button>
                 <button id="nav-browse-stories" class="nav-button" style="display:none;">My Stories</button>
+                <button id="nav-characters" class="nav-button" style="display:none;">Characters</button>
                 <a id="nav-admin-panel" href="/static/admin.html" class="nav-button" style="display:none;">Admin Panel</a>
                 <button id="nav-logout" class="nav-button" style="display:none;">Logout</button>
             </div>
@@ -35,22 +36,32 @@
                     <label for="login-username">Username:</label>
                     <input type="text" id="login-username" name="username" required>
                     <label for="login-password">Password:</label>
-                    <input type="password" id="login-password" name="password" required>
-                    <button type="submit">Login</button>
+                    <div class="password-field">
+                        <input type="password" id="login-password" name="password" required>
+                        <button type="button" id="toggle-login-password" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <button type="submit" class="action-button-info">Login</button>
                     <p class="auth-switch-message">Don't have an account? <a href="#" id="show-signup-link">Sign up</a></p>
                 </form>
                 <!-- Signup Form -->
-                <form id="signup-form" class="auth-form" style="display:none;"> <!-- Initially hidden -->
+                <form id="signup-form" class="auth-form" style="display:none;" novalidate> <!-- Initially hidden; novalidate lets JS handle validation -->
                     <h3>Sign Up</h3>
                     <label for="signup-username">Username:</label>
                     <input type="text" id="signup-username" name="username" required>
                     <label for="signup-email">Email:</label> <!-- Assuming email is still required for signup -->
                     <input type="email" id="signup-email" name="email" required>
                     <label for="signup-password">Password:</label>
-                    <input type="password" id="signup-password" name="password" required>
+                    <div class="password-field">
+                        <input type="password" id="signup-password" name="password" required>
+                        <button type="button" id="toggle-signup-password" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <div id="password-strength" aria-live="polite" style="font-size:0.85rem; color:#a6b0c3; margin-top:4px;">Strength: —</div>
                     <label for="signup-password-confirm">Confirm Password:</label>
-                    <input type="password" id="signup-password-confirm" name="password_confirm" required>
-                    <button type="submit">Sign Up</button>
+                    <div class="password-field">
+                        <input type="password" id="signup-password-confirm" name="password_confirm" required>
+                        <button type="button" id="toggle-signup-password-confirm" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <button type="submit" id="signup-submit-button" class="action-button-info">Sign Up</button>
                     <p class="auth-switch-message">Already have an account? <a href="#" id="show-login-link">Login</a></p>
                 </form>
             </div>
@@ -58,97 +69,162 @@
 
         <section id="story-creation-section" style="display:none;">
             <h2>Create a New Story</h2>
-            <form id="story-creation-form" class="modern-form">
-                <div>
-                    <label for="story-title">Story Title (Optional):</label>
-                    <input type="text" id="story-title" name="title" placeholder="Enter your story title or leave blank for AI to generate">
-                </div>
-                <div>
-                    <label for="story-genre">Genre:</label>
-                    <select id="story-genre" name="genre" required>
-                        <!-- Options will be populated dynamically -->
-                    </select>
-                </div>
-
-                <div>
-                    <label for="story-outline">Story Outline:</label>
-                    <textarea id="story-outline" name="story_outline" rows="4" required></textarea>
-                </div>
-
-                <fieldset id="main-characters-fieldset" class="modern-fieldset">
-                    <legend>Main Characters (at least 1)</legend>
-                    <div class="character-entry">
-                        <div>
-                            <label for="char-name-1">Name:</label>
-                            <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
+            <!-- Phase 3 Wizard: Step indicators (basic skeleton) -->
+            <div id="wizard-steps" class="wizard-steps" aria-label="Story creation steps">
+                <div class="wizard-step" data-step="0">Basics</div>
+                <div class="wizard-step" data-step="1">Characters</div>
+                <div class="wizard-step" data-step="2">Options</div>
+                <div class="wizard-step" data-step="3">Review</div>
+            </div>
+            <!-- Character Library Panel placeholder (populated in Phase 3) -->
+            <div id="character-library-panel" style="display:none;" aria-label="Character library">
+                        <div class="library-header">
+                            <h3>Your Characters</h3>
+                            <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
+                                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
+                                <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
+                            </div>
                         </div>
+                        <p class="character-hint">Tip: Click a card to load its details into the form. Cmd/Ctrl+Click to multi-select for reuse.</p>
+                <div id="character-list" class="character-grid" aria-live="polite"></div>
+                <div id="character-pagination" class="pagination-controls"></div>
+                <div id="character-detail-modal" class="modal" style="display:none;">
+                    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-detail-title">
+                        <h4 id="character-detail-title"></h4>
+                        <div id="character-detail-body"></div>
+                        <button type="button" id="regenerate-character-image-btn" class="action-button-info">Regenerate Image</button>
+                        <button type="button" id="close-character-detail" class="action-button-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+            <form id="story-creation-form" class="modern-form">
+                <!-- Step 0: Basics -->
+                <div id="step-0-basics" class="wizard-step-panel">
+                    <div>
+                        <label for="story-title">Story Title (Optional):</label>
+                        <input type="text" id="story-title" name="title" placeholder="Enter your story title or leave blank for AI to generate">
+                    </div>
+                    <div>
+                        <label for="story-genre">Genre:</label>
+                        <select id="story-genre" name="genre" required>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-outline">Story Outline:</label>
+                        <textarea id="story-outline" name="story_outline" rows="4" required></textarea>
+                    </div>
+                </div>
 
-                        <!-- Collapsible section for character details -->
-                        <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1">Show Details</button>
-                        <div id="char-details-1" class="character-details-fields" style="display:none;">
+                <!-- Step 1: Characters -->
+                <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
+                    <fieldset id="main-characters-fieldset" class="modern-fieldset">
+                        <legend>Main Characters (at least 1)</legend>
+                        <div class="character-entry">
                             <div>
-                                <label for="char-age-1">Age (optional):</label>
-                                <input type="number" id="char-age-1" name="char_age_1" class="char-age" placeholder="e.g., 30">
+                                <label for="char-name-1">Name:</label>
+                                <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
                             </div>
-                            <div>
-                                <label for="char-gender-1">Gender (optional):</label>
-                                <input type="text" id="char-gender-1" name="char_gender_1" class="char-gender" placeholder="e.g., female, male, non-binary">
+                            <!-- Collapsible section for character details -->
+                            <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1">Show Details</button>
+                            <div id="char-details-1" class="character-details-fields" style="display:none;">
+                                <div>
+                                    <label for="char-age-1">Age (optional):</label>
+                                    <input type="number" id="char-age-1" name="char_age_1" class="char-age" placeholder="e.g., 30">
+                                </div>
+                                <div>
+                                    <label for="char-gender-1">Gender (optional):</label>
+                                    <select id="char-gender-1" name="char_gender_1" class="char-gender">
+                                        <!-- Options populated dynamically -->
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="char-physical-appearance-1">Physical Appearance (optional):</label>
+                                    <textarea id="char-physical-appearance-1" name="char_physical_appearance_1" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
+                                </div>
+                                <div>
+                                    <label for="char-clothing-style-1">Clothing Style (optional):</label>
+                                    <input type="text" id="char-clothing-style-1" name="char_clothing_style_1" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
+                                </div>
+                                <div>
+                                    <label for="char-key-traits-1">Key Personality Traits (optional):</label>
+                                    <textarea id="char-key-traits-1" name="char_key_traits_1" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
+                                </div>
                             </div>
-                            <div>
-                                <label for="char-physical-appearance-1">Physical Appearance (optional):</label>
-                                <textarea id="char-physical-appearance-1" name="char_physical_appearance_1" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
+                        </div>
+                    </fieldset>
+                    <button type="button" id="add-character-button" class="action-button-info">Add Another Character</button>
+                    <!-- Show character library in this step -->
+                    <div id="character-library-panel" style="display:none;" aria-label="Character library">
+                        <div class="library-header">
+                            <h3>Your Characters</h3>
+                            <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
+                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
+                <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
                             </div>
-                            <div>
-                                <label for="char-clothing-style-1">Clothing Style (optional):</label>
-                                <input type="text" id="char-clothing-style-1" name="char_clothing_style_1" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
-                            </div>
-                            <div>
-                                <label for="char-key-traits-1">Key Personality Traits (optional):</label>
-                                <textarea id="char-key-traits-1" name="char_key_traits_1" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
+                        </div>
+            <p class="character-hint">Tip: Click a card to load its details into the form. Cmd/Ctrl+Click to multi-select for reuse.</p>
+                        <div id="character-list" class="character-grid" aria-live="polite"></div>
+                        <div id="character-pagination" class="pagination-controls"></div>
+                        <div id="character-detail-modal" class="modal" style="display:none;">
+                            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-detail-title">
+                                <h4 id="character-detail-title"></h4>
+                                <div id="character-detail-body"></div>
+                                <button type="button" id="regenerate-character-image-btn" class="action-button-info">Regenerate Image</button>
+                                <button type="button" id="close-character-detail" class="action-button-secondary">Close</button>
                             </div>
                         </div>
                     </div>
-                </fieldset>
-                <button type="button" id="add-character-button">Add Another Character</button>
-
-                <div>
-                    <label for="story-num-pages">Number of Pages:</label>
-                    <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required>
                 </div>
 
-                <div>
-                    <label for="story-tone">Tone (optional):</label>
-                    <input type="text" id="story-tone" name="tone" placeholder="e.g., humorous, serious, whimsical, dark">
+                <!-- Step 2: Options -->
+                <div id="step-2-options" class="wizard-step-panel" style="display:none;">
+                    <div>
+                        <label for="story-num-pages">Number of Pages:</label>
+                        <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required>
+                    </div>
+                    <div>
+                        <label for="story-tone">Tone (optional):</label>
+                        <input type="text" id="story-tone" name="tone" placeholder="e.g., humorous, serious, whimsical, dark">
+                    </div>
+                    <div>
+                        <label for="story-setting">Setting (optional):</label>
+                        <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
+                    </div>
+                    <div>
+                        <label for="story-image-style">Image Style:</label>
+                        <select id="story-image-style" name="image_style" required>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
+                        <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-text-density">Text Density:</label>
+                        <select id="story-text-density" name="text_density" required>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
                 </div>
 
-                <div>
-                    <label for="story-setting">Setting (optional):</label>
-                    <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
+                <!-- Step 3: Review -->
+                <div id="step-3-review" class="wizard-step-panel" style="display:none;">
+                    <h3>Review</h3>
+                    <div id="review-container"></div>
                 </div>
 
-                <div>
-                    <label for="story-image-style">Image Style:</label>
-                    <select id="story-image-style" name="image_style" required>
-                        <!-- Options will be populated dynamically -->
-                    </select>
+                <div class="wizard-nav" style="display:flex; gap:8px; margin-top:12px;">
+                    <button type="button" id="wizard-prev" class="action-button-secondary">Back</button>
+                    <button type="button" id="wizard-next" class="action-button-secondary">Next</button>
+                    <button type="button" id="save-draft-button" class="action-button-primary">Save Draft</button>
+                    <button type="submit" id="generate-story-button" class="action-button-info" style="display:none;">Generate Story</button>
                 </div>
-
-                <div>
-                    <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
-                    <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
-                        <!-- Options will be populated dynamically -->
-                    </select>
-                </div>
-
-                <div>
-                    <label for="story-text-density">Text Density:</label>
-                    <select id="story-text-density" name="text_density" required>
-                        <!-- Options will be populated dynamically -->
-                    </select>
-                </div>
-
-                <button type="button" id="save-draft-button">Save Draft</button>
-                <button type="submit" id="generate-story-button">Generate Story</button>
             </form>
             <div id="generation-progress-area" style="display:none; margin-top: 20px;">
                 <h3>Generating Story...</h3>
@@ -159,12 +235,79 @@
             </div>
         </section>
 
+        <!-- Characters main-menu section (stub) -->
+        <section id="characters-section" style="display:none;">
+            <h2>Characters</h2>
+            <div class="library-header">
+                <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+                    <input type="text" id="characters-page-search" placeholder="Search characters" aria-label="Search characters">
+                    <button type="button" id="characters-page-sync" class="lib-action-btn action-button-info">Sync from stories</button>
+                    <button type="button" id="characters-page-import" class="lib-action-btn action-button-info">Import from JSON</button>
+                </div>
+            </div>
+            <div id="characters-page-list" class="character-grid" aria-live="polite"></div>
+            <div id="characters-page-pagination" class="pagination-controls"></div>
+            <!-- Modal for editing/duplicating a character -->
+            <div id="char-modal-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+            <div id="char-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="char-modal-title">
+                <div class="modal-content" data-status-region="true">
+                    <div class="modal-header">
+                        <h3 id="char-modal-title" style="margin:0;">Edit Character</h3>
+                        <button type="button" id="char-modal-close" class="action-button-secondary">Close</button>
+                    </div>
+                    <div class="modal-body">
+                        <img id="char-modal-image" class="detail-image" alt="Character image" style="display:none;" />
+                        <div class="modern-fieldset">
+                            <div>
+                                <label for="modal-char-name">Name</label>
+                                <input id="modal-char-name" type="text" />
+                            </div>
+                            <div>
+                                <label for="modal-char-age">Age</label>
+                                <input id="modal-char-age" type="number" min="0" />
+                            </div>
+                            <div>
+                                <label for="modal-char-gender">Gender</label>
+                                <select id="modal-char-gender">
+                                    <option value="">Select a gender</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="modal-char-desc">Description</label>
+                                <textarea id="modal-char-desc" rows="3"></textarea>
+                            </div>
+                            <div>
+                                <label for="modal-char-clothing">Clothing style</label>
+                                <input id="modal-char-clothing" type="text" />
+                            </div>
+                            <div>
+                                <label for="modal-char-traits">Key traits</label>
+                                <input id="modal-char-traits" type="text" />
+                            </div>
+                            <div>
+                                <label for="modal-char-style">Image style</label>
+                                <select id="modal-char-style">
+                                    <option value="">Select an image style</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" id="char-modal-regenerate" class="action-button-info">Regenerate</button>
+                        <button type="button" id="char-modal-duplicate" class="action-button-primary">Save as new</button>
+                        <button type="button" id="char-modal-save" class="action-button-primary">Save</button>
+                    </div>
+                    <div id="char-modal-status" class="inline-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+                </div>
+            </div>
+        </section>
+
         <section id="story-preview-section" style="display:none;">
             <h2>Story Preview</h2>
             <div id="story-preview-content">
                 <!-- Generated story pages will be displayed here -->
             </div>
-            <button id="export-pdf-button" style="display:none;">Export as PDF</button>
+            <button id="export-pdf-button" class="action-button-info" style="display:none;">Export as PDF</button>
         </section>
 
         <section id="browse-stories-section" style="display:none;">
@@ -174,10 +317,16 @@
             </div>
         </section>
         
+        <!-- Persistent message box (bottom of content) -->
         <section id="message-area">
             <p id="api-message"></p>
-            <div id="loading-spinner" style="display:none;">Loading...</div> <!-- Spinner element -->
         </section>
+
+        <!-- Snackbar (global, fixed) -->
+    <div id="snackbar" class="snackbar" role="status" aria-live="polite" style="display:none;"></div>
+
+    <!-- Toasts -->
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
         <!-- Admin Panel Section -->
         <div id="adminPanelContainer" style="display: none; margin-top: 20px;">
@@ -221,6 +370,6 @@
         <p>&copy; 2025 Story Generator</p>
     </footer>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=20250820.3"></script>
 </body>
 </html>

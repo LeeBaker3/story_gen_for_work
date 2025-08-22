@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from . import schemas
 from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
-from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask
+from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
 from passlib.context import CryptContext
 from typing import List, Optional
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
@@ -674,3 +674,175 @@ def update_story_generated_at(db: Session, story_id: int) -> Optional[Story]:
         db.refresh(story)
         return story
     return None
+
+
+# --- Characters Domain (Phase 2) ---
+
+
+def create_character(db: Session, user_id: int, payload: schemas.CharacterCreate) -> Character:
+    ch = Character(
+        user_id=user_id,
+        name=payload.name,
+        description=payload.description,
+        age=payload.age,
+        gender=payload.gender,
+        clothing_style=payload.clothing_style,
+        key_traits=payload.key_traits,
+        image_style=payload.image_style,
+    )
+    db.add(ch)
+    db.commit()
+    db.refresh(ch)
+    return ch
+
+
+def get_character_by_name_ci(db: Session, user_id: int, name: str) -> Optional[Character]:
+    """Find a character by case-insensitive name for a given user."""
+    if not name:
+        return None
+    return db.query(Character).filter(
+        Character.user_id == user_id,
+        Character.name.ilike(name)
+    ).first()
+
+
+def get_character(db: Session, user_id: int, char_id: int) -> Optional[Character]:
+    return db.query(Character).filter(Character.id == char_id, Character.user_id == user_id).first()
+
+
+def list_characters(db: Session, user_id: int, q: Optional[str] = None, page: int = 1, page_size: int = 20):
+    query = db.query(Character).filter(Character.user_id == user_id)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(Character.name.ilike(like))
+    total = query.count()
+    items = query.order_by(Character.updated_at.desc()).offset(
+        (page - 1) * page_size).limit(page_size).all()
+    return total, items
+
+
+def update_character(db: Session, user_id: int, char_id: int, payload: schemas.CharacterUpdate) -> Optional[Character]:
+    ch = get_character(db, user_id, char_id)
+    if not ch:
+        return None
+    data = payload.model_dump(exclude_unset=True)
+    for k, v in data.items():
+        setattr(ch, k, v)
+    ch.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(ch)
+    return ch
+
+
+def delete_character(db: Session, user_id: int, char_id: int) -> bool:
+    ch = get_character(db, user_id, char_id)
+    if not ch:
+        return False
+    db.delete(ch)
+    db.commit()
+    return True
+
+
+def add_character_image(db: Session, user_id: int, char_id: int, file_path: str, prompt_used: Optional[str], image_style: Optional[str]) -> Optional[CharacterImage]:
+    ch = get_character(db, user_id, char_id)
+    if not ch:
+        return None
+    img = CharacterImage(character_id=char_id, file_path=file_path,
+                         prompt_used=prompt_used, image_style=image_style)
+    db.add(img)
+    db.commit()
+    db.refresh(img)
+    # set current image
+    ch.current_image_id = img.id
+    ch.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(ch)
+    return img
+
+
+def upsert_character_from_detail(db: Session, user_id: int, char_detail: dict) -> Character:
+    """
+    Create or update a Character for the given user based on a character detail dict
+    coming from story input or generation. If a reference image path is present,
+    attach it as the current CharacterImage.
+
+    Expected keys in char_detail: name (required), description, age, gender,
+    clothing_style, key_traits, image_style (optional), reference_image_path (optional).
+    """
+    name = (char_detail.get('name') or '').strip()
+    if not name:
+        raise ValueError("Character detail missing required 'name'.")
+
+    # Try to find existing character by name (case-insensitive) and user
+    existing = db.query(Character).filter(
+        Character.user_id == user_id,
+        Character.name.ilike(name)
+    ).first()
+
+    if existing:
+        # Update fields if provided
+        for key in ['description', 'age', 'gender', 'clothing_style', 'key_traits', 'image_style']:
+            if key in char_detail and char_detail[key] is not None:
+                setattr(existing, key, char_detail[key])
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing)
+        ch = existing
+    else:
+        ch = Character(
+            user_id=user_id,
+            name=name,
+            description=char_detail.get('description'),
+            age=char_detail.get('age'),
+            gender=char_detail.get('gender'),
+            clothing_style=char_detail.get('clothing_style'),
+            key_traits=char_detail.get('key_traits'),
+            image_style=char_detail.get('image_style'),
+        )
+        db.add(ch)
+        db.commit()
+        db.refresh(ch)
+
+    # Attach reference image if provided
+    ref_path = char_detail.get('reference_image_path')
+    if ref_path:
+        # Avoid duplicating if current image already points to this path
+        already_has = False
+        if ch.current_image:
+            try:
+                already_has = (ch.current_image.file_path == ref_path)
+            except Exception:
+                already_has = False
+        if not already_has:
+            add_character_image(db, user_id, ch.id, ref_path, prompt_used=None,
+                                image_style=char_detail.get('image_style'))
+
+    return ch
+
+
+def upsert_characters_from_user_stories(db: Session, user_id: int, include_drafts: bool = True) -> int:
+    """
+    Scan all stories for the given user and upsert characters from their main_characters
+    into the Characters library. Returns the number of upsert attempts performed.
+    """
+    query = db.query(Story).filter(Story.owner_id == user_id)
+    if not include_drafts:
+        query = query.filter(Story.is_draft == False)
+    stories = query.all()
+    count = 0
+    for s in stories:
+        try:
+            chars = s.main_characters or []
+            if isinstance(chars, list):
+                for ch in chars:
+                    try:
+                        # ch is expected to be a dict already (json stored)
+                        upsert_character_from_detail(db, user_id, ch)
+                        count += 1
+                    except Exception:
+                        # continue on individual character failures
+                        pass
+        except Exception:
+            # continue on story failures
+            pass
+    return count

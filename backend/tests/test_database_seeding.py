@@ -57,9 +57,9 @@ def test_seed_database_on_empty_db(db_session: Session):
 
     # Now, check if the data was seeded correctly
     genres_count = db_session.query(
-        DynamicListItem).filter_by(list_name='story_genres').count()
+        DynamicListItem).filter_by(list_name='genres').count()
     image_styles_count = db_session.query(
-        DynamicListItem).filter_by(list_name='image_styles_app').count()
+        DynamicListItem).filter_by(list_name='image_styles').count()
 
     assert genres_count > 5
     assert image_styles_count > 5

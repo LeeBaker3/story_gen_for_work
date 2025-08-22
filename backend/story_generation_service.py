@@ -48,6 +48,22 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         app_logger.info(
             f"Completed character image generation for task_id: {task_id}. Details: {character_details_map}")
 
+        # Upsert generated/merged character details into user's library for reuse
+        try:
+            upserted = 0
+            for _, ch in character_details_map.items():
+                try:
+                    crud.upsert_character_from_detail(db, user_id, ch)
+                    upserted += 1
+                except Exception as e:
+                    error_logger.error(
+                        f"Upsert of character '{ch.get('name')}' failed during background task {task_id}: {e}")
+            app_logger.info(
+                f"Upserted {upserted} character(s) into user {user_id}'s library during background generation.")
+        except Exception as e:
+            error_logger.error(
+                f"Bulk upsert of characters during background generation failed for task {task_id}: {e}")
+
         # Step 2: Generate Story Content
         crud.update_story_generation_task_progress(
             db, task_id, 30, schemas.GenerationTaskStep.GENERATING_TEXT)
@@ -142,6 +158,35 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             db, task_id, 95, schemas.GenerationTaskStep.FINALIZING)
         crud.update_story_with_generated_content(db, story_id, story_content)
         app_logger.info(f"Saved story {story_id} to the database.")
+
+        # Upsert characters from the generated content into the user's library
+        try:
+            chars = story_content.get('Main_characters') or story_content.get(
+                'main_characters') or []
+            upserted = 0
+            for ch in chars:
+                try:
+                    # Normalize keys to expected names
+                    char_detail = {
+                        'name': ch.get('name') or ch.get('Name'),
+                        'description': ch.get('description') or ch.get('Description'),
+                        'age': ch.get('age') or ch.get('Age'),
+                        'gender': ch.get('gender') or ch.get('Gender'),
+                        'clothing_style': ch.get('clothing_style') or ch.get('Clothing_style'),
+                        'key_traits': ch.get('key_traits') or ch.get('Key_traits'),
+                        'image_style': ch.get('image_style') or ch.get('Image_style'),
+                        'reference_image_path': ch.get('reference_image_path') or ch.get('Reference_image_path'),
+                    }
+                    crud.upsert_character_from_detail(db, user_id, char_detail)
+                    upserted += 1
+                except Exception as e:
+                    error_logger.error(
+                        f"Character upsert failure during background task for story {story_id}: {e}")
+            app_logger.info(
+                f"Upserted {upserted} character(s) into user {user_id}'s library from generated story {story_id}.")
+        except Exception as e:
+            error_logger.error(
+                f"Failed bulk upsert of characters for story {story_id}: {e}")
 
         # Final Step: Update task status to COMPLETED (even if some images failed; text is generated)
         crud.update_story_generation_task(

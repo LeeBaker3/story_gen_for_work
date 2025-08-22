@@ -13,16 +13,48 @@ html {
     line-height: 1.6;
 }
 
+/* Match sticky glass header look from main app */
 header {
-    background-color: #1F1F1F;
-    /* Slightly lighter dark shade for header from main app */
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: linear-gradient(180deg, rgba(31, 31, 31, 0.72), rgba(31, 31, 31, 0.56));
     color: #FFFFFF;
     padding: 1.5rem 1rem;
-    /* Match main app header padding */
     text-align: center;
-    /* Ensures h1 inside is centered if it's block/inline-block */
-    border-bottom: 1px solid #333;
-    /* Match main app header border */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: saturate(1.2) blur(10px);
+    -webkit-backdrop-filter: saturate(1.2) blur(10px);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #00A9FF, #8b5cf6, #00A9FF);
+    background-size: 200% 100%;
+    animation: adminHeaderAccent 6s linear infinite;
+    opacity: .9;
+}
+
+@keyframes adminHeaderAccent {
+    0% {
+        background-position: 0% 50%
+    }
+
+    100% {
+        background-position: 200% 50%
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    header::after {
+        animation: none;
+    }
 }
 
 /* This rule targets the h1 specifically in admin.html if it's inside the header */
@@ -231,8 +263,8 @@ th {
 
 button,
 .admin-button {
-    background-color: #007bff;
-    /* Primary Blue from main app */
+    background-color: #6c757d;
+    /* Default Grey for non-destructive actions */
     color: #FFFFFF;
     border: none;
     padding: 0.75rem 1.5rem;
@@ -251,8 +283,8 @@ button,
 
 button:hover,
 .admin-button:hover {
-    background-color: #0056b3;
-    /* Darker shade on hover from main app */
+    background-color: #545b62;
+    /* Darker grey on hover */
     transform: translateY(-2px);
     /* Match main app */
 }

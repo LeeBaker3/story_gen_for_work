@@ -1,0 +1,22 @@
+[
+    {
+        "name": "Ayla Starwind",
+        "description": "Adventurous pilot with auburn hair and a mischievous grin.",
+        "age": 17,
+        "gender": "female",
+        "clothing_style": "retro flight jacket, utility boots",
+        "key_traits": "brave, curious, loyal",
+        "image_style": "Cartoon",
+        "generate_image": false
+    },
+    {
+        "name": "Professor Nimbus",
+        "description": "Grey‑bearded inventor, wire‑rim glasses, always a little sooty.",
+        "age": 63,
+        "gender": "male",
+        "clothing_style": "tweed vest, rolled‑up sleeves",
+        "key_traits": "absent‑minded, kind",
+        "image_style": "Watercolor",
+        "generate_image": false
+    }
+]

@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const navLoginSignup = document.getElementById("nav-login-signup");
     const navCreateStory = document.getElementById("nav-create-story");
     const navBrowseStories = document.getElementById("nav-browse-stories");
+    const navCharacters = document.getElementById("nav-characters");
     const navLogout = document.getElementById("nav-logout");
     const navAdminPanel = document.getElementById("nav-admin-panel");
 
@@ -27,8 +28,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const browseStoriesSection = document.getElementById(
         "browse-stories-section",
     );
+    const charactersSection = document.getElementById("characters-section");
     const adminPanelContainer = document.getElementById("adminPanelContainer"); // ENSURED DECLARATION
-    const messageArea = document.getElementById("api-message");
+    const snackbarEl = document.getElementById("snackbar");
 
     // Forms
     const loginForm = document.getElementById("login-form");
@@ -64,6 +66,49 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminUserTableBody = document.getElementById("adminUserTableBody"); // ENSURED DECLARATION (MOVED HERE)
 
     let characterCount = 1;
+    // Which character form slot is currently active (focused) for library loading
+    let activeCharacterIndex = 1;
+
+    // --- Character Library State (Phase 3) ---
+    const characterLibraryState = {
+        page: 1,
+        pageSize: 12,
+        q: '',
+        total: 0,
+        items: [],
+        selectedIds: new Set(),
+    };
+
+    function getLibraryEls() {
+        const stepPanel = document.getElementById('step-1-characters');
+        if (!stepPanel) return {};
+        return {
+            panel: stepPanel.querySelector('#character-library-panel'),
+            search: stepPanel.querySelector('#character-search'),
+            list: stepPanel.querySelector('#character-list'),
+            pagination: stepPanel.querySelector('#character-pagination'),
+            detailModal: stepPanel.querySelector('#character-detail-modal'),
+        };
+    }
+
+    function debounce(fn, wait = 350) {
+        let t;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn(...args), wait);
+        };
+    }
+
+    // Simple HTML escape to prevent accidental HTML injection in names
+    function escapeHTML(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     // Spinner Elements
     const spinner = document.getElementById("spinner");
@@ -112,14 +157,676 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function populateAllDropdowns() {
         console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
-        populateDropdown("story-genre", "story_genres");
-        populateDropdown("story-image-style", "image_styles_app");
+        // Phase 2 rename alignment: list names are now 'genres' and 'image_styles'
+        populateDropdown("story-genre", "genres");
+        populateDropdown("story-image-style", "image_styles");
         populateDropdown("story-word-to-picture-ratio", "word_to_picture_ratio");
         populateDropdown("story-text-density", "text_density");
+        // Populate first character gender if present
+        populateDropdown("char-gender-1", "genders");
     }
 
+    // Phase 3 Wizard navigation
+    let wizardStep = 0; // 0: basics, 1: characters, 2: options, 3: review
+    const stepPanels = [
+        document.getElementById('step-0-basics'),
+        document.getElementById('step-1-characters'),
+        document.getElementById('step-2-options'),
+        document.getElementById('step-3-review'),
+    ];
+    const stepDots = Array.from(document.querySelectorAll('#wizard-steps .wizard-step'));
+    const btnPrev = document.getElementById('wizard-prev');
+    const btnNext = document.getElementById('wizard-next');
 
-    // --- RESET FUNCTION (MOVED HERE) ---
+    function updateStepUI() {
+        // Show only current panel
+        stepPanels.forEach((el, i) => {
+            if (el) el.style.display = i === wizardStep ? 'block' : 'none';
+        });
+        // Step indicators
+        stepDots.forEach((dot, i) => {
+            dot.classList.toggle('active', i === wizardStep);
+            dot.setAttribute('aria-current', i === wizardStep ? 'step' : 'false');
+        });
+        // Nav buttons
+        if (btnPrev) btnPrev.disabled = wizardStep === 0;
+        if (btnNext) btnNext.style.display = wizardStep < 3 ? 'inline-block' : 'none';
+        if (generateStoryButton) generateStoryButton.style.display = wizardStep === 3 ? 'inline-block' : 'none';
+        // If on review, populate summary
+        if (wizardStep === 3) populateReview();
+        // Ensure character library is visible in Characters step and initialized once
+        if (wizardStep === 1) {
+            initCharacterLibraryUI();
+        } else {
+            const { panel } = getLibraryEls();
+            if (panel) panel.style.display = 'none';
+        }
+    }
+
+    function validateStep(stepIdx) {
+        // Minimal validation per step
+        if (stepIdx === 0) {
+            const genre = document.getElementById('story-genre')?.value;
+            const outline = document.getElementById('story-outline')?.value?.trim();
+            if (!genre || !outline) {
+                displayMessage('Please select a Genre and provide a Story Outline to continue.', 'warning');
+                return false;
+            }
+        } else if (stepIdx === 1) {
+            // Require at least one character name or at least one selected existing character (future)
+            const names = Array.from(document.querySelectorAll('#main-characters-fieldset .char-name')).map(i => i.value.trim()).filter(Boolean);
+            if (names.length === 0) {
+                displayMessage('Add at least one character name.', 'warning');
+                return false;
+            }
+        } else if (stepIdx === 2) {
+            const numPages = parseInt(document.getElementById('story-num-pages')?.value || '0', 10);
+            const imgStyle = document.getElementById('story-image-style')?.value;
+            const ratio = document.getElementById('story-word-to-picture-ratio')?.value;
+            const density = document.getElementById('story-text-density')?.value;
+            if (!numPages || !imgStyle || !ratio || !density) {
+                displayMessage('Please complete options: pages, image style, ratio, and text density.', 'warning');
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function goToStep(step) {
+        if (step < 0 || step > 3) return;
+        wizardStep = step;
+        updateStepUI();
+    }
+
+    // --- Characters Main Menu (stub) ---
+    const charactersPageState = { page: 1, pageSize: 12, q: '', total: 0, items: [] };
+
+    async function fetchCharactersPage() {
+        const params = new URLSearchParams({ page: String(charactersPageState.page), page_size: String(charactersPageState.pageSize) });
+        if (charactersPageState.q) params.set('q', charactersPageState.q);
+        const data = await apiRequest(`/api/v1/characters?${params.toString()}`);
+        charactersPageState.total = data.total;
+        charactersPageState.items = data.items || [];
+        renderCharactersPageList();
+        renderCharactersPagePagination();
+    }
+
+    function renderCharactersPageList() {
+        const listEl = document.getElementById('characters-page-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        charactersPageState.items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'character-card';
+            card.innerHTML = `
+                <div class="thumb">${item.thumbnail_path ? `<img src="/static_content/${item.thumbnail_path}" alt="${escapeHTML(item.name)} thumbnail">` : '<div class="no-thumb">No image</div>'}</div>
+                <div class="meta">
+                  <div class="name" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <span>${escapeHTML(item.name)}</span>
+                    <span style="opacity:.7;font-size:.8em;">#${item.id}</span>
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="action-button-info" data-action="regen" data-id="${item.id}">Regenerate</button>
+                    <button type="button" class="action-button-danger" data-action="delete" data-id="${item.id}">Delete</button>
+                  </div>
+                </div>
+            `;
+            listEl.appendChild(card);
+
+            // Clicking the card (but not action buttons) opens edit modal
+            card.addEventListener('click', async (e) => {
+                const target = e.target;
+                if (target.closest('button[data-action]')) return; // ignore action buttons
+                // If a modal is open (or closing), ignore card clicks to avoid click-through reopen
+                const modalEl = document.getElementById('char-modal');
+                if (modalEl && modalEl.classList.contains('open')) return;
+                if (document.body.dataset.charModalState === 'closing') return;
+                await openCharacterModal(item.id);
+            });
+        });
+
+        // Wire per-card actions
+        listEl.querySelectorAll('button[data-action="regen"]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = Number(e.currentTarget.getAttribute('data-id'));
+                // Open modal to edit/regenerate instead of using prompts
+                await openCharacterModal(id);
+            });
+        });
+        listEl.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = Number(e.currentTarget.getAttribute('data-id'));
+                if (!confirm('Delete this character? This action cannot be undone.')) return;
+                try {
+                    await apiRequest(`/api/v1/characters/${id}`, 'DELETE');
+                    await fetchCharactersPage();
+                    displayMessage('Character deleted.', 'success');
+                } catch (err) {
+                    // apiRequest shows errors
+                }
+            });
+        });
+    }
+
+    function renderCharactersPagePagination() {
+        const pagEl = document.getElementById('characters-page-pagination');
+        if (!pagEl) return;
+        const totalPages = Math.max(1, Math.ceil((charactersPageState.total || 0) / charactersPageState.pageSize));
+        const cur = charactersPageState.page;
+        pagEl.innerHTML = `
+                <button id="characters-page-prev" class="action-button-secondary" ${cur <= 1 ? 'disabled' : ''}>Prev</button>
+            <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
+                <button id="characters-page-next" class="action-button-secondary" ${cur >= totalPages ? 'disabled' : ''}>Next</button>
+        `;
+        const prev = document.getElementById('characters-page-prev');
+        const next = document.getElementById('characters-page-next');
+        if (prev) prev.addEventListener('click', async () => {
+            if (charactersPageState.page > 1) {
+                charactersPageState.page -= 1;
+                await fetchCharactersPage();
+            }
+        });
+        if (next) next.addEventListener('click', async () => {
+            const totalPages = Math.max(1, Math.ceil((charactersPageState.total || 0) / charactersPageState.pageSize));
+            if (charactersPageState.page < totalPages) {
+                charactersPageState.page += 1;
+                await fetchCharactersPage();
+            }
+        });
+    }
+
+    function showCharactersPage() {
+        hideAllSections();
+        if (charactersSection) {
+            charactersSection.style.display = 'block';
+            fetchCharactersPage();
+        }
+    }
+
+    // --- Characters Page: Edit/Duplicate Modal ---
+    // One-time wire of modal buttons to ensure they respond
+    (function initCharactersModalWiring() {
+        const backdrop = document.getElementById('char-modal-backdrop');
+        const modal = document.getElementById('char-modal');
+        const closeBtn = document.getElementById('char-modal-close');
+        const saveBtn = document.getElementById('char-modal-save');
+        const dupBtn = document.getElementById('char-modal-duplicate');
+        const regenBtn = document.getElementById('char-modal-regenerate');
+        if (!modal || !backdrop) return;
+
+        function closeModal() {
+            document.body.dataset.charModalState = 'closing';
+            setTimeout(() => {
+                backdrop.classList.remove('open');
+                modal.classList.remove('open');
+                delete document.body.dataset.charModalState;
+            }, 50);
+        }
+
+        if (closeBtn) closeBtn.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); closeModal(); });
+        backdrop?.addEventListener('click', (ev) => { ev.stopPropagation(); closeModal(); });
+        modal?.addEventListener('click', (ev) => {
+            // Clicks directly on modal empty area (if any) should close
+            if (ev.target === modal) { ev.stopPropagation(); closeModal(); }
+        });
+        window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && modal.classList.contains('open')) closeModal(); }, true);
+
+        async function collectModalPayload() {
+            const nameEl = document.getElementById('modal-char-name');
+            const ageEl = document.getElementById('modal-char-age');
+            const genderEl = document.getElementById('modal-char-gender');
+            const descEl = document.getElementById('modal-char-desc');
+            const clothEl = document.getElementById('modal-char-clothing');
+            const traitsEl = document.getElementById('modal-char-traits');
+            const styleEl = document.getElementById('modal-char-style');
+            return {
+                name: nameEl?.value?.trim() || '',
+                age: ageEl?.value ? Number(ageEl.value) : null,
+                gender: genderEl?.value || null,
+                description: descEl?.value?.trim() || null,
+                clothing_style: clothEl?.value?.trim() || null,
+                key_traits: traitsEl?.value?.trim() || null,
+                image_style: styleEl?.value || null,
+            };
+        }
+
+        // Save uses data-id on modal root to know which character to update
+        if (saveBtn) saveBtn.addEventListener('click', async (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            const modalEl = document.getElementById('char-modal');
+            const statusEl = document.getElementById('char-modal-status');
+            const actionsEl = modalEl?.querySelector('.modal-actions');
+            const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
+            function setBusy(msg) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="spinner" aria-hidden="true"></span>${String(msg)}`;
+                    statusEl.className = 'inline-status inline-status--info';
+                    statusEl.style.display = '';
+                    try { statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { }
+                }
+                const region = statusEl?.closest('[data-status-region]');
+                if (region) region.setAttribute('aria-busy', 'true');
+                actionButtons.forEach(b => b.disabled = true);
+            }
+            function setDone(msg, type = 'success') {
+                if (statusEl) {
+                    statusEl.textContent = String(msg);
+                    statusEl.className = `inline-status inline-status--${type}`;
+                    statusEl.style.display = '';
+                }
+                const region = statusEl?.closest('[data-status-region]');
+                if (region) region.setAttribute('aria-busy', 'false');
+                actionButtons.forEach(b => b.disabled = false);
+            }
+            try {
+                const id = document.getElementById('char-modal')?.getAttribute('data-id');
+                if (!id) return;
+                setBusy('Saving changes…');
+                const payload = await collectModalPayload();
+                await apiRequest(`/api/v1/characters/${id}`, 'PUT', payload);
+                await fetchCharactersPage();
+                setDone('Character updated.', 'success');
+                // Keep modal open for further edits
+            } catch (e) {
+                setDone('Failed to save changes.', 'error');
+            }
+        });
+        if (dupBtn) dupBtn.addEventListener('click', async (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            const modalEl = document.getElementById('char-modal');
+            const statusEl = document.getElementById('char-modal-status');
+            const actionsEl = modalEl?.querySelector('.modal-actions');
+            const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
+            function setBusy(msg) {
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class=\"spinner\" aria-hidden=\"true\"></span>${String(msg)}`;
+                    statusEl.className = 'inline-status inline-status--info';
+                    statusEl.style.display = '';
+                    try { statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { }
+                }
+                const region = statusEl?.closest('[data-status-region]');
+                if (region) region.setAttribute('aria-busy', 'true');
+                actionButtons.forEach(b => b.disabled = true);
+            }
+            function setDone(msg, type = 'success') {
+                if (statusEl) {
+                    statusEl.textContent = String(msg);
+                    statusEl.className = `inline-status inline-status--${type}`;
+                    statusEl.style.display = '';
+                }
+                const region = statusEl?.closest('[data-status-region]');
+                if (region) region.setAttribute('aria-busy', 'false');
+                actionButtons.forEach(b => b.disabled = false);
+            }
+            try {
+                setBusy('Creating a new character…');
+                const payload = await collectModalPayload();
+                await apiRequest('/api/v1/characters/', 'POST', { ...payload, generate_image: false });
+                await fetchCharactersPage();
+                setDone('Character created.', 'success');
+            } catch (e) {
+                setDone('Failed to create character.', 'error');
+            }
+        });
+
+        if (regenBtn) regenBtn.addEventListener('click', async (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            const id = document.getElementById('char-modal')?.getAttribute('data-id');
+            if (!id) return;
+            try {
+                const payload = await collectModalPayload();
+                // Inline modal status + disable controls during regeneration
+                const modalEl = document.getElementById('char-modal');
+                const statusEl = document.getElementById('char-modal-status');
+                const imgEl = document.getElementById('char-modal-image');
+                const actionsEl = modalEl?.querySelector('.modal-actions');
+                const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
+
+                function setModalBusy(msg) {
+                    if (statusEl) {
+                        statusEl.innerHTML = `<span class="spinner" aria-hidden="true"></span>${String(msg)}`;
+                        statusEl.className = 'inline-status inline-status--info';
+                        statusEl.style.display = '';
+                        // Ensure the status is visible near the buttons
+                        try { statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { }
+                    }
+                    const region = statusEl?.closest('[data-status-region]');
+                    if (region) region.setAttribute('aria-busy', 'true');
+                    actionButtons.forEach(b => b.disabled = true);
+                }
+                function setModalDone(msg, type = 'success') {
+                    if (statusEl) {
+                        statusEl.textContent = String(msg);
+                        statusEl.className = `inline-status inline-status--${type}`;
+                        statusEl.style.display = '';
+                        try { statusEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { }
+                    }
+                    const region = statusEl?.closest('[data-status-region]');
+                    if (region) region.setAttribute('aria-busy', 'false');
+                    actionButtons.forEach(b => b.disabled = false);
+                }
+
+                setModalBusy('Regenerating image… This may take a moment.');
+                await apiRequest(`/api/v1/characters/${id}/regenerate-image`, 'POST', {
+                    description: payload.description || undefined,
+                    image_style: payload.image_style || undefined
+                });
+                // Refresh list/grid
+                await fetchCharactersPage();
+                // Update modal preview image
+                try {
+                    const detail = await apiRequest(`/api/v1/characters/${id}`);
+                    if (imgEl) {
+                        const path = detail?.current_image?.file_path || detail?.thumbnail_path || null;
+                        if (path) {
+                            imgEl.src = `/static_content/${path}`;
+                            imgEl.style.display = '';
+                        }
+                    }
+                } catch { }
+                setModalDone('Character image regenerated.', 'success');
+            } catch (e) {
+                // Inline error + re-enable buttons; avoid snackbar behind modal
+                const modalEl = document.getElementById('char-modal');
+                const statusEl = document.getElementById('char-modal-status');
+                const actionsEl = modalEl?.querySelector('.modal-actions');
+                const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
+                if (statusEl) {
+                    statusEl.textContent = 'Failed to regenerate image.';
+                    statusEl.className = 'inline-status inline-status--error';
+                    statusEl.style.display = '';
+                }
+                actionButtons.forEach(b => b.disabled = false);
+            }
+        });
+    })();
+    async function openCharacterModal(id) {
+        let detail;
+        try {
+            detail = await apiRequest(`/api/v1/characters/${id}`);
+        } catch (e) {
+            displayMessage('Failed to load character.', 'error');
+            return;
+        }
+        const backdrop = document.getElementById('char-modal-backdrop');
+        const modal = document.getElementById('char-modal');
+        if (!modal || !backdrop) return;
+        // Reset inline status on open
+        const inlineStatus = document.getElementById('char-modal-status');
+        if (inlineStatus) {
+            inlineStatus.textContent = '';
+            inlineStatus.style.display = 'none';
+            inlineStatus.className = 'inline-status';
+        }
+        modal.setAttribute('data-id', String(detail.id));
+        const title = document.getElementById('char-modal-title');
+        const nameEl = document.getElementById('modal-char-name');
+        const ageEl = document.getElementById('modal-char-age');
+        const genderEl = document.getElementById('modal-char-gender');
+        const descEl = document.getElementById('modal-char-desc');
+        const clothEl = document.getElementById('modal-char-clothing');
+        const traitsEl = document.getElementById('modal-char-traits');
+        const styleEl = document.getElementById('modal-char-style');
+        const imgEl = document.getElementById('char-modal-image');
+
+        if (title) title.textContent = `Edit Character #${detail.id}`;
+        if (nameEl) nameEl.value = detail.name || '';
+        if (ageEl) ageEl.value = detail.age != null ? detail.age : '';
+        // Populate genders then preselect current value if present
+        try {
+            await populateDropdown('modal-char-gender', 'genders');
+            if (genderEl && detail.gender) {
+                const options = Array.from(genderEl.options).map(o => o.value.toLowerCase());
+                const current = String(detail.gender).toLowerCase();
+                if (options.includes(current)) {
+                    genderEl.value = Array.from(genderEl.options).find(o => o.value.toLowerCase() === current).value;
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = detail.gender;
+                    opt.textContent = detail.gender;
+                    genderEl.appendChild(opt);
+                    genderEl.value = detail.gender;
+                }
+            }
+        } catch (e) {
+            if (genderEl) genderEl.value = detail.gender || '';
+        }
+        if (descEl) descEl.value = detail.description || detail.physical_appearance || '';
+        if (clothEl) clothEl.value = detail.clothing_style || '';
+        if (traitsEl) traitsEl.value = detail.key_traits || '';
+        // Populate image styles from dynamic list, then select current value if present
+        try {
+            await populateDropdown('modal-char-style', 'image_styles');
+            if (styleEl && detail.image_style) {
+                const options = Array.from(styleEl.options).map(o => o.value.toLowerCase());
+                const current = String(detail.image_style).toLowerCase();
+                if (options.includes(current)) {
+                    styleEl.value = Array.from(styleEl.options).find(o => o.value.toLowerCase() === current).value;
+                } else {
+                    // ensure the existing value is selectable if not in list
+                    const opt = document.createElement('option');
+                    opt.value = detail.image_style;
+                    opt.textContent = detail.image_style;
+                    styleEl.appendChild(opt);
+                    styleEl.value = detail.image_style;
+                }
+            }
+        } catch (e) {
+            // If lists fail, keep whatever is there
+        }
+
+        // Show current image preview if available
+        if (imgEl) {
+            const path = detail?.current_image?.file_path || detail?.thumbnail_path || null;
+            if (path) {
+                imgEl.src = `/static_content/${path}`;
+                imgEl.style.display = '';
+            } else {
+                imgEl.style.display = 'none';
+            }
+        }
+
+        function closeModal() {
+            // Mark as closing to avoid click-through triggering card clicks beneath
+            document.body.dataset.charModalState = 'closing';
+            // Small timeout lets current click sequence finish before removing overlay
+            setTimeout(() => {
+                backdrop.classList.remove('open');
+                modal.classList.remove('open');
+                delete document.body.dataset.charModalState;
+            }, 50);
+        }
+
+        // Opening the modal: add open classes
+        backdrop.classList.add('open');
+        modal.classList.add('open');
+    }
+
+    function hideAllSections() {
+        [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection, charactersSection].forEach(sec => {
+            if (sec) sec.style.display = 'none';
+        });
+    }
+
+    if (navCharacters) {
+        navCharacters.addEventListener('click', () => {
+            showCharactersPage();
+        });
+    }
+
+    const charactersPageSearch = document.getElementById('characters-page-search');
+    if (charactersPageSearch) {
+        charactersPageSearch.addEventListener('input', debounce(() => {
+            charactersPageState.q = charactersPageSearch.value.trim();
+            charactersPageState.page = 1;
+            fetchCharactersPage();
+        }, 300));
+    }
+
+    // Characters page: Sync from stories
+    const charactersPageSyncBtn = document.getElementById('characters-page-sync');
+    if (charactersPageSyncBtn) {
+        charactersPageSyncBtn.addEventListener('click', async () => {
+            try {
+                displayMessage('Syncing characters from your stories...', 'info');
+                await apiRequest('/stories/backfill-characters', 'POST', { include_drafts: true });
+                await fetchCharactersPage();
+                displayMessage('Characters synced from stories.', 'success');
+            } catch (e) {
+                // apiRequest shows error
+            }
+        });
+    }
+
+    // Characters page: Import from JSON
+    const charactersPageImportBtn = document.getElementById('characters-page-import');
+    if (charactersPageImportBtn) {
+        charactersPageImportBtn.addEventListener('click', async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = async () => {
+                const file = input.files && input.files[0];
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    let data;
+                    try { data = JSON.parse(text); } catch (e) { throw new Error('Invalid JSON file.'); }
+                    const items = Array.isArray(data) ? data : [data];
+                    if (!items.length) throw new Error('No characters found in JSON.');
+                    let ok = 0, fail = 0;
+                    displayMessage('Importing characters...', 'info');
+                    for (const raw of items) {
+                        try {
+                            const payload = {
+                                name: raw.name || '',
+                                description: raw.description || raw.physical_appearance || '',
+                                age: typeof raw.age === 'number' ? raw.age : (raw.age ? parseInt(raw.age, 10) : undefined),
+                                gender: raw.gender || '',
+                                clothing_style: raw.clothing_style || '',
+                                key_traits: raw.key_traits || raw.traits || '',
+                                image_style: raw.image_style || undefined,
+                                generate_image: !!raw.generate_image,
+                            };
+                            if (!payload.name) { fail++; continue; }
+                            await apiRequest('/api/v1/characters/', 'POST', payload);
+                            ok++;
+                        } catch (e) {
+                            fail++;
+                        }
+                    }
+                    await fetchCharactersPage();
+                    displayMessage(`Import complete. ${ok} saved, ${fail} failed.`, ok > 0 && fail === 0 ? 'success' : (ok > 0 ? 'warning' : 'error'));
+                } catch (err) {
+                    displayMessage(err.message || 'Import failed.', 'error');
+                }
+            };
+            input.click();
+        });
+    }
+
+    function populateReview() {
+        const review = document.getElementById('review-container');
+        if (!review) return;
+        const data = getStoryDataFromForm();
+        // Simple summary
+        review.innerHTML = '';
+        const s = document.createElement('div');
+        s.className = 'review-summary';
+        const characters = data.main_characters?.map(c => c.name).filter(Boolean) || [];
+        const reusedCount = Array.isArray(data.character_ids) ? data.character_ids.length : 0;
+        s.innerHTML = `
+            <p><strong>Title:</strong> ${data.title || '(AI will generate)'}</p>
+            <p><strong>Genre:</strong> ${data.genre || '(not set)'}</p>
+            <p><strong>Outline:</strong> ${data.story_outline || '(empty)'}</p>
+            <p><strong>Characters:</strong> ${characters.length ? characters.join(', ') : '(none)'}</p>
+            <p><strong>Reused characters:</strong> ${reusedCount}</p>
+            <p><strong>Pages:</strong> ${data.num_pages || '(not set)'} | <strong>Style:</strong> ${data.image_style || '(not set)'}</p>
+            <p><strong>Ratio:</strong> ${data.word_to_picture_ratio || '(not set)'} | <strong>Density:</strong> ${data.text_density || '(not set)'}</p>
+        `;
+        review.appendChild(s);
+    }
+
+    // Wire next/back
+    if (btnNext) {
+        btnNext.addEventListener('click', () => {
+            if (!validateStep(wizardStep)) return;
+            goToStep(Math.min(3, wizardStep + 1));
+        });
+    }
+    if (btnPrev) {
+        btnPrev.addEventListener('click', () => {
+            goToStep(Math.max(0, wizardStep - 1));
+        });
+    }
+    // Click on step indicators
+    stepDots.forEach((dot) => {
+        dot.addEventListener('click', () => {
+            const s = parseInt(dot.getAttribute('data-step'), 10);
+            // Close Characters modal if open and reset modal state
+            try {
+                const modal = document.getElementById('char-modal');
+                const backdrop = document.getElementById('char-modal-backdrop');
+                if (modal) modal.classList.remove('open');
+                if (backdrop) backdrop.classList.remove('open');
+                if (document && document.body && document.body.dataset) {
+                    delete document.body.dataset.charModalState;
+                }
+            } catch (error) {
+                console.error("Error closing modal:", error);
+            }
+            // Navigate to requested step
+            if (!Number.isNaN(s)) {
+                goToStep(Math.max(0, Math.min(3, s)));
+            }
+            // End step indicator click handler and forEach
+        });
+    });
+
+    // --- INITIALIZATION ---
+    // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
+    updateNav(!!authToken);
+    if (!!authToken) {
+        if (window.location.hash === "#browse") {
+            showSection(browseStoriesSection);
+            loadAndDisplayUserStories();
+        } else {
+            showSection(storyCreationSection);
+            populateAllDropdowns(); // Populate all dropdowns on load if logged in
+        }
+        // Initialize wizard UI state on load
+        goToStep(0);
+        // Add first character entry if not already present by HTML
+        if (
+            document.querySelectorAll("#main-characters-fieldset .character-entry")
+                .length === 0
+        ) {
+            // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
+            // The first character is expected to be in the HTML or handled by reset.
+            // For now, let's assume resetFormAndState or initial HTML handles the first one.
+        } else {
+            // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
+            // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
+            // if (firstCharToggle) {
+            //     initializeCharacterDetailsToggle(firstCharToggle);
+            // }
+        }
+    } else {
+        showSection(authSection);
+    }
+
+    // --- UTILITY FUNCTIONS ---
+    function showSpinner() {
+        if (spinner) spinner.style.display = "block";
+    }
+    function hideSpinner() {
+        if (spinner) spinner.style.display = "none";
+    }
+
+    // Reset the wizard form and related state so a fresh story can be created.
+    // Exposed at module scope for reuse (e.g., nav actions, "Use as Template").
     function resetFormAndState() {
         console.log("[resetFormAndState] Attempting to reset form and state.");
         if (storyCreationForm) {
@@ -143,7 +850,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
 
-        // Clear existing dynamic characters (beyond the first one if it's static or part of the template)
+        // Clear existing dynamic characters (beyond the first one)
         const characterEntries = document.querySelectorAll(
             "#main-characters-fieldset .character-entry",
         );
@@ -152,56 +859,41 @@ document.addEventListener("DOMContentLoaded", function () {
         );
         characterEntries.forEach((entry, index) => {
             if (index > 0) {
-                // Keep the first entry (index 0)
                 entry.remove();
                 console.log(
                     `[resetFormAndState] Removed character entry ${index + 1}.`,
                 );
             } else {
-                // Reset fields of the first character entry
-                const firstCharacterEntry = characterEntries[0]; // Get the first entry directly
-
-                const nameInput = firstCharacterEntry.querySelector("#char-name-1");
+                const firstCharacterEntry = characterEntries[0];
+                const nameInput = firstCharacterEntry?.querySelector("#char-name-1");
                 if (nameInput) nameInput.value = "";
-                const ageInput = firstCharacterEntry.querySelector("#char-age-1");
+                const ageInput = firstCharacterEntry?.querySelector("#char-age-1");
                 if (ageInput) ageInput.value = "";
-                const genderInput = firstCharacterEntry.querySelector("#char-gender-1");
-                if (genderInput) genderInput.value = "";
-                const physicalTextarea = firstCharacterEntry.querySelector(
+                const genderSelect = firstCharacterEntry?.querySelector("#char-gender-1");
+                if (genderSelect) genderSelect.selectedIndex = 0;
+                const physicalTextarea = firstCharacterEntry?.querySelector(
                     "#char-physical-appearance-1",
                 );
                 if (physicalTextarea) physicalTextarea.value = "";
-                const clothingInput = firstCharacterEntry.querySelector(
+                const clothingInput = firstCharacterEntry?.querySelector(
                     "#char-clothing-style-1",
                 );
                 if (clothingInput) clothingInput.value = "";
                 const traitsTextarea =
-                    firstCharacterEntry.querySelector("#char-key-traits-1");
+                    firstCharacterEntry?.querySelector("#char-key-traits-1");
                 if (traitsTextarea) traitsTextarea.value = "";
 
-                // Use document.getElementById for elements known by unique ID for the first character
+                // Hide details and reset toggle text for first character row
                 const detailsDiv = document.getElementById("char-details-1");
                 const toggleButton = document.getElementById("char-details-toggle-1");
-
-                if (detailsDiv) {
-                    detailsDiv.style.display = "none";
-                } else {
-                    console.warn(
-                        "[resetFormAndState] First character details div (#char-details-1) not found using getElementById.",
-                    );
-                }
-                if (toggleButton) {
-                    toggleButton.textContent = "Show Details";
-                } else {
-                    console.warn(
-                        "[resetFormAndState] First character toggle button (#char-details-toggle-1) not found using getElementById.",
-                    );
-                }
+                if (detailsDiv) detailsDiv.style.display = "none";
+                if (toggleButton) toggleButton.textContent = "Show Details";
                 console.log(
                     "[resetFormAndState] Reset fields and state for first character entry.",
                 );
             }
         });
+
         characterCount = 1; // Reset character count
         console.log("[resetFormAndState] characterCount reset to 1.");
 
@@ -236,44 +928,6 @@ document.addEventListener("DOMContentLoaded", function () {
             "[resetFormAndState] Form fields and draft state reset. Navigated to story creation section.",
         );
     }
-
-    // --- INITIALIZATION ---
-    // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
-    updateNav(!!authToken);
-    if (!!authToken) {
-        if (window.location.hash === "#browse") {
-            showSection(browseStoriesSection);
-            loadAndDisplayUserStories();
-        } else {
-            showSection(storyCreationSection);
-            populateAllDropdowns(); // Populate all dropdowns on load if logged in
-        }
-        // Add first character entry if not already present by HTML
-        if (
-            document.querySelectorAll("#main-characters-fieldset .character-entry")
-                .length === 0
-        ) {
-            // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
-            // The first character is expected to be in the HTML or handled by reset.
-            // For now, let's assume resetFormAndState or initial HTML handles the first one.
-        } else {
-            // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
-            // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
-            // if (firstCharToggle) {
-            //     initializeCharacterDetailsToggle(firstCharToggle);
-            // }
-        }
-    } else {
-        showSection(authSection);
-    }
-
-    // --- UTILITY FUNCTIONS ---
-    function showSpinner() {
-        if (spinner) spinner.style.display = "block";
-    }
-    function hideSpinner() {
-        if (spinner) spinner.style.display = "none";
-    }
     // Function to add a new character entry to the form
     function addCharacterEntry() {
         console.log(
@@ -307,7 +961,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 </div>
                 <div class="form-group">
                     <label for="char-gender-${characterCount}">Gender (Optional):</label>
-                    <input type="text" id="char-gender-${characterCount}" name="char-gender-${characterCount}">
+                    <select id="char-gender-${characterCount}" name="char-gender-${characterCount}"></select>
                 </div>
                 <div class="form-group">
                     <label for="char-physical-appearance-${characterCount}">Physical Appearance (Optional):</label>
@@ -324,6 +978,8 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>
         `;
         fieldset.appendChild(newCharacterEntry);
+        // Populate gender dropdown for the newly added character entry
+        try { populateDropdown(`char-gender-${characterCount}`, 'genders'); } catch (e) { /* ignore */ }
     }
 
     // Event listener for the "Add Another Character" button
@@ -601,7 +1257,7 @@ document.addEventListener("DOMContentLoaded", function () {
             exportPdfButton.style.display = shouldShowButton
                 ? "inline-block"
                 : "none"; // Changed to inline-block
-            exportPdfButton.classList.add("action-button-secondary"); // Add class for styling
+            exportPdfButton.classList.add("action-button-info");
             console.log(
                 "[displayStory] exportPdfButton display set to:",
                 exportPdfButton.style.display,
@@ -614,18 +1270,15 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function showSection(sectionToShow) {
-        // Clear message area when changing sections
-        if (messageArea) {
-            messageArea.textContent = "";
-            messageArea.style.backgroundColor = "transparent"; // Reset background
-            messageArea.style.border = "none"; // Reset border
-        }
+        // No inline message area to clear; hide snackbar on major view change
+        if (snackbarEl) snackbarEl.style.display = 'none';
         // Ensure adminPanelContainer is part of this array
         [
             authSection,
             storyCreationSection,
             storyPreviewSection,
             browseStoriesSection,
+            charactersSection,
             adminPanelContainer,
         ].forEach((section) => {
             if (section) section.style.display = "none";
@@ -650,35 +1303,32 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function displayMessage(message, type = "info") {
-        // type can be 'info', 'success', 'warning', 'error'
-        messageArea.textContent = String(message); // Ensure message is always a string
-
-        switch (type) {
-            case "error":
-                messageArea.style.color = "#FF6B6B"; // Red
-                messageArea.style.backgroundColor = "rgba(255, 107, 107, 0.1)";
-                messageArea.style.border = "1px solid rgba(255, 107, 107, 0.3)";
-                break;
-            case "warning":
-                messageArea.style.color = "#FFA500"; // Orange
-                messageArea.style.backgroundColor = "rgba(255, 165, 0, 0.1)";
-                messageArea.style.border = "1px solid rgba(255, 165, 0, 0.3)";
-                break;
-            case "success":
-                messageArea.style.color = "#6BFF6B"; // Green
-                messageArea.style.backgroundColor = "rgba(107, 255, 107, 0.1)";
-                messageArea.style.border = "1px solid rgba(107, 255, 107, 0.3)";
-                break;
-            case "info":
-            default:
-                messageArea.style.color = "#ADD8E6"; // Light Blue for info
-                messageArea.style.backgroundColor = "rgba(173, 216, 230, 0.1)";
-                messageArea.style.border = "1px solid rgba(173, 216, 230, 0.3)";
-                break;
+    function displayMessage(message, type = "info", { toast = false, persistMs = 5000 } = {}) {
+        if (snackbarEl) {
+            snackbarEl.textContent = String(message);
+            snackbarEl.className = `snackbar snackbar--${type}`;
+            snackbarEl.style.display = 'block';
+            clearTimeout(displayMessage._snackbarTimer);
+            displayMessage._snackbarTimer = setTimeout(() => {
+                snackbarEl.style.display = 'none';
+            }, persistMs);
         }
-        messageArea.style.padding = "0.8rem";
-        messageArea.style.borderRadius = "4px";
+        if (toast && typeof showToast === 'function') showToast(message, type);
+
+        // Update persistent message box content and style
+        const msgBox = document.getElementById('api-message');
+        if (msgBox) {
+            msgBox.textContent = String(message);
+            // Lightweight color cue
+            let color;
+            switch (type) {
+                case 'success': color = '#6BFF6B'; break;
+                case 'warning': color = '#FFA500'; break;
+                case 'error': color = '#FF6B6B'; break;
+                default: color = '#ADD8E6';
+            }
+            msgBox.style.color = color;
+        }
     }
 
     function updateNav(isLoggedIn) {
@@ -686,6 +1336,7 @@ document.addEventListener("DOMContentLoaded", function () {
             navLoginSignup.style.display = "none";
             navCreateStory.style.display = "inline-block";
             navBrowseStories.style.display = "inline-block";
+            if (navCharacters) navCharacters.style.display = "inline-block";
             navLogout.style.display = "inline-block";
             // Show admin link only if user is admin
             fetchAndSetUserRole(); // Call this to determine if admin link should be shown
@@ -693,8 +1344,23 @@ document.addEventListener("DOMContentLoaded", function () {
             navLoginSignup.style.display = "inline-block";
             navCreateStory.style.display = "none";
             navBrowseStories.style.display = "none";
+            if (navCharacters) navCharacters.style.display = "none";
             navLogout.style.display = "none";
             if (navAdminPanel) navAdminPanel.style.display = "none"; // Hide admin panel link on logout
+            // Explicitly hide app sections and close any character modal
+            try {
+                if (charactersSection) charactersSection.style.display = 'none';
+                if (storyCreationSection) storyCreationSection.style.display = 'none';
+                const modal = document.getElementById('char-modal');
+                const backdrop = document.getElementById('char-modal-backdrop');
+                if (modal) modal.classList.remove('open');
+                if (backdrop) backdrop.classList.remove('open');
+                if (document && document.body && document.body.dataset) {
+                    delete document.body.dataset.charModalState;
+                }
+            } catch (e) {
+                console.warn('Cleanup on logout encountered a minor issue:', e);
+            }
             showSection(authSection);
         }
     }
@@ -715,6 +1381,54 @@ document.addEventListener("DOMContentLoaded", function () {
             console.error("Error fetching user details for role:", error);
             if (navAdminPanel) navAdminPanel.style.display = "none";
         }
+    }
+
+    // Toast helper
+    function showToast(message, type = 'info', timeoutMs = 3200) {
+        const tc = document.getElementById('toast-container');
+        if (!tc) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast--${type}`;
+        toast.textContent = String(message);
+        tc.appendChild(toast);
+        const t = setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, timeoutMs);
+        toast.addEventListener('click', () => {
+            clearTimeout(t);
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        });
+    }
+
+    // Password toggles and strength meter
+    const toggleLoginPw = document.getElementById('toggle-login-password');
+    const toggleSignupPw = document.getElementById('toggle-signup-password');
+    const toggleSignupPwConfirm = document.getElementById('toggle-signup-password-confirm');
+    if (toggleLoginPw) toggleLoginPw.addEventListener('click', () => togglePasswordVisibility('login-password', toggleLoginPw));
+    if (toggleSignupPw) toggleSignupPw.addEventListener('click', () => togglePasswordVisibility('signup-password', toggleSignupPw));
+    if (toggleSignupPwConfirm) toggleSignupPwConfirm.addEventListener('click', () => togglePasswordVisibility('signup-password-confirm', toggleSignupPwConfirm));
+    function togglePasswordVisibility(inputId, buttonEl) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        const isText = input.type === 'text';
+        input.type = isText ? 'password' : 'text';
+        if (buttonEl) buttonEl.textContent = isText ? 'Show' : 'Hide';
+    }
+    const signupPw = document.getElementById('signup-password');
+    const pwStrength = document.getElementById('password-strength');
+    if (signupPw && pwStrength) {
+        signupPw.addEventListener('input', () => {
+            const v = signupPw.value || '';
+            pwStrength.textContent = `Strength: ${estimateStrength(v)}`;
+        });
+    }
+    function estimateStrength(v) {
+        let score = 0;
+        if (v.length >= 8) score++;
+        if (/[A-Z]/.test(v)) score++;
+        if (/[0-9]/.test(v)) score++;
+        if (/[^A-Za-z0-9]/.test(v)) score++;
+        return ['Weak', 'Fair', 'Good', 'Strong', 'Excellent'][score] || '—';
     }
 
     // --- API CALLS ---
@@ -806,10 +1520,19 @@ document.addEventListener("DOMContentLoaded", function () {
                         detail: errorText || `HTTP error! Status: ${response.status}`,
                     };
                 }
-                const errorDetail =
-                    responseData && responseData.detail
-                        ? responseData.detail
-                        : `Unknown error. Status: ${response.status}`;
+                let errorDetailRaw = responseData && responseData.detail ? responseData.detail : `Unknown error. Status: ${response.status}`;
+                // If FastAPI returns a list of validation errors, format them nicely
+                let errorDetail;
+                if (Array.isArray(errorDetailRaw)) {
+                    errorDetail = errorDetailRaw.map(e => {
+                        const loc = Array.isArray(e.loc) ? e.loc.join('.') : e.loc;
+                        return `${loc}: ${e.msg}`;
+                    }).join('\n');
+                } else if (typeof errorDetailRaw === 'object') {
+                    errorDetail = JSON.stringify(errorDetailRaw);
+                } else {
+                    errorDetail = String(errorDetailRaw);
+                }
                 console.error(`[apiRequest] API Error: ${errorDetail}`, responseData);
                 // Handle expired/invalid token (401)
                 if (
@@ -824,10 +1547,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     localStorage.removeItem("authToken");
                     // Optionally, redirect to login or show login modal
                     if (typeof showLoginForm === "function") showLoginForm();
-                } else if (
-                    !messageArea.textContent.includes("Failed") &&
-                    !messageArea.textContent.includes("error")
-                ) {
+                } else {
                     displayMessage(String(errorDetail), "error");
                 }
                 throw new Error(String(errorDetail));
@@ -867,16 +1587,11 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - FETCH FAILED or error in response handling >>>>>', error);
             hideSpinner();
-            if (
-                !messageArea.textContent.includes("Failed") &&
-                !messageArea.textContent.includes("error")
-            ) {
-                displayMessage(
-                    error.message ||
-                    "An unexpected error occurred. Please check the console.",
-                    "error",
-                );
-            }
+            displayMessage(
+                error.message ||
+                "An unexpected error occurred. Please check the console.",
+                "error",
+            );
             throw error;
         }
     }
@@ -932,48 +1647,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // --- POPULATE DYNAMIC FORM ELEMENTS ---
-    async function populateDropdown(selectElementName, listName) {
-        const selectElement = storyCreationForm[selectElementName];
-        if (!selectElement) {
-            console.error(`Select element with name '${selectElementName}' not found.`);
-            return;
-        }
-
-        try {
-            const items = await apiRequest(`/api/v1/dynamic-lists/${listName}/active-items`);
-
-            selectElement.innerHTML = '<option value="">Select an option</option>'; // Clear and add a placeholder
-
-            if (items && items.length > 0) {
-                items.forEach(item => {
-                    const option = document.createElement("option");
-                    option.value = item.item_value; // Corrected from item.value
-                    option.textContent = item.item_label; // Corrected from item.label
-                    selectElement.appendChild(option);
-                });
-            } else {
-                console.warn(`No items found for list: ${listName}`);
-            }
-        } catch (error) {
-            console.error(`Failed to load dynamic list ${listName}:`, error);
-            selectElement.innerHTML = '<option value="" disabled>Error loading options</option>';
-            // apiRequest function is expected to display the error message.
-        }
-    }
-
-    function populateAllDropdowns() {
-        console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
-        populateDropdown("story-genre", "story_genres");
-        populateDropdown("story-image-style", "image_styles_app");
-        populateDropdown(
-            "story-word-to-picture-ratio",
-            "word_to_picture_ratio",
-        );
-        populateDropdown("story-text-density", "text_density");
-    }
-
-    // --- END POPULATE DYNAMIC FORM ELEMENTS (Placeholder for correct positioning) ---
+    // (Removed duplicate POPULATE DYNAMIC FORM ELEMENTS block to avoid overriding the ID-based implementation above)
     // --- STORY ACTION FUNCTIONS (View/Edit, Template, Delete) ---
     async function viewOrEditStory(storyId, isDraft) {
         console.log(
@@ -984,7 +1658,7 @@ document.addEventListener("DOMContentLoaded", function () {
             let storyData;
             if (isDraft) {
                 console.log(`[viewOrEditStory] Fetching draft story ID: ${storyId}`);
-                storyData = await apiRequest(`/api/v1/stories/drafts/${storyId}`);
+                storyData = await apiRequest(`/stories/drafts/${storyId}`);
                 if (storyData) {
                     populateCreateFormWithStoryData(storyData, true); // true for isEditingDraft
                     showSection(storyCreationSection);
@@ -1006,12 +1680,7 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             console.error("[viewOrEditStory] Error:", error);
             // displayMessage is usually handled by apiRequest
-            if (
-                !messageArea.textContent.includes("Failed") &&
-                !messageArea.textContent.includes("error")
-            ) {
-                displayMessage(`Error loading story: ${error.message}`, "error");
-            }
+            displayMessage(`Error loading story: ${error.message}`, "error");
         } finally {
             hideSpinner();
         }
@@ -1042,15 +1711,10 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         } catch (error) {
             console.error("[useStoryAsTemplate] Error:", error);
-            if (
-                !messageArea.textContent.includes("Failed") &&
-                !messageArea.textContent.includes("error")
-            ) {
-                displayMessage(
-                    `Error using story as template: ${error.message}`,
-                    "error",
-                );
-            }
+            displayMessage(
+                `Error using story as template: ${error.message}`,
+                "error",
+            );
         } finally {
             hideSpinner();
         }
@@ -1126,6 +1790,7 @@ document.addEventListener("DOMContentLoaded", function () {
             resetFormAndState();
             populateAllDropdowns(); // Populate dropdowns when navigating to the create form
             showSection(storyCreationSection);
+            goToStep(0); // ensure wizard starts at Basics
         });
     }
 
@@ -1137,12 +1802,20 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- AUTHENTICATION ---
-    signupForm.addEventListener("submit", async (e) => {
+    if (!signupForm) {
+        console.error("[auth] signupForm not found; signup will not work.");
+    }
+    if (!loginForm) {
+        console.error("[auth] loginForm not found; login will not work.");
+    }
+    if (signupForm) console.log("[auth] Signup form listener attaching...");
+    signupForm && signupForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const username = signupForm.username.value;
-        const email = signupForm.email.value; // Get email value
-        const password = signupForm.password.value;
+        const username = signupForm.username?.value || document.getElementById('signup-username')?.value;
+        const email = signupForm.email?.value || document.getElementById('signup-email')?.value;
+        const password = signupForm.password?.value || document.getElementById('signup-password')?.value;
         const confirm = signupForm.password_confirm ? signupForm.password_confirm.value : document.getElementById('signup-password-confirm')?.value;
+        console.log('[auth] Signup submit captured:', { username, emailMasked: !!email, hasPassword: !!password });
         if (confirm !== undefined && password !== confirm) {
             displayMessage("Passwords do not match. Please re-enter.", "error");
             return;
@@ -1151,15 +1824,16 @@ document.addEventListener("DOMContentLoaded", function () {
             await apiRequest("/api/v1/users/", "POST", { username, email, password }); // Add email to payload
             displayMessage("Signup successful! Please login.", "success");
             signupForm.reset();
-            loginForm.style.display = "block";
+            if (loginForm) loginForm.style.display = "block";
             signupForm.style.display = "none";
         } catch (error) { }
     });
 
-    loginForm.addEventListener("submit", async (e) => {
+    if (loginForm) console.log("[auth] Login form listener attaching...");
+    loginForm && loginForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const username = loginForm.username.value;
-        const password = loginForm.password.value;
+        const username = loginForm.username?.value || document.getElementById('login-username')?.value;
+        const password = loginForm.password?.value || document.getElementById('login-password')?.value;
 
         const formData = new URLSearchParams();
         formData.append("username", username);
@@ -1211,7 +1885,7 @@ document.addEventListener("DOMContentLoaded", function () {
         ).map((entry) => {
             const nameInput = entry.querySelector('input[id^="char-name-"]');
             const ageInput = entry.querySelector('input[id^="char-age-"]');
-            const genderInput = entry.querySelector('input[id^="char-gender-"]');
+            const genderInput = entry.querySelector('select[id^="char-gender-"]') || entry.querySelector('input[id^="char-gender-"]');
             const physicalTextarea = entry.querySelector(
                 'textarea[id^="char-physical-appearance-"]',
             );
@@ -1227,7 +1901,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return {
                 name: nameInput ? nameInput.value.trim() : "",
                 age: ageValue !== "" ? parseInt(ageValue, 10) : null, // Parse to int or send null
-                gender: genderInput ? genderInput.value.trim() : "",
+                gender: genderInput ? (genderInput.value || '').trim() : "",
                 physical_appearance: physicalTextarea
                     ? physicalTextarea.value.trim()
                     : "",
@@ -1245,21 +1919,28 @@ document.addEventListener("DOMContentLoaded", function () {
             numPagesAsInt = 1; // Default to 1 if not a valid positive number
         }
 
-        return {
-            title: document.getElementById("story-title").value, // FR-FE-DRAFT-01: Add title
-            genre: document.getElementById("story-genre").value, // Corrected ID
-            story_outline: document.getElementById("story-outline").value, // Corrected ID
+        // Read optional enum fields; if not selected (empty string), omit them to let backend defaults apply.
+        const ratioVal = document.getElementById("story-word-to-picture-ratio").value;
+        const densityVal = document.getElementById("story-text-density").value;
+        const imageStyleVal = document.getElementById("story-image-style").value;
+
+        const payload = {
+            title: document.getElementById("story-title").value,
+            genre: document.getElementById("story-genre").value,
+            story_outline: document.getElementById("story-outline").value,
             main_characters: mainCharacters,
             num_pages: numPagesAsInt,
-            tone: document.getElementById("story-tone").value, // Corrected ID
-            setting: document.getElementById("story-setting").value, // Corrected ID
-            word_to_picture_ratio: document.getElementById(
-                "story-word-to-picture-ratio",
-            ).value, // Corrected ID
-            text_density: document.getElementById("story-text-density").value, // Corrected ID
-            image_style: document.getElementById("story-image-style").value, // Corrected ID
-            // is_draft will be handled by the endpoint/payload structure
+            tone: document.getElementById("story-tone").value,
+            setting: document.getElementById("story-setting").value,
+            // Phase 3: add selected existing characters by id
+            character_ids: Array.from(characterLibraryState.selectedIds),
         };
+
+        if (ratioVal) payload.word_to_picture_ratio = ratioVal;
+        if (densityVal) payload.text_density = densityVal;
+        if (imageStyleVal) payload.image_style = imageStyleVal;
+
+        return payload;
     }
 
     // Event listener for "Save Draft" button
@@ -1288,13 +1969,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         `[SaveDraft] Updating existing draft ID: ${currentStoryId}`,
                     );
                     savedDraft = await apiRequest(
-                        `/api/v1/stories/drafts/${currentStoryId}`,
+                        `/stories/drafts/${currentStoryId}`,
                         "PUT",
                         storyData,
                     );
                 } else {
                     console.log("[SaveDraft] Creating new draft.");
-                    savedDraft = await apiRequest("/api/v1/stories/drafts/", "POST", storyData);
+                    savedDraft = await apiRequest("/stories/drafts/", "POST", storyData);
                 }
 
                 if (savedDraft && savedDraft.id) {
@@ -1318,15 +1999,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             } catch (error) {
                 console.error("[SaveDraft] Error saving draft:", error);
-                if (
-                    !messageArea.textContent.includes("Failed") &&
-                    !messageArea.textContent.includes("error")
-                ) {
-                    displayMessage(
-                        `Draft saving failed: ${error.message || "Unknown error"}`,
-                        "error",
-                    );
-                }
+                displayMessage(
+                    `Draft saving failed: ${error.message || "Unknown error"}`,
+                    "error",
+                );
             } finally {
                 hideSpinner();
             }
@@ -1337,7 +2013,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (generateStoryButton) {
         generateStoryButton.addEventListener("click", async function (event) {
             event.preventDefault();
-            showSpinner();
             displayMessage("Initiating story generation...", "info");
 
             const storyData = getStoryDataFromForm();
@@ -1360,18 +2035,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (task && task.id) {
                     console.log("[FormSubmit] Story generation task started successfully. Task ID:", task.id);
-                    hideSpinner(); // Hide spinner, polling UI will show progress.
                     showSection(storyCreationSection); // Stay on this section to show progress
                     pollForStoryStatus(task.id); // Start polling for status updates.
                 } else {
                     console.error("[FormSubmit] Failed to start story generation task. Invalid response:", task);
                     displayMessage("Could not start story generation. The server response was not as expected.", "error");
-                    hideSpinner();
                 }
             } catch (error) {
                 console.error("[FormSubmit] Error during story generation initiation:", error);
                 // The apiRequest function should have already displayed an error message.
-                hideSpinner();
             }
         });
     }
@@ -1453,12 +2125,21 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
         userStoriesList.innerHTML = ""; // Clear previous stories
+        // Show skeletons while loading
+        for (let i = 0; i < 3; i++) {
+            const skel = document.createElement('div');
+            skel.className = 'story-item skeleton';
+            skel.style.height = '84px';
+            skel.style.marginBottom = '12px';
+            userStoriesList.appendChild(skel);
+        }
 
         try {
             const stories = await apiRequest(
                 `/api/v1/stories/?include_drafts=${includeDrafts}&skip=0&limit=100`,
             );
             if (stories && stories.length > 0) {
+                userStoriesList.innerHTML = "";
                 stories.forEach((story) => {
                     const listItem = document.createElement("li");
                     listItem.classList.add("story-item");
@@ -1492,7 +2173,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // View Story Button
                     const viewButton = document.createElement("button");
                     viewButton.textContent = story.is_draft ? "Edit Draft" : "View Story";
-                    viewButton.classList.add("action-button-secondary"); // Apply new class
+                    viewButton.classList.add("action-button-info");
                     viewButton.addEventListener("click", (e) => {
                         e.stopPropagation(); // Prevent triggering click on listItem
                         viewOrEditStory(story.id, story.is_draft);
@@ -1502,7 +2183,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Use as Template Button
                     const useAsTemplateButton = document.createElement("button");
                     useAsTemplateButton.textContent = "Use as Template";
-                    useAsTemplateButton.classList.add("action-button-secondary"); // Apply new class
+                    useAsTemplateButton.classList.add("action-button-info");
                     useAsTemplateButton.addEventListener("click", (e) => {
                         e.stopPropagation();
                         useStoryAsTemplate(story.id);
@@ -1512,10 +2193,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Delete Story Button
                     const deleteButton = document.createElement("button");
                     deleteButton.textContent = "Delete";
-                    deleteButton.classList.add(
-                        "admin-action-button",
-                        "admin-delete-user",
-                    ); // MODIFIED: Apply new class for delete button
+                    deleteButton.classList.add("action-button-danger");
                     deleteButton.addEventListener("click", async (e) => {
                         e.stopPropagation();
                         if (
@@ -1548,12 +2226,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 error,
             );
             // displayMessage already handled by apiRequest usually
-            if (
-                !messageArea.textContent.includes("Failed") &&
-                !messageArea.textContent.includes("error")
-            ) {
-                displayMessage(`Failed to load stories: ${error.message}`, "error");
-            }
+            displayMessage(`Failed to load stories: ${error.message}`, "error");
             userStoriesList.innerHTML =
                 "<p>Could not load stories. Please try again later.</p>";
         } finally {
@@ -1635,6 +2308,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // --- HELPER FUNCTION TO POPULATE CREATE FORM ---
     function populateCreateFormWithStoryData(storyData, isEditingDraft = false) {
+
+        // ===== Phase 3 Additions: Wizard & Character Reuse bootstrap marker (core logic appended earlier if any) =====
+        // (If needed for future progressive enhancement hooks)
+        // window.__PHASE3_WIZARD__ flag prevents duplicate initialization.
         // Added isEditingDraft
         console.log(
             "[populateCreateFormWithStoryData] Populating form. isEditingDraft:",
@@ -1749,6 +2426,254 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
+    // ---- Character Library: rendering, selection, pagination ----
+    async function initCharacterLibraryUI() {
+        const { panel, search, list, pagination } = getLibraryEls();
+        if (!panel || !list || !pagination) return;
+        // Show panel
+        panel.style.display = 'block';
+        // Wire Sync button once
+        const syncBtn = panel.querySelector('#character-sync-btn');
+        if (syncBtn && !syncBtn._wired) {
+            syncBtn.addEventListener('click', async () => {
+                try {
+                    displayMessage('Syncing characters from your stories...', 'info');
+                    await apiRequest('/stories/backfill-characters', 'POST', { include_drafts: true });
+                    await loadCharacterLibrary();
+                    displayMessage('Characters synced from stories.', 'success');
+                } catch (e) {
+                    displayMessage('Sync failed. See console for details.', 'error');
+                    console.error('[Character Sync] Error:', e);
+                }
+            });
+            syncBtn._wired = true;
+        }
+        // Wire Create-from-current button
+        const createFromCurrentBtn = panel.querySelector('#character-create-from-current-btn');
+        if (createFromCurrentBtn && !createFromCurrentBtn._wired) {
+            createFromCurrentBtn.addEventListener('click', async () => {
+                try {
+                    // Build minimal characters from the current form entries (name only is fine)
+                    const entries = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry'));
+                    const payloads = entries.map(entry => {
+                        const name = entry.querySelector('input[id^="char-name-"]')?.value?.trim();
+                        const ageVal = entry.querySelector('input[id^="char-age-"]')?.value?.trim();
+                        return {
+                            name: name || '',
+                            description: entry.querySelector('textarea[id^="char-physical-appearance-"]')?.value?.trim() || '',
+                            age: ageVal ? parseInt(ageVal, 10) : null,
+                            gender: (entry.querySelector('select[id^="char-gender-"]')?.value || entry.querySelector('input[id^="char-gender-"]')?.value || '').trim(),
+                            clothing_style: entry.querySelector('textarea[id^="char-clothing-style-"]')?.value?.trim() || '',
+                            key_traits: entry.querySelector('textarea[id^="char-key-traits-"]')?.value?.trim() || '',
+                            image_style: document.getElementById('story-image-style')?.value || undefined,
+                        };
+                    }).filter(c => c.name);
+                    if (payloads.length === 0) {
+                        displayMessage('Add at least one character name first.', 'warning');
+                        return;
+                    }
+                    displayMessage('Saving characters to your library...', 'info');
+                    for (const p of payloads) {
+                        try {
+                            await apiRequest('/api/v1/characters/', 'POST', { ...p, generate_image: false });
+                        } catch (e) {
+                            // Continue saving others, but log errors
+                            console.error('[Create From Current] Failed to save character', p.name, e);
+                        }
+                    }
+                    await loadCharacterLibrary();
+                    displayMessage('Characters saved to your library.', 'success');
+                } catch (e) {
+                    displayMessage('Save failed. See console for details.', 'error');
+                    console.error('[Create From Current] Error:', e);
+                }
+            });
+            createFromCurrentBtn._wired = true;
+        }
+        // Selected chips bar
+        let chips = panel.querySelector('#selected-characters-chipbar');
+        if (!chips) {
+            chips = document.createElement('div');
+            chips.id = 'selected-characters-chipbar';
+            chips.style.margin = '6px 0 10px';
+            panel.insertBefore(chips, panel.firstChild);
+        }
+        const renderChips = () => {
+            const ids = Array.from(characterLibraryState.selectedIds);
+            if (ids.length === 0) {
+                chips.innerHTML = '<em>No existing characters selected.</em>';
+                return;
+            }
+            chips.innerHTML = ids.map(id => `<span class="chip" data-id="${id}" style="display:inline-block;padding:4px 8px;border:1px solid #4f8cff;border-radius:999px;margin:2px;color:#e5eaf2;background:#23272f;">#${id} <button data-id="${id}" class="remove-chip" style="margin-left:6px;background:transparent;border:none;color:#a6b0c3;cursor:pointer;">×</button></span>`).join('');
+            chips.querySelectorAll('.remove-chip').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = parseInt(e.currentTarget.getAttribute('data-id'), 10);
+                    characterLibraryState.selectedIds.delete(id);
+                    // Re-render list to reflect deselection
+                    renderCharacterList();
+                    renderChips();
+                });
+            });
+        };
+
+        const onSearch = debounce(async () => {
+            characterLibraryState.q = (search?.value || '').trim();
+            characterLibraryState.page = 1;
+            await loadCharacterLibrary();
+        }, 300);
+        if (search && !search._wired) {
+            search.addEventListener('input', onSearch);
+            search._wired = true;
+        }
+        await loadCharacterLibrary();
+
+        async function loadCharacterLibrary() {
+            try {
+                const params = new URLSearchParams();
+                if (characterLibraryState.q) params.set('q', characterLibraryState.q);
+                params.set('page', String(characterLibraryState.page));
+                params.set('page_size', String(characterLibraryState.pageSize));
+                const res = await apiRequest(`/api/v1/characters/?${params.toString()}`);
+                characterLibraryState.items = res?.items || [];
+                characterLibraryState.total = res?.total || 0;
+                renderCharacterList();
+                renderPagination();
+                renderChips();
+            } catch (err) {
+                const msg = (err && err.message) ? `Failed to load characters: ${escapeHTML(err.message)}` : 'Failed to load characters.';
+                list.innerHTML = `<p class="error-message">${msg}</p>`;
+                console.error('[Character Library] Load failed:', err);
+            }
+        }
+
+        function fillCharacterFormFromItem(item, index) {
+            // Ensure enough character entries exist
+            while (characterCount < index) addCharacterEntry();
+            const nameEl = document.getElementById(`char-name-${index}`);
+            const ageEl = document.getElementById(`char-age-${index}`);
+            const genderEl = document.getElementById(`char-gender-${index}`);
+            const physEl = document.getElementById(`char-physical-appearance-${index}`);
+            const clothEl = document.getElementById(`char-clothing-style-${index}`);
+            const traitsEl = document.getElementById(`char-key-traits-${index}`);
+
+            if (nameEl) nameEl.value = item?.name || '';
+            if (ageEl) ageEl.value = (item && item.age != null) ? item.age : '';
+            if (genderEl) {
+                // If it's a select without options, populate it
+                if (genderEl.tagName === 'SELECT' && (!genderEl.options || genderEl.options.length <= 1)) {
+                    try { populateDropdown(`char-gender-${index}`, 'genders'); } catch (e) { }
+                }
+                const val = item?.gender || '';
+                if (val) {
+                    const opts = Array.from(genderEl.options || []).map(o => o.value.toLowerCase());
+                    const cur = val.toLowerCase();
+                    if (opts.includes(cur)) {
+                        genderEl.value = Array.from(genderEl.options).find(o => o.value.toLowerCase() === cur).value;
+                    } else {
+                        const opt = document.createElement('option');
+                        opt.value = val; opt.textContent = val;
+                        genderEl.appendChild(opt);
+                        genderEl.value = val;
+                    }
+                } else {
+                    genderEl.value = '';
+                }
+            }
+            if (physEl) physEl.value = item?.description || item?.physical_appearance || '';
+            if (clothEl) clothEl.value = item?.clothing_style || '';
+            if (traitsEl) traitsEl.value = item?.key_traits || '';
+
+            // Collapse details for a clean view
+            const detailsDiv = document.getElementById(`char-details-${index}`);
+            const toggleBtn = document.getElementById(`char-details-toggle-${index}`);
+            if (detailsDiv && toggleBtn) {
+                detailsDiv.style.display = 'none';
+                toggleBtn.textContent = 'Show Details';
+            }
+        }
+
+        function renderCharacterList() {
+            if (!list) return;
+            if (!characterLibraryState.items.length) {
+                list.innerHTML = '<p>No characters found.</p>';
+                return;
+            }
+            list.innerHTML = characterLibraryState.items.map(item => {
+                const selected = characterLibraryState.selectedIds.has(item.id);
+                const imgSrc = item.thumbnail_path ? (item.thumbnail_path.startsWith('/static_content/') ? item.thumbnail_path : `/static_content/${item.thumbnail_path}`) : '';
+                return `
+                <div class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" style="border:1px solid ${selected ? '#4f8cff' : '#333'};border-radius:8px;padding:8px;cursor:pointer;background:${selected ? '#1f2937' : '#111'};">
+                    ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail" style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;" />` : '<div style="height:140px;background:#222;border-radius:6px;"></div>'}
+                    <div style="margin-top:6px;color:#e5eaf2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(item.name)} <span style="color:#a6b0c3;font-size:0.85em;">(#${item.id})</span></div>
+                </div>`;
+            }).join('');
+            // Wire selection and load behavior
+            list.querySelectorAll('.character-card').forEach(card => {
+                card.addEventListener('click', async (e) => {
+                    const id = parseInt(card.getAttribute('data-id'), 10);
+                    const item = characterLibraryState.items.find(it => it.id === id);
+                    // Cmd/Ctrl+click toggles selection without loading
+                    if (e && (e.metaKey || e.ctrlKey)) {
+                        if (characterLibraryState.selectedIds.has(id)) {
+                            characterLibraryState.selectedIds.delete(id);
+                            card.classList.remove('selected');
+                            card.style.borderColor = '#333';
+                            card.style.background = '#111';
+                        } else {
+                            characterLibraryState.selectedIds.add(id);
+                            card.classList.add('selected');
+                            card.style.borderColor = '#4f8cff';
+                            card.style.background = '#1f2937';
+                        }
+                        renderChips();
+                        return;
+                    }
+                    // Plain click: load into current active slot and mark as selected
+                    const targetIdx = activeCharacterIndex || 1;
+                    let detail = item;
+                    try {
+                        // Fetch full details (age, gender, traits, etc.)
+                        detail = await apiRequest(`/api/v1/characters/${id}`);
+                    } catch (err) {
+                        // Fall back to list item if detail fails
+                        console.warn('[Character Library] Failed to fetch detail for character', id, err);
+                    }
+                    fillCharacterFormFromItem(detail || item, targetIdx);
+                    characterLibraryState.selectedIds.add(id);
+                    renderChips();
+                    displayMessage(`Loaded "${item?.name || 'Character'}" into Character ${targetIdx}.`, 'success', { persistMs: 2500 });
+                });
+            });
+        }
+
+        function renderPagination() {
+            if (!pagination) return;
+            const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
+            const cur = characterLibraryState.page;
+            // Simple prev/next
+            pagination.innerHTML = `
+                <button id="lib-prev" ${cur <= 1 ? 'disabled' : ''} class="action-button-secondary">Prev</button>
+                <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
+                <button id="lib-next" ${cur >= totalPages ? 'disabled' : ''} class="action-button-secondary">Next</button>
+            `;
+            const prev = pagination.querySelector('#lib-prev');
+            const next = pagination.querySelector('#lib-next');
+            if (prev) prev.addEventListener('click', async () => {
+                if (characterLibraryState.page > 1) {
+                    characterLibraryState.page -= 1;
+                    await loadCharacterLibrary();
+                }
+            });
+            if (next) next.addEventListener('click', async () => {
+                const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
+                if (characterLibraryState.page < totalPages) {
+                    characterLibraryState.page += 1;
+                    await loadCharacterLibrary();
+                }
+            });
+        }
+    }
+
     // REMOVED: The local initializeCharacterDetailsToggle function comment block
     /*
       function initializeCharacterDetailsToggle(characterEntryDiv, characterIndex) { ... }
@@ -1759,6 +2684,16 @@ document.addEventListener("DOMContentLoaded", function () {
         "main-characters-fieldset",
     );
     if (mainCharactersFieldset) {
+        // Track which character slot (1..N) the user last interacted with
+        mainCharactersFieldset.addEventListener('focusin', function (event) {
+            const el = event.target;
+            if (!el || !el.id) return;
+            const m = el.id.match(/-(\d+)$/);
+            if (m) {
+                const idx = parseInt(m[1], 10);
+                if (!Number.isNaN(idx)) activeCharacterIndex = idx;
+            }
+        });
         mainCharactersFieldset.addEventListener("click", function (event) {
             if (event.target.classList.contains("character-details-toggle")) {
                 console.log(
@@ -1855,7 +2790,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 // Replace "Edit" with "Save" and "Cancel"
                 target.style.display = 'none';
                 const actionsCell = row.children[5];
-                actionsCell.innerHTML = `<button class="admin-save-user-changes">Save</button> <button class="admin-cancel-user-edit">Cancel</button>`;
+                actionsCell.innerHTML = `<button class="admin-save-user-changes action-button-primary">Save</button> <button class="admin-cancel-user-edit action-button-secondary">Cancel</button>`;
             } else if (target.classList.contains("admin-cancel-user-edit")) {
                 const row = target.closest("tr");
                 if (!row) return;
@@ -2064,9 +2999,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 <td style="color:#e5eaf2;padding:0.75rem 0.5rem;">${item.item_label} ${item.is_active ? '' : '<span style=\'color:#ff6b6b;font-size:0.9em;\'>(inactive)</span>'}</td>
                 <td style="color:#888;padding:0.75rem 0.5rem;">${item.item_value}</td>
                 <td style="text-align:right;padding:0.75rem 0.5rem;">
-                    <button class="admin-action-button action-button-primary" data-id="${item.id}" data-list="${listName}" onclick="showEditItemInput('${listName}', ${item.id})">Edit</button>
+                    <button class="admin-action-button action-button-info" data-id="${item.id}" data-list="${listName}" onclick="showEditItemInput('${listName}', ${item.id})">Edit</button>
                     <button class="admin-action-button action-button-danger" data-id="${item.id}" data-list="${listName}" onclick="deleteDynamicListItem('${listName}', ${item.id})">Delete</button>
-                    <button class="admin-action-button action-button-secondary" data-id="${item.id}" data-list="${listName}" onclick="toggleDynamicListItemActive('${listName}', ${item.id}, ${item.is_active})">${item.is_active ? 'Deactivate' : 'Activate'}</button>
+                    <button class="admin-action-button action-button-info" data-id="${item.id}" data-list="${listName}" onclick="toggleDynamicListItemActive('${listName}', ${item.id}, ${item.is_active})">${item.is_active ? 'Deactivate' : 'Activate'}</button>
                 </td>
             </tr>`;
             });
@@ -2178,7 +3113,7 @@ document.addEventListener("DOMContentLoaded", function () {
         #adminPanelContainer h2, #adminPanelContainer h3, #adminPanelContainer h4 {
             color: #e5eaf2 !important;
         }
-        .admin-action-button, .action-button-primary, .action-button-secondary, .action-button-danger {
+    .admin-action-button, .action-button-primary, .action-button-secondary, .action-button-danger, .action-button-info {
             border: none;
             border-radius: 4px;
             padding: 6px 16px;
@@ -2187,27 +3122,15 @@ document.addEventListener("DOMContentLoaded", function () {
             cursor: pointer;
             transition: background 0.2s, color 0.2s;
         }
-        .action-button-primary {
-            background: #4f8cff;
-            color: #fff;
-        }
-        .action-button-primary:hover {
-            background: #2563eb;
-        }
-        .action-button-secondary {
-            background: #e5eaf2;
-            color: #23272f;
-        }
-        .action-button-secondary:hover {
-            background: #cbd5e1;
-        }
-        .action-button-danger {
-            background: #ff4d4f;
-            color: #fff;
-        }
-        .action-button-danger:hover {
-            background: #c00;
-        }
+    /* Button colors: primary=green (Save), secondary=grey (Cancel/Prev/Next), danger=red (Delete) */
+    .action-button-primary { background: #16a34a; color: #fff; }
+    .action-button-primary:hover { background: #15803d; }
+    .action-button-secondary { background: #e5e7eb; color: #111827; }
+    .action-button-secondary:hover { background: #d1d5db; }
+    .action-button-danger { background: #ef4444; color: #fff; }
+    .action-button-danger:hover { background: #dc2626; }
+    .action-button-info { background: #3b82f6; color: #fff; }
+    .action-button-info:hover { background: #2563eb; }
         .dynamic-list-block {
             border: 2px solid #4f8cff !important;
             background: #23272f !important;
