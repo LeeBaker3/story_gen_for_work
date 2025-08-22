@@ -4,6 +4,11 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      release_as:
+        description: "Force release version (e.g., 0.4.5)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -16,3 +21,4 @@ jobs:
       - uses: google-github-actions/release-please-action@v4
         with:
           release-type: simple
+          release-as: ${{ inputs.release_as }}
