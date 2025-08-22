@@ -47,3 +47,19 @@ Next Steps
 - Create package.json with the dev deps and jest config.
 - Add initial sample tests and a small fetch mock utility.
 - Wire CI job in .github/workflows/ci.yml.
+
+---
+
+Progress update (2025-08-22)
+- Tooling and CI are in place; `npm test` runs in CI (Node 20).
+- Implemented and passing tests:
+   - Wizard validations and navigation basics.
+   - Characters page: pagination edge cases, CRUD flows, regenerate inline status.
+   - Search debounce:
+      - Characters page search input (#characters-page-search) – single debounced fetch, page reset, focus retention.
+      - Wizard character library search (#character-search in step 1) – single debounced fetch and page reset to 1.
+
+Upcoming additions
+- Resilience tests for network errors (list load/save/duplicate/delete/regenerate): verify error messaging and no unintended state changes.
+- A11y assertions for modal aria-busy and snackbar aria-live.
+- Potential tests for selection persistence across library pagination and chipbar interactions.

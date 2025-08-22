@@ -537,6 +537,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     statusEl.textContent = 'Failed to regenerate image.';
                     statusEl.className = 'inline-status inline-status--error';
                     statusEl.style.display = '';
+                    const region = statusEl.closest('[data-status-region]');
+                    if (region) region.setAttribute('aria-busy', 'false');
                 }
                 actionButtons.forEach(b => b.disabled = false);
             }
