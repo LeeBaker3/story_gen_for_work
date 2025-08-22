@@ -1,37 +1,84 @@
 {
-  "release-as": "0.5.0",
-  "packages": {
-    ".": {
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
+    "release-as": "0.5.0",
+    "packages": {
+        ".": {
+                "release-type": "simple",
+                "changelog-path": "CHANGELOG.md"
+            },
+            "backend": {
+                "release-type": "python",
+                "package-name": "backend",
+                "changelog-path": "CHANGELOG.md",
+                "extra-files": [
+                    {
+                        "type": "generic",
+                        "path": "version.py"
+                    }
+                ]
+            },
+            "frontend": {
+                "release-type": "simple",
+                "package-name": "frontend",
+                "changelog-path": "CHANGELOG.md",
+                "extra-files": [
+                    {
+                        "type": "json",
+                        "path": "version.json",
+                        "jsonpath": "$.version"
+                    }
+                ]
+            }
     },
-    "backend": {
-      "release-type": "python",
-      "package-name": "backend",
-      "changelog-path": "backend/CHANGELOG.md",
-      "extra-files": [
-        { "type": "generic", "path": "backend/version.py" }
-      ]
-    },
-    "frontend": {
-      "release-type": "simple",
-      "changelog-path": "frontend/CHANGELOG.md",
-      "extra-files": [
-        { "type": "json", "path": "frontend/version.json", "jsonpath": "$.version" }
-      ]
-    }
-  },
-  "pull-request-title-pattern": "chore${scope}: release${component} ${version}",
-  "labels": ["release", "autorelease: pending"],
-  "changelog-types": [
-    { "type": "feat", "section": "Features", "hidden": false },
-    { "type": "fix", "section": "Bug Fixes", "hidden": false },
-    { "type": "perf", "section": "Performance", "hidden": false },
-    { "type": "refactor", "section": "Refactors", "hidden": false },
-    { "type": "docs", "section": "Docs", "hidden": false },
-    { "type": "test", "section": "Tests", "hidden": false },
-    { "type": "ci", "section": "CI", "hidden": false },
-    { "type": "build", "section": "Build", "hidden": false },
-    { "type": "chore", "section": "Chores", "hidden": false }
-  ]
+    "pull-request-title-pattern": "chore${scope}: release${component} ${version}",
+    "labels": [
+        "release",
+        "autorelease: pending"
+    ],
+    "changelog-types": [
+        {
+            "type": "feat",
+            "section": "Features",
+            "hidden": false
+        },
+        {
+            "type": "fix",
+            "section": "Bug Fixes",
+            "hidden": false
+        },
+        {
+            "type": "perf",
+            "section": "Performance",
+            "hidden": false
+        },
+        {
+            "type": "refactor",
+            "section": "Refactors",
+            "hidden": false
+        },
+        {
+            "type": "docs",
+            "section": "Docs",
+            "hidden": false
+        },
+        {
+            "type": "test",
+            "section": "Tests",
+            "hidden": false
+        },
+        {
+            "type": "ci",
+            "section": "CI",
+            "hidden": false
+        },
+        {
+            "type": "build",
+            "section": "Build",
+            "hidden": false
+        },
+        {
+            "type": "chore",
+            "section": "Chores",
+            "hidden": false
+        }
+    ]
 }
