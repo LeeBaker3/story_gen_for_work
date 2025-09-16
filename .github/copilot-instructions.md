@@ -105,6 +105,9 @@ def calculate_area(radius: float) -> float:
 	•	Reflect any new or changed user requirements
 	•	Ensure all features are described with acceptance criteria
 	•	Ensure any API changes are reflected in the API contracts section
+- COMPATIBILITY.md: Update with any changes to compatibility or breaking changes.
+	•	Document any breaking changes or deprecations
+	•	Ensure compatibility notes are clear and concise
 
 Changelog Format
 
