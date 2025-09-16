@@ -2052,9 +2052,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // --- STORY GENERATION PROGRESS POLLING ---
     async function pollForStoryStatus(taskId) {
-        const progressArea = document.getElementById("generation-progress-area");
-        const statusMessage = document.getElementById("generation-status-message");
-        const progressBar = document.getElementById("generation-progress-bar");
+    const progressArea = document.getElementById("generation-progress-area");
+    const statusMessage = document.getElementById("generation-status-message");
+    const progressBar = document.getElementById("generation-progress-bar");
 
         if (!progressArea || !statusMessage || !progressBar) {
             console.error("Polling UI elements not found!");
@@ -2062,7 +2062,10 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        progressArea.style.display = "block";
+    progressArea.style.display = "block";
+    // a11y: announce progress changes and mark busy
+    progressArea.setAttribute('aria-busy', 'true');
+    statusMessage.setAttribute('aria-live', 'polite');
         let pollingInterval;
 
         const poll = async () => {
@@ -2090,6 +2093,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         clearInterval(pollingInterval);
                         statusMessage.textContent = 'Story generation complete! Loading...';
                         progressArea.style.display = 'none';
+                        progressArea.setAttribute('aria-busy', 'false');
                         if (task.story_id) {
                             const storyData = await apiRequest(`/api/v1/stories/${task.story_id}`);
                             showSection(storyPreviewSection);
@@ -2098,15 +2102,17 @@ document.addEventListener("DOMContentLoaded", function () {
                             throw new Error("Polling complete, but no story_id was returned.");
                         }
                     } else if (task.status === 'failed') {
-                        clearInterval(pollingInterval);
-                        progressArea.style.display = 'none';
+            clearInterval(pollingInterval);
+            progressArea.style.display = 'none';
+            progressArea.setAttribute('aria-busy', 'false');
                         // Backend surfaces failure details as last_error in the API schema
                         displayMessage(`Story generation failed: ${task.last_error || 'Unknown error'}` , 'error');
                     }
                 }
             } catch (error) {
-                clearInterval(pollingInterval);
-                progressArea.style.display = 'none';
+        clearInterval(pollingInterval);
+        progressArea.style.display = 'none';
+        progressArea.setAttribute('aria-busy', 'false');
                 console.error("Error during status polling:", error);
                 displayMessage(`An error occurred while checking story progress: ${error.message}`, 'error');
             }
