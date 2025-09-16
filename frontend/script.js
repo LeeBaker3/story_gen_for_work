@@ -2083,7 +2083,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         generating_page_images: 'Generating page images...',
                         finalizing: 'Finalizing...'
                     };
-                    statusMessage.textContent = task.status_message || stepMap[step] || 'Processing...';
+                    // Backend does not return status_message; expose a helpful default
+                    statusMessage.textContent = stepMap[step] || 'Processing...';
 
                     if (task.status === 'completed' || task.status === 'success') {
                         clearInterval(pollingInterval);
@@ -2099,7 +2100,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     } else if (task.status === 'failed') {
                         clearInterval(pollingInterval);
                         progressArea.style.display = 'none';
-                        displayMessage(`Story generation failed: ${task.status_message || task.error_message || 'Unknown error'}`, 'error');
+                        // Backend surfaces failure details as last_error in the API schema
+                        displayMessage(`Story generation failed: ${task.last_error || 'Unknown error'}` , 'error');
                     }
                 }
             } catch (error) {
