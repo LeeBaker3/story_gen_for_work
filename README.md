@@ -1,4 +1,4 @@
-# Story Generator API ![coverage](coverage_badge.svg)
+# Story Generator API ![coverage](coverage_badge.svg) [![Release](https://img.shields.io/github/v/release/LeeBaker3/story_gen_for_work?display_name=tag&sort=semver)](https://github.com/LeeBaker3/story_gen_for_work/releases/latest)
 
 FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, inline status feedback, and static content served by the API when enabled.
 
