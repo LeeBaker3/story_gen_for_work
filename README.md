@@ -2,6 +2,19 @@
 
 FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, inline status feedback, and static content served by the API when enabled.
 
+## Releases
+- Automated with Release Please (manifest mode) covering three components:
+    - Root (tag: vX.Y.Z)
+    - Backend (tag: backend-vX.Y.Z; version source: `backend/version.py`)
+    - Frontend (tag: frontend-vX.Y.Z; version source: `frontend/version.json`)
+- Triggered on merge to main; versions are inferred from Conventional Commits.
+- Manual run (optional): GitHub Actions → “Release Please” → Run workflow; you can provide an optional release_as version override.
+
+Latest releases
+- Root: https://github.com/LeeBaker3/story_gen_for_work/releases/latest
+- Backend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/backend-v0.5.0
+- Frontend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/frontend-v0.5.0
+
 ## Quick start
 
 Prereqs
