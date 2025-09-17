@@ -2066,7 +2066,13 @@ document.addEventListener("DOMContentLoaded", function () {
     // a11y: announce progress changes and mark busy
     progressArea.setAttribute('aria-busy', 'true');
     statusMessage.setAttribute('aria-live', 'polite');
-        let pollingInterval;
+    let pollingInterval;
+    // Backoff and timeout settings
+    const baseIntervalMs = 3000;
+    let currentIntervalMs = baseIntervalMs;
+    const maxIntervalMs = 15000;
+    const startedAt = Date.now();
+    const maxDurationMs = 5 * 60 * 1000; // 5 minutes overall guard
 
         const poll = async () => {
             try {
@@ -2118,8 +2124,37 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         };
 
-        pollingInterval = setInterval(poll, 3000); // Poll every 3 seconds
-        poll(); // Initial poll immediately
+        // Kick off immediately
+        await poll();
+        // Schedule next polls with dynamic interval/backoff
+        pollingInterval = setInterval(async () => {
+            // Stop if we exceeded max duration
+            if (Date.now() - startedAt > maxDurationMs) {
+                clearInterval(pollingInterval);
+                progressArea.style.display = 'none';
+                progressArea.setAttribute('aria-busy', 'false');
+                displayMessage('Story generation timed out. Please try again later.', 'error');
+                return;
+            }
+            try {
+                await poll();
+                // If still running, gradually increase interval up to max
+                if (pollingInterval && currentIntervalMs < maxIntervalMs) {
+                    currentIntervalMs = Math.min(maxIntervalMs, Math.floor(currentIntervalMs * 1.25));
+                    clearInterval(pollingInterval);
+                    pollingInterval = setInterval(arguments.callee, currentIntervalMs);
+                }
+            } catch {
+                // Poll already handles errors; just ensure we stop.
+                clearInterval(pollingInterval);
+            }
+        }, currentIntervalMs);
+    }
+
+    // Expose minimal test hook without polluting production behavior
+    if (typeof window !== 'undefined') {
+        window.__TEST_API__ = window.__TEST_API__ || {};
+        window.__TEST_API__.pollForStatus = pollForStoryStatus;
     }
 
 
