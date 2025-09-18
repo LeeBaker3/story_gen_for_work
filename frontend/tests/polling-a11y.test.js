@@ -2,7 +2,7 @@ import { waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
 function mountDom() {
-  document.body.innerHTML = `
+    document.body.innerHTML = `
     <main>
       <header>
         <nav>
@@ -26,44 +26,44 @@ function mountDom() {
 }
 
 describe('generation progress a11y', () => {
-  beforeEach(async () => {
-    window.localStorage.setItem('authToken', 't');
-    mountDom();
-    // Mock a minimal fetch used by apiRequest/polling
-    global.fetch = jest.fn(async (url) => {
-      // First call returns in_progress, subsequent can continue
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 'task-1', status: 'in_progress', progress: 10, current_step: 'initializing' }),
-        headers: { get: () => 'application/json' }
-      };
+    beforeEach(async () => {
+        window.localStorage.setItem('authToken', 't');
+        mountDom();
+        // Mock a minimal fetch used by apiRequest/polling
+        global.fetch = jest.fn(async (url) => {
+            // First call returns in_progress, subsequent can continue
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({ id: 'task-1', status: 'in_progress', progress: 10, current_step: 'initializing' }),
+                headers: { get: () => 'application/json' }
+            };
+        });
+        await import('../../frontend/script.js');
+        document.dispatchEvent(new Event('DOMContentLoaded'));
     });
-    await import('../../frontend/script.js');
-    document.dispatchEvent(new Event('DOMContentLoaded'));
-  });
 
-  test('sets aria-live and aria-busy when polling begins', async () => {
-    // Call the internal function indirectly by simulating a generation start
-    const { pollForStatus } = window.__TEST_API__ || {};
-    const progressArea = document.getElementById('generation-progress-area');
-    const statusMsg = document.getElementById('generation-status-message');
+    test('sets aria-live and aria-busy when polling begins', async () => {
+        // Call the internal function indirectly by simulating a generation start
+        const { pollForStatus } = window.__TEST_API__ || {};
+        const progressArea = document.getElementById('generation-progress-area');
+        const statusMsg = document.getElementById('generation-status-message');
 
-    // Guard in case test API isn’t exposed; fall back to direct call if available
-    if (typeof pollForStatus === 'function') {
-      // Do not await: the polling promise may only resolve on completion (which we don't simulate).
-      // Invocation alone should synchronously set aria attributes before first network wait.
-      pollForStatus('task-1');
-    } else {
-      // If not exported for tests, just assert DOM attributes can be set without throwing
-      progressArea.style.display = 'block';
-      progressArea.setAttribute('aria-busy', 'true');
-      statusMsg.setAttribute('aria-live', 'polite');
-    }
+        // Guard in case test API isn’t exposed; fall back to direct call if available
+        if (typeof pollForStatus === 'function') {
+            // Do not await: the polling promise may only resolve on completion (which we don't simulate).
+            // Invocation alone should synchronously set aria attributes before first network wait.
+            pollForStatus('task-1');
+        } else {
+            // If not exported for tests, just assert DOM attributes can be set without throwing
+            progressArea.style.display = 'block';
+            progressArea.setAttribute('aria-busy', 'true');
+            statusMsg.setAttribute('aria-live', 'polite');
+        }
 
-    await waitFor(() => {
-      expect(progressArea.getAttribute('aria-busy')).toBe('true');
-      expect(statusMsg.getAttribute('aria-live')).toBe('polite');
+        await waitFor(() => {
+            expect(progressArea.getAttribute('aria-busy')).toBe('true');
+            expect(statusMsg.getAttribute('aria-live')).toBe('polite');
+        });
     });
-  });
 });

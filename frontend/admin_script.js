@@ -81,6 +81,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 adminViewPanel.innerHTML = "<h2>Application Configuration</h2><p>Settings for API keys, application behavior, and broadcast messages will be here.</p>";
                 displayAdminMessage("Application config loaded.", "success");
                 break;
+            case "admin-stats":
+                loadAdminStatsSection();
+                break;
             default:
                 adminViewPanel.innerHTML = "<p>Section not found.</p>";
         }
@@ -1104,6 +1107,108 @@ document.addEventListener("DOMContentLoaded", function () {
                     displayAdminMessage(`Failed to delete item: ${errorDetail}`, "error", modalId); // Display error in modal
                 }
             });
+        }
+    }
+
+    // --- Admin Stats Section ---
+    let adminStatsInterval = null;
+    async function loadAdminStatsSection() {
+        adminViewPanel.innerHTML = `
+            <h2>Admin Statistics</h2>
+            <div class="table-responsive-container" id="admin-stats-controls" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+                <button id="refresh-admin-stats-btn" class="admin-button" aria-label="Refresh statistics">Refresh</button>
+                <label class="admin-form" style="display:flex; align-items:center; gap:6px; margin:0;">
+                    <input type="checkbox" id="auto-refresh-admin-stats" /> Auto refresh (30s)
+                </label>
+                <span id="admin-stats-last-updated" class="subtle-text" style="font-size:0.85rem;">Last updated: —</span>
+            </div>
+            <div id="admin-stats-content" class="cards-grid" style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;"></div>
+            <div id="admin-stats-error" class="error-message" style="display:none;"></div>
+        `;
+        attachAdminStatsListeners();
+        await refreshAdminStats();
+    }
+
+    function attachAdminStatsListeners() {
+        const refreshBtn = document.getElementById('refresh-admin-stats-btn');
+        const autoRefreshCheckbox = document.getElementById('auto-refresh-admin-stats');
+        refreshBtn?.addEventListener('click', () => refreshAdminStats());
+        autoRefreshCheckbox?.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                if (adminStatsInterval) clearInterval(adminStatsInterval);
+                adminStatsInterval = setInterval(refreshAdminStats, 30000);
+            } else {
+                if (adminStatsInterval) clearInterval(adminStatsInterval);
+            }
+        });
+    }
+
+    async function refreshAdminStats() {
+        const container = document.getElementById('admin-stats-content');
+        const errorEl = document.getElementById('admin-stats-error');
+        if (!container) return;
+        try {
+            container.setAttribute('aria-busy', 'true');
+            container.style.opacity = '0.6';
+            const stats = await apiRequest('/api/v1/admin/stats', 'GET');
+            renderAdminStats(stats);
+            errorEl.style.display = 'none';
+            const ts = new Date().toLocaleTimeString();
+            const lastUpdated = document.getElementById('admin-stats-last-updated');
+            if (lastUpdated) lastUpdated.textContent = `Last updated: ${ts}`;
+            displayAdminMessage('Admin statistics updated.', 'success');
+        } catch (err) {
+            console.error('Failed to fetch admin stats:', err);
+            errorEl.textContent = 'Failed to load statistics: ' + (err.message || 'Unknown error');
+            errorEl.style.display = 'block';
+            displayAdminMessage('Failed to refresh statistics.', 'error');
+        } finally {
+            container.removeAttribute('aria-busy');
+            container.style.opacity = '1';
+        }
+    }
+
+    function renderAdminStats(stats) {
+        const container = document.getElementById('admin-stats-content');
+        if (!container) return;
+        // Helper formatters
+        const fmtPct = (v) => (v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%');
+        const fmtDur = (v) => (v === null || v === undefined ? '—' : v.toFixed(2) + 's');
+        const fmtNum = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(2));
+
+        // Derive combined values
+        const usersLine = `${stats.total_users} total / ${stats.active_users} active`;
+        const storiesLine = `${stats.total_stories} total | ${stats.generated_stories} generated | ${stats.draft_stories} drafts`;
+        const tasksBreakdown = `${stats.tasks_last_24h} total (Comp: ${stats.tasks_completed_last_24h}, Fail: ${stats.tasks_failed_last_24h}, In-Progress: ${stats.tasks_in_progress})`;
+
+        const cards = [
+            { label: 'Users', value: usersLine, icon: '👥' },
+            { label: 'Stories', value: storiesLine, icon: '📚' },
+            { label: 'Characters', value: stats.total_characters, icon: '🧙' },
+            { label: 'Tasks (24h)', value: tasksBreakdown, icon: '⏱️' },
+            { label: 'Avg Task Duration (24h)', value: fmtDur(stats.avg_task_duration_seconds_last_24h), icon: '⌛' },
+            { label: 'Avg Attempts (24h)', value: fmtNum(stats.avg_attempts_last_24h), icon: '🔁' },
+            { label: 'Success Rate (24h)', value: fmtPct(stats.success_rate_last_24h), icon: '✅' },
+        ];
+
+        let html = '';
+        cards.forEach(card => {
+            html += `
+                <div class="admin-card" style="border:1px solid var(--border-color,#444); padding:12px; border-radius:8px; background:var(--panel-bg,#1f1f1f); display:flex; flex-direction:column; gap:4px;">
+                    <div style="font-size:1.4rem; line-height:1;">${card.icon}</div>
+                    <div class="admin-card-label" style="font-weight:600;">${escapeHTML(card.label)}</div>
+                    <div class="admin-card-value" style="font-size:0.9rem; opacity:0.85;">${escapeHTML(String(card.value))}</div>
+                </div>`;
+        });
+        container.innerHTML = html;
+
+        // Conditional styling (e.g., success rate coloring)
+    const successRateCard = container.querySelectorAll('.admin-card')[6];
+        if (successRateCard && stats.success_rate_last_24h !== null && stats.success_rate_last_24h !== undefined) {
+            const rate = stats.success_rate_last_24h;
+            if (rate >= 0.7) successRateCard.style.boxShadow = '0 0 0 2px rgba(0,160,0,0.4)';
+            else if (rate >= 0.4) successRateCard.style.boxShadow = '0 0 0 2px rgba(200,140,0,0.4)';
+            else successRateCard.style.boxShadow = '0 0 0 2px rgba(200,0,0,0.4)';
         }
     }
 

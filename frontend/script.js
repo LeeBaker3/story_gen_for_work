@@ -2051,10 +2051,24 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- STORY GENERATION PROGRESS POLLING ---
+    // Internal configuration for polling, overridable in tests via __TEST_API__
+    const __pollingConfig = {
+        baseIntervalMs: 3000,
+        maxIntervalMs: 15000,
+        maxDurationMs: 5 * 60 * 1000, // 5 minutes in production
+    };
+
+    function __setPollingConfig(cfg) {
+        if (!cfg || typeof cfg !== 'object') return;
+        if (typeof cfg.baseIntervalMs === 'number') __pollingConfig.baseIntervalMs = cfg.baseIntervalMs;
+        if (typeof cfg.maxIntervalMs === 'number') __pollingConfig.maxIntervalMs = cfg.maxIntervalMs;
+        if (typeof cfg.maxDurationMs === 'number') __pollingConfig.maxDurationMs = cfg.maxDurationMs;
+    }
+
     async function pollForStoryStatus(taskId) {
-    const progressArea = document.getElementById("generation-progress-area");
-    const statusMessage = document.getElementById("generation-status-message");
-    const progressBar = document.getElementById("generation-progress-bar");
+        const progressArea = document.getElementById("generation-progress-area");
+        const statusMessage = document.getElementById("generation-status-message");
+        const progressBar = document.getElementById("generation-progress-bar");
 
         if (!progressArea || !statusMessage || !progressBar) {
             console.error("Polling UI elements not found!");
@@ -2062,17 +2076,17 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-    progressArea.style.display = "block";
-    // a11y: announce progress changes and mark busy
-    progressArea.setAttribute('aria-busy', 'true');
-    statusMessage.setAttribute('aria-live', 'polite');
-    let pollingInterval;
-    // Backoff and timeout settings
-    const baseIntervalMs = 3000;
-    let currentIntervalMs = baseIntervalMs;
-    const maxIntervalMs = 15000;
-    const startedAt = Date.now();
-    const maxDurationMs = 5 * 60 * 1000; // 5 minutes overall guard
+        progressArea.style.display = "block";
+        // a11y: announce progress changes and mark busy
+        progressArea.setAttribute('aria-busy', 'true');
+        statusMessage.setAttribute('aria-live', 'polite');
+        let pollingInterval;
+        // Backoff and timeout settings
+        const baseIntervalMs = __pollingConfig.baseIntervalMs;
+        let currentIntervalMs = baseIntervalMs;
+        const maxIntervalMs = __pollingConfig.maxIntervalMs;
+        const startedAt = Date.now();
+        const maxDurationMs = __pollingConfig.maxDurationMs; // overridable
 
         const poll = async () => {
             try {
@@ -2108,29 +2122,30 @@ document.addEventListener("DOMContentLoaded", function () {
                             throw new Error("Polling complete, but no story_id was returned.");
                         }
                     } else if (task.status === 'failed') {
-            clearInterval(pollingInterval);
-            progressArea.style.display = 'none';
-            progressArea.setAttribute('aria-busy', 'false');
+                        clearInterval(pollingInterval);
+                        progressArea.style.display = 'none';
+                        progressArea.setAttribute('aria-busy', 'false');
                         // Backend surfaces failure details as last_error in the API schema
-                        displayMessage(`Story generation failed: ${task.last_error || 'Unknown error'}` , 'error');
+                        displayMessage(`Story generation failed: ${task.last_error || 'Unknown error'}`, 'error');
                     }
                 }
             } catch (error) {
-        clearInterval(pollingInterval);
-        progressArea.style.display = 'none';
-        progressArea.setAttribute('aria-busy', 'false');
+                clearInterval(pollingInterval);
+                progressArea.style.display = 'none';
+                progressArea.setAttribute('aria-busy', 'false');
                 console.error("Error during status polling:", error);
                 displayMessage(`An error occurred while checking story progress: ${error.message}`, 'error');
             }
         };
 
-        // Kick off immediately
+        // Kick off immediately then schedule subsequent ticks via setTimeout (simpler & test-friendly)
         await poll();
-        // Schedule next polls with dynamic interval/backoff
-        pollingInterval = setInterval(async () => {
-            // Stop if we exceeded max duration
+        let stopped = false;
+        async function tick() {
+            if (stopped) return;
+            // Timeout guard
             if (Date.now() - startedAt > maxDurationMs) {
-                clearInterval(pollingInterval);
+                stopped = true;
                 progressArea.style.display = 'none';
                 progressArea.setAttribute('aria-busy', 'false');
                 displayMessage('Story generation timed out. Please try again later.', 'error');
@@ -2138,23 +2153,26 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             try {
                 await poll();
-                // If still running, gradually increase interval up to max
-                if (pollingInterval && currentIntervalMs < maxIntervalMs) {
-                    currentIntervalMs = Math.min(maxIntervalMs, Math.floor(currentIntervalMs * 1.25));
-                    clearInterval(pollingInterval);
-                    pollingInterval = setInterval(arguments.callee, currentIntervalMs);
-                }
-            } catch {
-                // Poll already handles errors; just ensure we stop.
-                clearInterval(pollingInterval);
+            } catch (e) {
+                stopped = true; // poll will have reported error
+                return;
             }
-        }, currentIntervalMs);
+            // If still not stopped (status not terminal), backoff & schedule next tick
+            if (!stopped) {
+                if (currentIntervalMs < maxIntervalMs) {
+                    currentIntervalMs = Math.min(maxIntervalMs, Math.floor(currentIntervalMs * 1.25));
+                }
+                setTimeout(tick, currentIntervalMs);
+            }
+        }
+        setTimeout(tick, currentIntervalMs);
     }
 
     // Expose minimal test hook without polluting production behavior
     if (typeof window !== 'undefined') {
         window.__TEST_API__ = window.__TEST_API__ || {};
         window.__TEST_API__.pollForStatus = pollForStoryStatus;
+        window.__TEST_API__.setPollingConfig = __setPollingConfig;
     }
 
 
