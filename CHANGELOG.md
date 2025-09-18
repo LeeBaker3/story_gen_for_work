@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2025-09-18
+### Added
+- Admin Stats API and UI now include average attempts over completed tasks in the last 24h.
+
+### Changed
+- Admin Stats average task duration now prefers precise duration_ms captured on task completion, with a fallback to updated_at - created_at for legacy rows.
+- README and PRD updated to document new task tracking fields and metrics.
+
+### Fixed
+- Ensured SQLite dev/test startup helper adds new StoryGenerationTask columns idempotently to avoid missing column errors during tests.
+
 ## [0.5.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.4.4...v0.5.0) (2025-09-16)
 
 

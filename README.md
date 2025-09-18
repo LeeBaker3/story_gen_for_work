@@ -51,6 +51,10 @@ Admin monitoring UI highlights
 - Follow tail: when enabled, the viewer auto‑scrolls to the bottom after each refresh.
 - Client‑side filtering: plain text or regex, with invert option.
 
+Admin Stats
+- Endpoint: GET /api/v1/admin/stats (admin only)
+- Metrics: users (total/active), stories (total/generated/drafts), total characters, task breakdown for last 24h (total/completed/failed/in-progress), average task duration for last 24h (prefers precise duration_ms, falls back to timestamps), success rate (completed / (completed + failed)), and average attempts over completed tasks in the last 24h.
+
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
 - User data (if mounted): GET /static_content/* serves files from DATA_DIR
