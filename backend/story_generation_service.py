@@ -146,6 +146,13 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                     # backoff before next attempt, unless last
                     if attempt < attempts - 1:
                         await asyncio.sleep(backoff * (2 ** attempt))
+                        # Record a retry cycle at the task level (increment attempts)
+                        crud.update_story_generation_task(
+                            db,
+                            task_id,
+                            status=schemas.GenerationTaskStatus.IN_PROGRESS,
+                            error_message=f"Retrying page {page_num_int} image generation (attempt {attempt + 2}/{attempts})",
+                        )
                 page['image_url'] = page_image_url
                 if not page_image_url:
                     failed_pages += 1

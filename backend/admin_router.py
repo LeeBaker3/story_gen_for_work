@@ -6,10 +6,101 @@ from backend import crud, schemas, database
 from backend.auth import get_current_admin_user
 from backend.logging_config import app_logger, error_logger
 from backend.database import get_db
+from sqlalchemy import func, and_
+from datetime import datetime, timedelta, timezone
 
 admin_router = APIRouter(
     dependencies=[Depends(get_current_admin_user)]
 )
+
+
+@admin_router.get("/stats", response_model=schemas.AdminStats)
+def get_admin_stats(db: Session = Depends(get_db)):
+    """Aggregate high-level application stats for the admin dashboard.
+
+    Now leverages precise task tracking fields (duration_ms, attempts) when available.
+    Falls back gracefully if legacy rows lack new fields.
+    """
+    # Import models locally to avoid circular import issues
+    from backend.database import User, Story, Character, StoryGenerationTask
+
+    # Time window
+    now = datetime.now(timezone.utc)
+    since_24h = now - timedelta(hours=24)
+
+    # Users
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    active_users = db.query(func.count(User.id)).filter(
+        User.is_active == True).scalar() or 0
+
+    # Stories
+    total_stories = db.query(func.count(Story.id)).scalar() or 0
+    generated_stories = db.query(func.count(Story.id)).filter(
+        Story.is_draft == False).scalar() or 0
+    draft_stories = total_stories - generated_stories
+
+    # Characters
+    try:
+        total_characters = db.query(func.count(Character.id)).scalar() or 0
+    except Exception:
+        total_characters = 0
+
+    # Tasks last 24h
+    tasks_24h_q = db.query(StoryGenerationTask).filter(
+        StoryGenerationTask.created_at >= since_24h)
+    tasks_last_24h = tasks_24h_q.count()
+    tasks_completed_last_24h = tasks_24h_q.filter(
+        StoryGenerationTask.status == 'completed').count()
+    tasks_failed_last_24h = tasks_24h_q.filter(
+        StoryGenerationTask.status == 'failed').count()
+    tasks_in_progress = db.query(StoryGenerationTask).filter(
+        StoryGenerationTask.status.in_(['pending', 'in_progress'])).count()
+
+    # Precise avg duration (prefer duration_ms; fallback to updated_at-created_at)
+    durations = []
+    total_attempts = 0
+    completed_tasks = []
+    if tasks_completed_last_24h:
+        completed_tasks = tasks_24h_q.filter(
+            StoryGenerationTask.status == 'completed').all()
+        for t in completed_tasks:
+            try:
+                # Prefer explicit duration_ms
+                if getattr(t, 'duration_ms', None):
+                    durations.append(t.duration_ms / 1000.0)
+                elif t.created_at and t.updated_at:
+                    durations.append(
+                        (t.updated_at - t.created_at).total_seconds())
+                # Sum attempts if present
+                total_attempts += getattr(t, 'attempts', 0) or 0
+            except Exception:
+                pass
+    avg_duration = round(sum(durations) / len(durations),
+                         2) if durations else None
+    avg_attempts = round(total_attempts / len(completed_tasks),
+                         2) if completed_tasks else None
+
+    success_rate = None
+    denom = tasks_completed_last_24h + tasks_failed_last_24h
+    if denom > 0:
+        success_rate = tasks_completed_last_24h / denom
+
+    return schemas.AdminStats(
+        total_users=total_users,
+        active_users=active_users,
+        total_stories=total_stories,
+        generated_stories=generated_stories,
+        draft_stories=draft_stories,
+        total_characters=total_characters,
+        tasks_last_24h=tasks_last_24h,
+        tasks_in_progress=tasks_in_progress,
+        tasks_failed_last_24h=tasks_failed_last_24h,
+        tasks_completed_last_24h=tasks_completed_last_24h,
+        avg_task_duration_seconds_last_24h=avg_duration,
+        success_rate_last_24h=success_rate,
+        # New metric: average attempts over completed tasks in the last 24h
+        avg_attempts_last_24h=avg_attempts,
+    )
 
 # DynamicList Endpoints
 

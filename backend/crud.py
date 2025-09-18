@@ -610,6 +610,7 @@ def create_story_generation_task(db: Session, story_id: int, user_id: int) -> Op
         status=schemas.GenerationTaskStatus.PENDING.value,
         progress=0,
         current_step=schemas.GenerationTaskStep.INITIALIZING.value,
+        attempts=0,
     )
     db.add(new_task)
     db.commit()
@@ -647,9 +648,23 @@ def update_story_generation_task(
     task = get_story_generation_task(db, task_id)
     if not task:
         return None
+    # Capture state transitions and timing metrics
+    now = datetime.now(timezone.utc)
+    previous_status = task.status
 
     if status is not None:
-        task.status = status.value if hasattr(status, "value") else str(status)
+        new_status = status.value if hasattr(status, "value") else str(status)
+        # Set started_at when first moving from pending to in_progress
+        if new_status == schemas.GenerationTaskStatus.IN_PROGRESS.value and task.started_at is None:
+            task.started_at = now
+        # On terminal states, record completed_at and duration
+        if new_status in [schemas.GenerationTaskStatus.COMPLETED.value, schemas.GenerationTaskStatus.FAILED.value]:
+            if task.completed_at is None:
+                task.completed_at = now
+            if task.started_at and task.completed_at and task.duration_ms is None:
+                task.duration_ms = int(
+                    (task.completed_at - task.started_at).total_seconds() * 1000)
+        task.status = new_status
     if progress is not None:
         task.progress = progress
     if current_step is not None:
@@ -660,6 +675,15 @@ def update_story_generation_task(
             task.current_step = str(current_step)
     if error_message is not None:
         task.error_message = error_message
+        # Update last_error for persistent tracking (do not clear automatically)
+        task.last_error = error_message
+
+    # Increment attempts if we re-enter in_progress after a failure or while already in progress (retry scenario)
+    if status is not None:
+        # Heuristic: if transitioning to in_progress from failed or staying in in_progress with an error update
+        if task.status == schemas.GenerationTaskStatus.IN_PROGRESS.value and previous_status in [schemas.GenerationTaskStatus.FAILED.value]:
+            task.attempts = (task.attempts or 0) + 1
+        # If marking failed, don't increment attempts yet; attempts represent retry cycles after failure
 
     db.commit()
     db.refresh(task)

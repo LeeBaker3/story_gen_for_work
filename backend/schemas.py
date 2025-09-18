@@ -301,6 +301,14 @@ class StoryGenerationTask(StoryGenerationTaskBase):
     progress: int = 0
     created_at: datetime
     updated_at: datetime
+    # New extended tracking fields
+    attempts: int = 0
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    last_error: Optional[str] = None
+    # Keep legacy transient error field used by services/tests
+    error_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -370,3 +378,21 @@ class PaginatedCharacters(BaseModel):
 class RegenerateImageRequest(BaseModel):
     description: Optional[str] = None
     image_style: Optional[str] = None
+
+
+# --- Admin Stats Schema ---
+class AdminStats(BaseModel):
+    total_users: int
+    active_users: int
+    total_stories: int
+    generated_stories: int
+    draft_stories: int
+    total_characters: int
+    tasks_last_24h: int
+    tasks_in_progress: int
+    tasks_failed_last_24h: int
+    tasks_completed_last_24h: int
+    avg_task_duration_seconds_last_24h: Optional[float] = None
+    success_rate_last_24h: Optional[float] = None  # 0-1 ratio
+    # Average attempts across completed tasks in the last 24h (nullable)
+    avg_attempts_last_24h: Optional[float] = None

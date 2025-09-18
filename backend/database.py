@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum  # Added Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum, text  # Added Boolean and text
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
@@ -142,6 +142,17 @@ class StoryGenerationTask(Base):
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
+    # New tracking fields
+    # Total retry attempts (incremented on each retry cycle)
+    attempts = Column(Integer, nullable=False, default=0)
+    # First transition from pending -> in_progress
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    # When status becomes completed or failed
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Cached duration (completed_at - started_at) in ms for metrics
+    duration_ms = Column(Integer, nullable=True)
+    # Persist last encountered error across retries
+    last_error = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         onupdate=func.now(), server_default=func.now())
@@ -222,3 +233,38 @@ class CharacterImage(Base):
 
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
+    _ensure_story_generation_task_new_columns()
+
+
+def _ensure_story_generation_task_new_columns():
+    """Idempotently add newly introduced tracking columns for StoryGenerationTask in SQLite.
+
+    This avoids a hard migration requirement for development/test environments. In production, a
+    proper migration (Alembic) should be applied instead. Safe to run repeatedly.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    required_columns = {
+        "attempts": "INTEGER DEFAULT 0",
+        "started_at": "TIMESTAMP NULL",
+        "completed_at": "TIMESTAMP NULL",
+        "duration_ms": "INTEGER NULL",
+        "last_error": "TEXT NULL",
+    }
+    with engine.connect() as conn:
+        try:
+            existing = set()
+            for row in conn.execute(text("PRAGMA table_info(story_generation_tasks)")):
+                # row[1] is the column name in PRAGMA output
+                existing.add(row[1])
+            for col, ddl in required_columns.items():
+                if col not in existing:
+                    try:
+                        conn.execute(
+                            text(f"ALTER TABLE story_generation_tasks ADD COLUMN {col} {ddl}"))
+                    except Exception:
+                        # Ignore if racing or not supported
+                        pass
+        except Exception:
+            # Swallow any inspection errors silently (non-fatal for app start)
+            pass

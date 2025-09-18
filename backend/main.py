@@ -25,8 +25,8 @@ from backend.story_generation_service import generate_story_as_background_task
 # IMPORTANT: This will delete all existing data. Remove or comment out for production.
 # database.Base.metadata.drop_all(bind=database.engine) # Commented out to prevent locking issues
 
-# Create database tables
-database.Base.metadata.create_all(bind=database.engine)
+# Create database tables (and ensure new tracking columns exist for tasks)
+database.create_db_and_tables()
 
 
 @asynccontextmanager

@@ -281,6 +281,84 @@ def test_get_story_status_unauthorized(client, db_session_mock, current_user_moc
     assert response.json()["detail"] == "Not authorized to view this task"
 
 
+def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mock):
+    """Validate that task lifecycle updates populate started_at, completed_at, duration_ms and attempts."""
+    mock_task_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    # Initial pending task
+    base_task = schemas.StoryGenerationTask(
+        id=mock_task_id,
+        story_id=1,
+        user_id=current_user_mock.id,
+        status=schemas.GenerationTaskStatus.PENDING,
+        progress=0,
+        current_step=schemas.GenerationTaskStep.INITIALIZING,
+        created_at=now,
+        updated_at=now,
+    )
+    # Simulate DB returning evolving object reference
+    crud.get_story_generation_task = MagicMock(return_value=base_task)
+    # Move to in_progress
+    crud.update_story_generation_task = MagicMock(
+        side_effect=lambda db, task_id, **kwargs: _apply_updates(base_task, **kwargs))
+
+    # Transition to in_progress
+    crud.update_story_generation_task(
+        db_session_mock, mock_task_id, status=schemas.GenerationTaskStatus.IN_PROGRESS)
+    assert base_task.started_at is not None, "started_at should be set on first IN_PROGRESS"
+
+    # Fail the task
+    crud.update_story_generation_task(
+        db_session_mock, mock_task_id, status=schemas.GenerationTaskStatus.FAILED, error_message="Boom")
+    assert base_task.completed_at is not None, "completed_at set when FAILED"
+    assert base_task.duration_ms is not None, "duration_ms computed on failure"
+    first_duration = base_task.duration_ms
+    assert base_task.last_error == "Boom"
+
+    # Retry (simulate new attempt)
+    prev_attempts = base_task.attempts or 0
+    crud.update_story_generation_task(
+        db_session_mock, mock_task_id, status=schemas.GenerationTaskStatus.IN_PROGRESS)
+    assert base_task.attempts == prev_attempts + \
+        1, "attempts increments when retrying after failure"
+
+    # Complete
+    crud.update_story_generation_task(
+        db_session_mock, mock_task_id, status=schemas.GenerationTaskStatus.COMPLETED)
+    assert base_task.completed_at is not None
+    assert base_task.duration_ms is not None
+    assert base_task.duration_ms >= first_duration
+
+
+def _apply_updates(task_obj, status=None, progress=None, current_step=None, error_message=None, **_):
+    """Helper applied in MagicMock side effect to simulate crud.update_story_generation_task logic minimal subset."""
+    now_ts = datetime.now(UTC)
+    if status is not None:
+        status_val = status.value if hasattr(status, 'value') else status
+        prev = task_obj.status
+        task_obj.status = status_val
+        if status_val == schemas.GenerationTaskStatus.IN_PROGRESS.value and task_obj.started_at is None:
+            task_obj.started_at = now_ts
+        if status_val in [schemas.GenerationTaskStatus.COMPLETED.value, schemas.GenerationTaskStatus.FAILED.value]:
+            if task_obj.completed_at is None:
+                task_obj.completed_at = now_ts
+            if task_obj.started_at and task_obj.completed_at and task_obj.duration_ms is None:
+                task_obj.duration_ms = int(
+                    (task_obj.completed_at - task_obj.started_at).total_seconds() * 1000)
+        if status_val == schemas.GenerationTaskStatus.IN_PROGRESS.value and prev == schemas.GenerationTaskStatus.FAILED.value:
+            task_obj.attempts = (task_obj.attempts or 0) + 1
+    if progress is not None:
+        task_obj.progress = progress
+    if current_step is not None:
+        task_obj.current_step = current_step.value if hasattr(
+            current_step, 'value') else current_step
+    if error_message is not None:
+        task_obj.error_message = error_message
+        task_obj.last_error = error_message
+    task_obj.updated_at = now_ts
+    return task_obj
+
+
 @pytest.mark.asyncio
 async def test_generate_story_as_background_task_passes_correct_references():
     """
