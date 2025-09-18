@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.5.0...backend-v0.6.0) (2025-09-18)
+
+
+### Features
+
+* **api:** add avg_attempts_last_24h to admin stats and prefer duration_ms for averages\n\n- AdminStats schema: add avg_attempts_last_24h\n- /api/v1/admin/stats returns avg_attempts_last_24h (rounded)\n- Prefer precise duration_ms with fallback to timestamps\n- Update StoryGenerationTask tracking and lifecycle handling\n- Tests: extend admin stats expectations; lifecycle coverage ([2a828b9](https://github.com/LeeBaker3/story_gen_for_work/commit/2a828b9ab6347562a8471bc873789b4f7e34e8ec))
+
 ## [0.5.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.4.4...backend-v0.5.0) (2025-09-16)
 
 
