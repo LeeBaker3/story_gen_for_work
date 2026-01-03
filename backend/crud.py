@@ -48,7 +48,8 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 
 def admin_get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
-    return db.query(User).offset(skip).limit(limit).all()
+    """List users excluding soft-deleted ones by default."""
+    return db.query(User).filter(User.is_deleted == False).offset(skip).limit(limit).all()
 
 
 def admin_update_user(db: Session, user_id: int, user_update: schemas.AdminUserUpdate) -> Optional[User]:
@@ -320,10 +321,8 @@ def get_users_admin(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
 
 
 def get_user_admin(db: Session, user_id: int) -> Optional[User]:
-    """
-    Retrieves a single user by ID for admin purposes.
-    """
-    return db.query(User).filter(User.id == user_id).first()
+    """Retrieve a single user by ID (excluding soft-deleted)."""
+    return db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
 
 
 def update_user_status_admin(db: Session, user_id: int, is_active: bool) -> Optional[User]:
@@ -353,19 +352,76 @@ def update_user_role_admin(db: Session, user_id: int, role: str) -> Optional[Use
     return None
 
 
-def delete_user_admin(db: Session, user_id: int) -> bool:
+def soft_delete_user_admin(db: Session, user_id: int) -> bool:
+    """Soft delete a user by setting is_deleted=True and deactivating the account.
+
+    Returns True if updated, False if user does not exist or already deleted.
     """
-    Deletes a user by ID by admin.
-    Returns True if deletion was successful, False otherwise.
-    """
-    db_user = db.query(User).filter(User.id == user_id).first()
-    if db_user:
-        # Consider implications: what happens to stories owned by this user?
-        # For now, direct delete. Add cascading or re-assignment logic if needed.
-        db.delete(db_user)
-        db.commit()
-        return True
-    return False
+    db_user = db.query(User).filter(User.id == user_id,
+                                    User.is_deleted == False).first()
+    if not db_user:
+        return False
+    db_user.is_deleted = True
+    db_user.is_active = False
+    db.commit()
+    return True
+
+
+# --- Story Moderation CRUD ---
+
+def list_stories_admin(
+    db: Session,
+    page: int = 1,
+    page_size: int = 20,
+    user_id: Optional[int] = None,
+    status: Optional[str] = None,
+    created_from: Optional[datetime] = None,
+    created_to: Optional[datetime] = None,
+    include_hidden: bool = False,
+    include_deleted: bool = False,
+):
+    """List stories with filters for admin moderation."""
+    query = db.query(Story)
+    if not include_deleted:
+        query = query.filter(Story.is_deleted == False)
+    if not include_hidden:
+        query = query.filter(Story.is_hidden == False)
+    if user_id is not None:
+        query = query.filter(Story.owner_id == user_id)
+    if status is not None:
+        if status == "generated":
+            query = query.filter(Story.is_draft == False)
+        elif status == "draft":
+            query = query.filter(Story.is_draft == True)
+    if created_from is not None:
+        query = query.filter(Story.created_at >= created_from)
+    if created_to is not None:
+        query = query.filter(Story.created_at <= created_to)
+    total = query.count()
+    items = query.order_by(Story.created_at.desc()).offset(
+        (page - 1) * page_size).limit(page_size).all()
+    return total, items
+
+
+def set_story_hidden_admin(db: Session, story_id: int, is_hidden: bool) -> Optional[Story]:
+    story = db.query(Story).filter(Story.id == story_id,
+                                   Story.is_deleted == False).first()
+    if not story:
+        return None
+    story.is_hidden = bool(is_hidden)
+    db.commit()
+    db.refresh(story)
+    return story
+
+
+def soft_delete_story_admin(db: Session, story_id: int) -> bool:
+    story = db.query(Story).filter(Story.id == story_id,
+                                   Story.is_deleted == False).first()
+    if not story:
+        return False
+    story.is_deleted = True
+    db.commit()
+    return True
 
 # --- Dynamic List CRUD (FR-ADM-05) ---
 
@@ -468,6 +524,27 @@ def get_active_dynamic_list_items(db: Session, list_name: str, skip: int = 0, li
         .offset(skip)\
         .limit(limit)\
         .all()
+
+
+def get_active_dynamic_list_item_by_value(
+    db: Session,
+    list_name: str,
+    item_value: str,
+) -> Optional[DynamicListItem]:
+    """Get a single active DynamicListItem by its value.
+
+    This is useful for lightweight lookups (e.g., mapping business enums to
+    provider-specific parameters).
+    """
+    return (
+        db.query(DynamicListItem)
+        .filter(
+            DynamicListItem.list_name == list_name,
+            DynamicListItem.item_value == item_value,
+            DynamicListItem.is_active == True,
+        )
+        .first()
+    )
 
 
 def update_dynamic_list_item(db: Session, item_id: int, item_update: schemas.DynamicListItemUpdate) -> Optional[DynamicListItem]:

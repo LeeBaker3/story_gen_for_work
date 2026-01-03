@@ -47,6 +47,31 @@ CORS
 Database
 - DATABASE_URL: SQLAlchemy URL (default: sqlite:///./story_generator.db)
 
+## Admin bootstrap (create first admin)
+
+Use `create_admin.py` to create the first admin user, or to promote an existing
+user. The script is idempotent and will not reset passwords unless you request
+it.
+
+Typical local usage (recommended)
+- Create admin (username defaults to email) and prompt for password:
+  - `python create_admin.py --email admin@example.com --prompt-password`
+
+Promote an existing user
+- Promote by username/email without changing password:
+  - `python create_admin.py --username existing@example.com --no-create-if-missing`
+
+Reset password (explicit)
+- Update password for an existing user (requires `--set-password`):
+  - `python create_admin.py --email admin@example.com --set-password --prompt-password`
+
+Database selection
+- By default, uses `DATABASE_URL` (or SQLite fallback).
+- Override for a single run:
+  - `python create_admin.py --email admin@example.com --prompt-password --db-url sqlite:///./story_generator.db`
+- For non-interactive environments, you may provide `ADMIN_PASSWORD` instead of
+  prompting.
+
 ## Notes & safe defaults
 
 - The backend prefers the repository root .env. If backend/.env also exists, it is only used to fill missing values (never overriding root or shell env).

@@ -2,16 +2,19 @@ import asyncio
 import os
 import uuid
 from datetime import datetime
+import time
 from sqlalchemy.orm import Session
 from . import crud, schemas, database, ai_services
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
+from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
 
 
 async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
     db: Session = next(database.get_db())
     _settings = get_settings()
+    start_time = time.perf_counter()
     try:
         app_logger.info(
             f"Starting background story generation for task_id: {task_id}")
@@ -129,6 +132,8 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                     getattr(_settings, 'retry_backoff_base', 1.0)))
                 page_image_url = None
                 for attempt in range(attempts):
+                    if attempt > 0:
+                        PAGE_IMAGE_RETRIES_TOTAL.inc()
                     page_image_url = await ai_services.generate_image_for_page(
                         page_content=image_description,
                         style_reference=image_style,
@@ -214,6 +219,11 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         app_logger.info(
             f"Successfully completed story generation for task_id: {task_id}")
 
+        observe_story_generation(
+            status="completed",
+            duration_seconds=time.perf_counter() - start_time,
+        )
+
     except Exception as e:
         error_logger.error(
             f"Error during background story generation for task_id {task_id}: {e}", exc_info=True)
@@ -223,6 +233,11 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             status=schemas.GenerationTaskStatus.FAILED,
             error_message=str(e),
             current_step=schemas.GenerationTaskStep.FINALIZING,
+        )
+
+        observe_story_generation(
+            status="failed",
+            duration_seconds=time.perf_counter() - start_time,
         )
     finally:
         db.close()

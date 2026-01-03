@@ -32,15 +32,16 @@ document.addEventListener("DOMContentLoaded", function () {
     checkAdminRole();
 
     adminSidebarLinks.forEach(link => {
-        link.addEventListener("click", function (event) {
+        link.addEventListener("click", async function (event) {
             event.preventDefault();
             const section = this.dataset.section;
-            loadAdminSection(section);
+            await loadAdminSection(section);
             adminSidebarLinks.forEach(l => l.classList.remove("active"));
             this.classList.add("active");
         });
     });
 
+    let currentAdminUser = null;
     async function checkAdminRole() {
         try {
             const user = await apiRequest("/api/v1/users/me/");
@@ -49,6 +50,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 adminViewPanel.innerHTML = "<p>You do not have permission to view this page.</p>";
                 adminSidebarLinks.forEach(link => link.style.pointerEvents = "none");
             } else {
+                currentAdminUser = user;
                 displayAdminMessage("Admin role verified.", "success");
                 // loadAdminSection("user-management"); // Optionally load a default section
             }
@@ -59,30 +61,29 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function loadAdminSection(sectionName) {
+    async function loadAdminSection(sectionName) {
         displayAdminMessage("");
         adminViewPanel.innerHTML = `<p>Loading ${sectionName.replace(/-/g, ' ')}...</p>`;
 
         switch (sectionName) {
             case "user-management":
-                loadUserManagement();
+                await loadUserManagement();
                 break;
             case "dynamic-content":
-                loadDynamicContentManagement();
+                await loadDynamicContentManagement();
                 break;
             case "content-moderation":
-                adminViewPanel.innerHTML = "<h2>Content Moderation</h2><p>Functionality to review and manage user-generated stories will be here.</p>";
-                displayAdminMessage("Content moderation loaded.", "success");
+                await loadContentModeration();
                 break;
             case "system-monitoring":
-                loadSystemMonitoring();
+                await loadSystemMonitoring();
                 break;
             case "app-config":
                 adminViewPanel.innerHTML = "<h2>Application Configuration</h2><p>Settings for API keys, application behavior, and broadcast messages will be here.</p>";
                 displayAdminMessage("Application config loaded.", "success");
                 break;
             case "admin-stats":
-                loadAdminStatsSection();
+                await loadAdminStatsSection();
                 break;
             default:
                 adminViewPanel.innerHTML = "<p>Section not found.</p>";
@@ -137,7 +138,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     </td>
                     <td>
                         <button class=\"admin-button-secondary user-edit-details-btn\" data-user-id=\"${user.id}\">Edit User</button>
-                        </td>
+                        <button class=\"admin-button-danger user-delete-btn\" data-user-id=\"${user.id}\" ${currentAdminUser && currentAdminUser.id === user.id ? 'disabled title="Cannot delete your own account"' : ''}>Delete</button>
+                    </td>
                 </tr>
             `;
         });
@@ -158,6 +160,28 @@ document.addEventListener("DOMContentLoaded", function () {
             button.addEventListener('click', (event) => {
                 const userId = parseInt(event.target.dataset.userId);
                 showEditUserDetailsModal(userId);
+            });
+        });
+
+        container.querySelectorAll('.user-delete-btn').forEach(button => {
+            button.addEventListener('click', async (event) => {
+                const userId = parseInt(event.target.dataset.userId);
+                if (currentAdminUser && currentAdminUser.id === userId) {
+                    displayAdminMessage("You cannot delete your own account.", "error");
+                    return;
+                }
+                const confirmed = confirm(`Delete user ID ${userId}? This will deactivate and mark the user as deleted.`);
+                if (!confirmed) return;
+                try {
+                    await apiRequest(`/api/v1/admin/management/users/${userId}`, 'DELETE');
+                    displayAdminMessage(`User ${userId} deleted (soft).`, 'success');
+                    // Refresh the list
+                    const users = await apiRequest("/api/v1/admin/management/users/", "GET");
+                    renderUserTable(users);
+                } catch (err) {
+                    console.error('Failed to delete user:', err);
+                    displayAdminMessage(`Failed to delete user: ${err.message}`, 'error');
+                }
             });
         });
     }
@@ -331,6 +355,134 @@ document.addEventListener("DOMContentLoaded", function () {
                         content.classList.remove('active');
                     }
                 });
+            });
+        });
+    }
+
+    // --- Content Moderation Section ---
+    async function loadContentModeration() {
+        adminViewPanel.innerHTML = `
+            <h2>Content Moderation</h2>
+            <div class="admin-form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;">
+                <div class="form-group">
+                    <label for="mod-filter-user">User ID (optional)</label>
+                    <input type="number" id="mod-filter-user" class="admin-form-control" placeholder="e.g. 42" />
+                </div>
+                <div class="form-group">
+                    <label for="mod-filter-status">Status</label>
+                    <select id="mod-filter-status" class="admin-form-control">
+                        <option value="">Any</option>
+                        <option value="generated">Generated</option>
+                        <option value="draft">Draft</option>
+                    </select>
+                </div>
+                <label class="admin-form" style="display:flex; gap:6px; align-items:center;">
+                    <input type="checkbox" id="mod-include-hidden" /> Include hidden
+                </label>
+                <label class="admin-form" style="display:flex; gap:6px; align-items:center;">
+                    <input type="checkbox" id="mod-include-deleted" /> Include deleted
+                </label>
+                <button id="mod-apply-filters" class="admin-button">Apply</button>
+            </div>
+            <div id="moderation-table-container" class="table-responsive-container"><p>Loading stories...</p></div>
+        `;
+
+        document.getElementById('mod-apply-filters').addEventListener('click', fetchAndRenderModerationStories);
+        await fetchAndRenderModerationStories();
+        displayAdminMessage("Content moderation loaded.", "success");
+    }
+
+    async function fetchAndRenderModerationStories() {
+        const userId = parseInt(document.getElementById('mod-filter-user').value || '');
+        const status = document.getElementById('mod-filter-status').value || undefined;
+        const includeHidden = document.getElementById('mod-include-hidden').checked;
+        const includeDeleted = document.getElementById('mod-include-deleted').checked;
+        const params = new URLSearchParams();
+        params.set('page', '1');
+        params.set('page_size', '20');
+        if (!Number.isNaN(userId)) params.set('user_id', String(userId));
+        if (status) params.set('status_filter', status);
+        if (includeHidden) params.set('include_hidden', 'true');
+        if (includeDeleted) params.set('include_deleted', 'true');
+        const container = document.getElementById('moderation-table-container');
+        container.innerHTML = '<p>Loading stories...</p>';
+        try {
+            const items = await apiRequest(`/api/v1/admin/moderation/stories?${params.toString()}`, 'GET');
+            renderModerationTable(items);
+        } catch (err) {
+            console.error('Failed to load stories:', err);
+            container.innerHTML = '<p class="error-message">Failed to load stories.</p>';
+            displayAdminMessage('Failed to load stories: ' + err.message, 'error');
+        }
+    }
+
+    function renderModerationTable(items) {
+        const container = document.getElementById('moderation-table-container');
+        if (!items || items.length === 0) {
+            container.innerHTML = '<p>No stories found for current filters.</p>';
+            return;
+        }
+        let html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Hidden</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        for (const s of items) {
+            const status = s.is_draft ? 'draft' : 'generated';
+            html += `
+                <tr data-story-id="${s.id}">
+                    <td>${s.id}</td>
+                    <td>${escapeHTML(s.title || '(untitled)')}</td>
+                    <td>${s.owner_id}</td>
+                    <td>${status}</td>
+                    <td><input type="checkbox" class="story-hide-toggle" data-story-id="${s.id}" ${s.is_hidden ? 'checked' : ''} title="${s.is_hidden ? 'Hidden' : 'Visible'}"></td>
+                    <td>${escapeHTML(new Date(s.created_at).toLocaleString())}</td>
+                    <td>
+                        <button class="admin-button-danger story-delete-btn" data-story-id="${s.id}">Delete</button>
+                    </td>
+                </tr>
+            `;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        container.querySelectorAll('.story-hide-toggle').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+                const sid = parseInt(e.target.dataset.storyId);
+                const isHidden = e.target.checked;
+                try {
+                    await apiRequest(`/api/v1/admin/moderation/stories/${sid}/hide`, 'PATCH', { is_hidden: isHidden });
+                    displayAdminMessage(`Story ${sid} ${isHidden ? 'hidden' : 'unhidden'}.`, 'success');
+                } catch (err) {
+                    displayAdminMessage(`Failed to update story visibility: ${err.message}`, 'error');
+                    // revert UI
+                    e.target.checked = !isHidden;
+                }
+            });
+        });
+
+        container.querySelectorAll('.story-delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const sid = parseInt(e.target.dataset.storyId);
+                const confirmed = confirm(`Delete story ${sid}? This will mark it as deleted.`);
+                if (!confirmed) return;
+                try {
+                    await apiRequest(`/api/v1/admin/moderation/stories/${sid}`, 'DELETE');
+                    displayAdminMessage(`Story ${sid} deleted (soft).`, 'success');
+                    await fetchAndRenderModerationStories();
+                } catch (err) {
+                    displayAdminMessage(`Failed to delete story: ${err.message}`, 'error');
+                }
             });
         });
     }
@@ -1203,7 +1355,7 @@ document.addEventListener("DOMContentLoaded", function () {
         container.innerHTML = html;
 
         // Conditional styling (e.g., success rate coloring)
-    const successRateCard = container.querySelectorAll('.admin-card')[6];
+        const successRateCard = container.querySelectorAll('.admin-card')[6];
         if (successRateCard && stats.success_rate_last_24h !== null && stats.success_rate_last_24h !== undefined) {
             const rate = stats.success_rate_last_24h;
             if (rate >= 0.7) successRateCard.style.boxShadow = '0 0 0 2px rgba(0,160,0,0.4)';

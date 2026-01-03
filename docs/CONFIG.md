@@ -1,5 +1,13 @@
 # Configuration Guide
 
+The canonical configuration documentation lives at the repo root: `CONFIG.md`.
+
+This file exists to avoid broken links from older references.
+
+Go to:
+- `CONFIG.md`
+# Configuration Guide
+
 This project reads configuration from environment variables with sensible defaults defined in `backend/settings.py`. A subset is also read by `backend/auth.py` (JWT), which calls `load_dotenv()` to make `.env` files convenient in development.
 
 Quick start

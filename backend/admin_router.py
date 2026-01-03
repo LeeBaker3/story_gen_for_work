@@ -399,9 +399,9 @@ def admin_update_user_endpoint(user_id: int, user_update: schemas.AdminUserUpdat
 @admin_router.get("/management/users/", response_model=List[schemas.User], dependencies=[Depends(get_current_admin_user)])
 def admin_get_users_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """
-    Retrieve all users.
+    Retrieve all users, excluding soft-deleted accounts by default.
     """
-    users = crud.get_users_admin(db, skip=skip, limit=limit)
+    users = crud.admin_get_users(db, skip=skip, limit=limit)
     return users
 
 
@@ -415,6 +415,102 @@ def admin_get_user_endpoint(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"User with ID {user_id} not found")
     return user
+
+
+@admin_router.delete("/management/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(get_current_admin_user)])
+def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db), current_admin: schemas.User = Depends(get_current_admin_user)):
+    """Soft delete a user (set is_deleted=True and deactivate). Prevent deleting self."""
+    if user_id == current_admin.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Admins cannot delete their own account.")
+    user = crud.get_user_admin(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with ID {user_id} not found")
+    ok = crud.soft_delete_user_admin(db, user_id=user_id)
+    if not ok:
+        # Could be already deleted
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"User with ID {user_id} not found or already deleted")
+    return
+
+
+# --- Admin Content Moderation ---
+
+@admin_router.get("/moderation/stories", response_model=List[schemas.Story])
+def admin_list_stories(
+    page: int = 1,
+    page_size: int = 20,
+    user_id: Optional[int] = None,
+    status_filter: Optional[str] = None,
+    created_from: Optional[datetime] = None,
+    created_to: Optional[datetime] = None,
+    include_hidden: bool = False,
+    include_deleted: bool = False,
+    db: Session = Depends(get_db)
+):
+    total, items = crud.list_stories_admin(
+        db,
+        page=page,
+        page_size=page_size,
+        user_id=user_id,
+        status=status_filter,
+        created_from=created_from,
+        created_to=created_to,
+        include_hidden=include_hidden,
+        include_deleted=include_deleted,
+    )
+    # Normalize legacy enum values for response validation (e.g., short text_density labels)
+    legacy_text_density_map = {
+        "Concise": schemas.TextDensity.CONCISE.value,
+        "Standard": schemas.TextDensity.STANDARD.value,
+        "Detailed": schemas.TextDensity.DETAILED.value,
+    }
+    for s in items:
+        try:
+            if getattr(s, "text_density", None) in legacy_text_density_map:
+                setattr(s, "text_density",
+                        legacy_text_density_map[s.text_density])
+        except Exception:
+            # Non-fatal: leave value as-is
+            pass
+    # For now return just items; a future enhancement can return a paginated envelope
+    return items
+
+
+class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema
+    is_hidden: bool
+
+
+@admin_router.patch("/moderation/stories/{story_id}/hide", response_model=schemas.Story)
+def admin_hide_story(story_id: int, payload: HideStoryRequest, db: Session = Depends(get_db)):
+    story = crud.set_story_hidden_admin(
+        db, story_id=story_id, is_hidden=payload.is_hidden)
+    if not story:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Story with ID {story_id} not found")
+    # Normalize legacy enum values before response
+    try:
+        legacy_text_density_map = {
+            "Concise": schemas.TextDensity.CONCISE.value,
+            "Standard": schemas.TextDensity.STANDARD.value,
+            "Detailed": schemas.TextDensity.DETAILED.value,
+        }
+        if getattr(story, "text_density", None) in legacy_text_density_map:
+            setattr(story, "text_density",
+                    legacy_text_density_map[story.text_density])
+    except Exception:
+        pass
+    return story
+
+
+@admin_router.delete("/moderation/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_soft_delete_story(story_id: int, db: Session = Depends(get_db)):
+    ok = crud.soft_delete_story_admin(db, story_id=story_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Story with ID {story_id} not found")
+    return
 
 # You will need to include admin_user_router in your main FastAPI app (e.g., in main.py)
 # Example for main.py:

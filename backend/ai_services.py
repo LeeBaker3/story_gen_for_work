@@ -19,7 +19,7 @@ from .logging_config import api_logger, error_logger, app_logger
 from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
-from .image_style_mapping import map_style
+from .image_style_mapping import get_openai_image_style, map_style
 
 load_dotenv()
 # Explicitly load project root .env (preferred). For backward compatibility,
@@ -457,6 +457,15 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     else:
         image_style = str(image_style)
 
+    business_style = image_style
+    openai_style = "vivid"
+    try:
+        openai_style = get_openai_image_style(
+            db=db, business_style=business_style)
+    except Exception:
+        # Never block generation due to optional mapping.
+        openai_style = "vivid"
+
     # Optionally map business style to a more descriptive OpenAI style phrase
     try:
         if getattr(_settings, "enable_image_style_mapping", False):
@@ -486,6 +495,8 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
         generate_image,
         prompt,
         size="1024x1536"  # Use portrait aspect ratio for full-body shots
+        ,
+        openai_style=openai_style,
     )
 
     char_dict = character.model_dump(exclude_none=True)
@@ -529,6 +540,15 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
             "Database session is not available in generate_image_for_page")
         return None
 
+    business_style = style_reference
+
+    openai_style = "vivid"
+    try:
+        openai_style = get_openai_image_style(
+            db=db, business_style=business_style)
+    except Exception:
+        openai_style = "vivid"
+
     # Optionally map the style reference to a richer prompt modifier
     try:
         if getattr(_settings, "enable_image_style_mapping", False):
@@ -548,7 +568,8 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
     image_bytes = await asyncio.to_thread(
         generate_image,
         prompt,
-        reference_image_paths=reference_image_paths if reference_image_paths else None
+        reference_image_paths=reference_image_paths if reference_image_paths else None,
+        openai_style=openai_style,
     )
 
     if image_bytes and image_save_path_on_disk and image_path_for_db:
@@ -576,7 +597,12 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
 
 
 @api_retry
-def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = None, size: str = IMAGE_SIZE) -> Optional[bytes]:
+def generate_image(
+    prompt: str,
+    reference_image_paths: Optional[List[str]] = None,
+    size: str = IMAGE_SIZE,
+    openai_style: Optional[str] = None,
+) -> Optional[bytes]:
     """
     Generates an image using the configured AI model based on a prompt.
     If reference_image_paths are provided, it opens the files and uses the edit endpoint.
@@ -592,6 +618,13 @@ def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = Non
             f"Requesting AI image with prompt: {truncated_prompt}, size: {size}")
 
         response = None
+        style_value = None
+        if openai_style:
+            style_candidate = str(openai_style).strip().lower()
+            if style_candidate in ("vivid", "natural"):
+                style_value = style_candidate
+
+        style_kwargs = {"style": style_value} if style_value else {}
         if reference_image_paths:
             api_logger.info(
                 f"Using {len(reference_image_paths)} reference image(s) for image generation.")
@@ -608,26 +641,47 @@ def generate_image(prompt: str, reference_image_paths: Optional[List[str]] = Non
                             f"Reference image not found at path: {full_path}")
 
                 if opened_files:
-                    response = client.images.edit(
-                        model=IMAGE_MODEL,
-                        image=opened_files,
-                        prompt=truncated_prompt,
-                        size=size,
-                        n=1
-                    )
+                    try:
+                        response = client.images.edit(
+                            model=IMAGE_MODEL,
+                            image=opened_files,
+                            prompt=truncated_prompt,
+                            size=size,
+                            n=1,
+                            **style_kwargs,
+                        )
+                    except TypeError:
+                        # Some SDK versions/models don't accept `style`; retry without it.
+                        response = client.images.edit(
+                            model=IMAGE_MODEL,
+                            image=opened_files,
+                            prompt=truncated_prompt,
+                            size=size,
+                            n=1,
+                        )
             finally:
                 for f in opened_files:
                     f.close()
 
         # If no references were provided, or if opening files failed, generate a new image
         if response is None:
-            response = client.images.generate(
-                model=IMAGE_MODEL,
-                prompt=truncated_prompt,
-                size=size,
-                quality="auto",
-                n=1
-            )
+            try:
+                response = client.images.generate(
+                    model=IMAGE_MODEL,
+                    prompt=truncated_prompt,
+                    size=size,
+                    quality="auto",
+                    n=1,
+                    **style_kwargs,
+                )
+            except TypeError:
+                response = client.images.generate(
+                    model=IMAGE_MODEL,
+                    prompt=truncated_prompt,
+                    size=size,
+                    quality="auto",
+                    n=1,
+                )
 
         api_logger.info(f"Response from AI image model: {response}")
         api_logger.info("Successfully received image from AI image model.")

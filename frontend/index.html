@@ -76,28 +76,6 @@
                 <div class="wizard-step" data-step="2">Options</div>
                 <div class="wizard-step" data-step="3">Review</div>
             </div>
-            <!-- Character Library Panel placeholder (populated in Phase 3) -->
-            <div id="character-library-panel" style="display:none;" aria-label="Character library">
-                        <div class="library-header">
-                            <h3>Your Characters</h3>
-                            <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
-                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
-                                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
-                                <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
-                            </div>
-                        </div>
-                        <p class="character-hint">Tip: Click a card to load its details into the form. Cmd/Ctrl+Click to multi-select for reuse.</p>
-                <div id="character-list" class="character-grid" aria-live="polite"></div>
-                <div id="character-pagination" class="pagination-controls"></div>
-                <div id="character-detail-modal" class="modal" style="display:none;">
-                    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-detail-title">
-                        <h4 id="character-detail-title"></h4>
-                        <div id="character-detail-body"></div>
-                        <button type="button" id="regenerate-character-image-btn" class="action-button-info">Regenerate Image</button>
-                        <button type="button" id="close-character-detail" class="action-button-secondary">Close</button>
-                    </div>
-                </div>
-            </div>
             <form id="story-creation-form" class="modern-form">
                 <!-- Step 0: Basics -->
                 <div id="step-0-basics" class="wizard-step-panel">
@@ -235,7 +213,7 @@
             </div>
         </section>
 
-        <!-- Characters main-menu section (stub) -->
+        <!-- Characters main-menu section -->
         <section id="characters-section" style="display:none;">
             <h2>Characters</h2>
             <div class="library-header">
@@ -243,6 +221,7 @@
                     <input type="text" id="characters-page-search" placeholder="Search characters" aria-label="Search characters">
                     <button type="button" id="characters-page-sync" class="lib-action-btn action-button-info">Sync from stories</button>
                     <button type="button" id="characters-page-import" class="lib-action-btn action-button-info">Import from JSON</button>
+                    <button type="button" id="characters-page-new" class="lib-action-btn action-button-primary">New Character</button>
                 </div>
             </div>
             <div id="characters-page-list" class="character-grid" aria-live="polite"></div>

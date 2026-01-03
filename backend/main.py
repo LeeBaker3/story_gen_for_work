@@ -21,6 +21,14 @@ from backend.database_seeding import seed_database
 from backend.database import get_db, SessionLocal
 from backend.story_generation_service import generate_story_as_background_task
 
+from time import perf_counter
+
+from backend.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    normalize_http_path,
+)
+
 # Drop all tables (for development purposes to apply schema changes)
 # IMPORTANT: This will delete all existing data. Remove or comment out for production.
 # database.Base.metadata.drop_all(bind=database.engine) # Commented out to prevent locking issues
@@ -41,6 +49,34 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def prometheus_http_metrics(request, call_next):
+    """Record basic HTTP request metrics for Prometheus.
+
+    We keep label cardinality low by using the route template when available.
+    """
+    start = perf_counter()
+    response = await call_next(request)
+    duration = perf_counter() - start
+
+    route = request.scope.get("route")
+    route_template = getattr(route, "path", None)
+    path_label = normalize_http_path(
+        raw_path=str(request.url.path),
+        route_template=route_template if isinstance(
+            route_template, str) else None,
+    )
+
+    method = str(request.method)
+    status_code = str(getattr(response, "status_code", 0))
+
+    HTTP_REQUESTS_TOTAL.labels(
+        method=method, path=path_label, status_code=status_code).inc()
+    HTTP_REQUEST_DURATION_SECONDS.labels(
+        method=method, path=path_label).observe(duration)
+    return response
 
 settings = get_settings()
 

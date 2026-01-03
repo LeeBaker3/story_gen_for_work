@@ -9,27 +9,37 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Use Node version from .nvmrc
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+            node-version-file: '.nvmrc'
+            cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
-      - name: Run tests
-        run: npm test -- --ci
+      - name: Run frontend tests (Jest)
+        env:
+          CI: true
+        run: npm run test:frontend -- --ci --reporters=default --reporters=jest-junit
+
+      - name: Upload Jest JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-junit-report
+          path: junit.xml
+          if-no-files-found: ignore
+
+      - name: Upload coverage (if configured later)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/
+          if-no-files-found: ignore

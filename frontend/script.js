@@ -396,6 +396,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (saveBtn) saveBtn.addEventListener('click', async (ev) => {
             ev.preventDefault(); ev.stopPropagation();
             const modalEl = document.getElementById('char-modal');
+            const regenBtnEl = document.getElementById('char-modal-regenerate');
             const statusEl = document.getElementById('char-modal-status');
             const actionsEl = modalEl?.querySelector('.modal-actions');
             const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
@@ -422,13 +423,28 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             try {
                 const id = document.getElementById('char-modal')?.getAttribute('data-id');
-                if (!id) return;
-                setBusy('Saving changes…');
                 const payload = await collectModalPayload();
-                await apiRequest(`/api/v1/characters/${id}`, 'PUT', payload);
-                await fetchCharactersPage();
-                setDone('Character updated.', 'success');
-                // Keep modal open for further edits
+
+                if (id) {
+                    setBusy('Saving changes…');
+                    await apiRequest(`/api/v1/characters/${id}`, 'PUT', payload);
+                    await fetchCharactersPage();
+                    setDone('Character updated.', 'success');
+                    if (regenBtnEl) regenBtnEl.disabled = false;
+                    // Keep modal open for further edits
+                } else {
+                    setBusy('Creating character…');
+                    const created = await apiRequest('/api/v1/characters/', 'POST', {
+                        ...payload,
+                        generate_image: false,
+                    });
+                    await fetchCharactersPage();
+                    setDone('Character created.', 'success');
+                    if (created?.id) {
+                        // Switch modal into edit mode for the newly created character
+                        await openCharacterModal(created.id);
+                    }
+                }
             } catch (e) {
                 setDone('Failed to save changes.', 'error');
             }
@@ -646,6 +662,53 @@ document.addEventListener("DOMContentLoaded", function () {
         modal.classList.add('open');
     }
 
+    async function openNewCharacterModal() {
+        const backdrop = document.getElementById('char-modal-backdrop');
+        const modal = document.getElementById('char-modal');
+        if (!modal || !backdrop) return;
+
+        // Reset inline status on open
+        const inlineStatus = document.getElementById('char-modal-status');
+        if (inlineStatus) {
+            inlineStatus.textContent = '';
+            inlineStatus.style.display = 'none';
+            inlineStatus.className = 'inline-status';
+        }
+
+        modal.removeAttribute('data-id');
+
+        const title = document.getElementById('char-modal-title');
+        const nameEl = document.getElementById('modal-char-name');
+        const ageEl = document.getElementById('modal-char-age');
+        const genderEl = document.getElementById('modal-char-gender');
+        const descEl = document.getElementById('modal-char-desc');
+        const clothEl = document.getElementById('modal-char-clothing');
+        const traitsEl = document.getElementById('modal-char-traits');
+        const styleEl = document.getElementById('modal-char-style');
+        const imgEl = document.getElementById('char-modal-image');
+        const regenBtn = document.getElementById('char-modal-regenerate');
+
+        if (title) title.textContent = 'New Character';
+        if (nameEl) nameEl.value = '';
+        if (ageEl) ageEl.value = '';
+        if (descEl) descEl.value = '';
+        if (clothEl) clothEl.value = '';
+        if (traitsEl) traitsEl.value = '';
+        if (imgEl) imgEl.style.display = 'none';
+
+        // In create mode, regeneration isn't possible yet.
+        if (regenBtn) regenBtn.disabled = true;
+
+        // Populate dropdowns (best effort)
+        try { await populateDropdown('modal-char-gender', 'genders'); } catch (e) { if (genderEl) genderEl.value = ''; }
+        try { await populateDropdown('modal-char-style', 'image_styles'); } catch (e) { /* ignore */ }
+        if (genderEl) genderEl.value = '';
+        if (styleEl) styleEl.value = '';
+
+        backdrop.classList.add('open');
+        modal.classList.add('open');
+    }
+
     function hideAllSections() {
         [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection, charactersSection].forEach(sec => {
             if (sec) sec.style.display = 'none';
@@ -655,6 +718,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (navCharacters) {
         navCharacters.addEventListener('click', () => {
             showCharactersPage();
+        });
+    }
+
+    // Characters page: New Character
+    const charactersPageNewBtn = document.getElementById('characters-page-new');
+    if (charactersPageNewBtn) {
+        charactersPageNewBtn.addEventListener('click', async () => {
+            await openNewCharacterModal();
         });
     }
 
@@ -2080,7 +2151,6 @@ document.addEventListener("DOMContentLoaded", function () {
         // a11y: announce progress changes and mark busy
         progressArea.setAttribute('aria-busy', 'true');
         statusMessage.setAttribute('aria-live', 'polite');
-        let pollingInterval;
         // Backoff and timeout settings
         const baseIntervalMs = __pollingConfig.baseIntervalMs;
         let currentIntervalMs = baseIntervalMs;
@@ -2088,17 +2158,20 @@ document.addEventListener("DOMContentLoaded", function () {
         const startedAt = Date.now();
         const maxDurationMs = __pollingConfig.maxDurationMs; // overridable
 
+        let stopped = false;
+
         const poll = async () => {
             try {
                 const task = await apiRequest(`/api/v1/stories/generation-status/${taskId}`);
                 if (task) {
+                    const status = String(task.status || '').toLowerCase();
                     // Show progress if provided
                     if (typeof task.progress === 'number') {
                         progressBar.style.width = `${task.progress}%`;
                         progressBar.textContent = `${task.progress}%`;
                     }
                     // Map status message or derive from current_step
-                    const step = task.current_step || '';
+                    const step = String(task.current_step || '').toLowerCase();
                     const stepMap = {
                         initializing: 'Initializing...',
                         generating_text: 'Generating story content...',
@@ -2109,8 +2182,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Backend does not return status_message; expose a helpful default
                     statusMessage.textContent = stepMap[step] || 'Processing...';
 
-                    if (task.status === 'completed' || task.status === 'success') {
-                        clearInterval(pollingInterval);
+                    if (status === 'completed' || status === 'success') {
+                        stopped = true;
                         statusMessage.textContent = 'Story generation complete! Loading...';
                         progressArea.style.display = 'none';
                         progressArea.setAttribute('aria-busy', 'false');
@@ -2121,8 +2194,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         } else {
                             throw new Error("Polling complete, but no story_id was returned.");
                         }
-                    } else if (task.status === 'failed') {
-                        clearInterval(pollingInterval);
+                    } else if (status === 'failed') {
+                        stopped = true;
                         progressArea.style.display = 'none';
                         progressArea.setAttribute('aria-busy', 'false');
                         // Backend surfaces failure details as last_error in the API schema
@@ -2130,7 +2203,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
                 }
             } catch (error) {
-                clearInterval(pollingInterval);
+                stopped = true;
                 progressArea.style.display = 'none';
                 progressArea.setAttribute('aria-busy', 'false');
                 console.error("Error during status polling:", error);
@@ -2140,7 +2213,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Kick off immediately then schedule subsequent ticks via setTimeout (simpler & test-friendly)
         await poll();
-        let stopped = false;
         async function tick() {
             if (stopped) return;
             // Timeout guard
