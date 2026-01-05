@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.5.0...v0.6.0) (2026-01-05)
+
+
+### Features
+
+* **admin:** show Avg Attempts (24h) in Admin Stats UI\n\n- Add new card rendering with two-decimal formatting\n- Keep success-rate card styling index stable\n- Tests: update admin stats test and ensure polling tests remain green ([a7f3049](https://github.com/LeeBaker3/story_gen_for_work/commit/a7f3049cb6d2a4d8b03874d8da252ec44202daa9))
+* **api:** add avg_attempts_last_24h to admin stats and prefer duration_ms for averages\n\n- AdminStats schema: add avg_attempts_last_24h\n- /api/v1/admin/stats returns avg_attempts_last_24h (rounded)\n- Prefer precise duration_ms with fallback to timestamps\n- Update StoryGenerationTask tracking and lifecycle handling\n- Tests: extend admin stats expectations; lifecycle coverage ([2a828b9](https://github.com/LeeBaker3/story_gen_for_work/commit/2a828b9ab6347562a8471bc873789b4f7e34e8ec))
+* **characters:** add private photo upload + from-photo reference wizard ([97d782d](https://github.com/LeeBaker3/story_gen_for_work/commit/97d782d78e18800b552b634c1bf5c863b8e99744))
+* **frontend,a11y:** add aria-live and aria-busy to generation progress UI ([d73deb9](https://github.com/LeeBaker3/story_gen_for_work/commit/d73deb97051f47bf52ec155e4deb5ebdbf60aa1b))
+* **frontend:** add polling backoff and expose test hook for story generation status ([7ba515f](https://github.com/LeeBaker3/story_gen_for_work/commit/7ba515f874ac8a1db105c3bb3ac217ef34fb84bf))
+
+
+### Bug Fixes
+
+* **frontend:** align status polling with backend fields; use last_error and step-based messages ([ef72d26](https://github.com/LeeBaker3/story_gen_for_work/commit/ef72d262368ccdf8fa301196c5e3f00910d32137))
+
 ## [0.5.3] - 2026-01-05
 ### Added
 - 4-step “New Character” flow: create character → upload a private photo → add description → generate a 3-view (front/side/back) reference image.
