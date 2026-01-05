@@ -21,13 +21,38 @@ class BaseSettings:
     """
 
     def __init__(self):
+        repo_root = _here.parent
+
+        def _resolve_dir(path_value: str) -> str:
+            """Resolve a directory path to an absolute path.
+
+            If the provided value is relative, it is resolved relative to the
+            repository root (the folder containing `.env`).
+            """
+            if not path_value:
+                return str(repo_root)
+            p = Path(path_value)
+            return str(p if p.is_absolute() else (repo_root / p).resolve())
+
         # Environment & paths
         self.run_env: str = os.getenv("RUN_ENV", "dev")
         self.api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
 
         # Static directories to mount
-        self.frontend_static_dir: str = os.getenv("FRONTEND_DIR", "frontend")
-        self.data_dir: str = os.getenv("DATA_DIR", "data")
+        self.frontend_static_dir: str = _resolve_dir(
+            os.getenv("FRONTEND_DIR", "frontend")
+        )
+        self.data_dir: str = _resolve_dir(os.getenv("DATA_DIR", "data"))
+
+        # Private storage (never mounted publicly). Use for user uploads that must
+        # not be publicly accessible.
+        self.private_data_dir: str = _resolve_dir(
+            os.getenv("PRIVATE_DATA_DIR", "private_data")
+        )
+
+        # Upload limits
+        self.max_upload_bytes: int = int(
+            os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
         # Whether to mount static in this environment
         self.mount_frontend_static: bool = os.getenv(
             "MOUNT_FRONTEND_STATIC", "").lower() in ("1", "true", "yes")
@@ -40,8 +65,10 @@ class BaseSettings:
             self.mount_data_static = self.run_env != "test"
 
         # Logging
-        self.logs_dir: str = os.getenv(
-            "LOGS_DIR", os.path.join(self.data_dir, "logs"))
+        logs_dir_env = os.getenv("LOGS_DIR")
+        self.logs_dir: str = _resolve_dir(logs_dir_env) if logs_dir_env else os.path.join(
+            self.data_dir, "logs"
+        )
         self.logging_config_file: str = os.getenv(
             "LOGGING_CONFIG", os.path.join("config", "logging.yaml"))
 

@@ -1,4 +1,6 @@
 import os
+
+from backend.settings import get_settings
 from fastapi.testclient import TestClient
 
 
@@ -49,8 +51,9 @@ def test_listing_includes_thumbnail_path_when_current_image_exists(client: TestC
     thumb_item = next((i for i in items if i["name"] == "ThumbHero"), None)
     assert thumb_item is not None
     assert thumb_item.get("thumbnail_path") is not None
-    # file should exist on disk relative to data/
-    assert os.path.exists(os.path.join("data", thumb_item["thumbnail_path"]))
+    # File should exist on disk relative to configured DATA_DIR.
+    data_dir = get_settings().data_dir
+    assert os.path.exists(os.path.join(data_dir, thumb_item["thumbnail_path"]))
 
 
 def test_story_creation_merge_avoids_duplicate_names(client: TestClient, regular_user_auth_headers: dict, monkeypatch):

@@ -3,8 +3,7 @@ name: Coverage Badge
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   coverage:
@@ -36,6 +35,7 @@ jobs:
           python scripts/generate_coverage_badge.py
 
       - name: Commit badge if changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           if git diff --quiet coverage_badge.svg; then
             echo "No coverage badge changes."; exit 0; fi

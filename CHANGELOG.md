@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-01-05
+### Added
+- 4-step “New Character” flow: create character → upload a private photo → add description → generate a 3-view (front/side/back) reference image.
+- Character photo upload API that stores user uploads outside public static serving (private by default).
+- From-photo reference image generation endpoint that uses the private upload as reference input and saves generated output under public static content.
+
+### Changed
+- Frontend image URLs now consistently resolve via the backend origin for /static_content assets (fixes images not showing when frontend is served separately).
+- CI/workflows updated to upload frontend test artifacts from correct paths and avoid badge pushes during PR builds.
+- Docs updated to describe PRIVATE_DATA_DIR / MAX_UPLOAD_BYTES and the new character endpoints.
+
+### Fixed
+- Reference image path handling now supports absolute reference paths (prevents “reference image not found” for private uploads).
+
 ## [0.5.2] - 2025-09-19
 ### Added
 - Extended admin moderation UI test coverage (empty state, delete failure rollback, hide failure rollback, filter reapplication behavior).

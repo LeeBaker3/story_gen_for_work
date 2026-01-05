@@ -26,6 +26,8 @@ Core
 Static & storage
 - FRONTEND_DIR: directory to serve at /static (default: frontend)
 - DATA_DIR: base directory for generated data (default: data)
+- PRIVATE_DATA_DIR: base directory for private user uploads that must not be publicly accessible (default: private_data)
+- MAX_UPLOAD_BYTES: maximum allowed size for uploads (default: 10485760 / 10MB)
 - MOUNT_FRONTEND_STATIC: "1"/"true" to mount /static (default: true unless RUN_ENV=test)
 - MOUNT_DATA_STATIC: "1"/"true" to mount /static_content (default: true unless RUN_ENV=test)
 
@@ -76,6 +78,7 @@ Database selection
 
 - The backend prefers the repository root .env. If backend/.env also exists, it is only used to fill missing values (never overriding root or shell env).
 - Paths saved in the database are relative to DATA_DIR, so they are served under /static_content/ consistently.
+- Uploaded character photos are stored under PRIVATE_DATA_DIR and are never served from /static_content.
 - For CI, use OPENAI_API_KEY=dummy-ci-key and mock OpenAI calls in tests (already done in the test suite).
 
 ## Migration notes

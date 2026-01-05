@@ -9,6 +9,10 @@ def _data_dir() -> str:
     return get_settings().data_dir
 
 
+def _private_dir() -> str:
+    return get_settings().private_data_dir
+
+
 def images_base_rel(user_id: int) -> str:
     return os.path.join("images", f"user_{user_id}")
 
@@ -54,3 +58,23 @@ def page_image_paths(user_id: int, story_id: int, page_num_int: int) -> Tuple[st
     rel_path = os.path.join(base_rel, filename)
     abs_path = os.path.join(_data_dir(), rel_path)
     return abs_path, rel_path
+
+
+def character_uploads_abs(user_id: int, char_id: int) -> str:
+    """Return absolute directory for a character's private uploads."""
+    rel_dir = os.path.join(
+        "uploads", f"user_{user_id}", "characters", str(char_id))
+    abs_dir = os.path.join(_private_dir(), rel_dir)
+    os.makedirs(abs_dir, exist_ok=True)
+    return abs_dir
+
+
+def character_uploaded_photo_candidates_abs(user_id: int, char_id: int) -> Tuple[str, ...]:
+    """Return absolute file path candidates for a character's uploaded photo."""
+    base = os.path.join(character_uploads_abs(user_id, char_id), "photo")
+    return (
+        base + ".jpg",
+        base + ".jpeg",
+        base + ".png",
+        base + ".webp",
+    )

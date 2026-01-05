@@ -187,6 +187,16 @@ Base path: `/api/v1/characters`
 - DELETE `/{char_id}` — Delete
     - 204 No Content; 404 if not found
 
+- POST `/{char_id}/photo` — Upload private reference photo
+    - multipart/form-data: { photo: (JPG|PNG|WEBP) }
+    - 200 OK → CharacterPhotoUploadResponse { character_id, content_type, size_bytes }
+    - Privacy: the uploaded photo is stored outside `DATA_DIR` and is not publicly accessible via `/static_content/`.
+
+- POST `/{char_id}/generate-from-photo` — Generate 3-view reference image from private photo
+    - Body: GenerateReferenceFromPhotoRequest { description?, image_style? }
+    - 200 OK → CharacterOut (with `current_image.file_path` set)
+    - Output image is stored under `DATA_DIR` and served via `/static_content/` like other generated images.
+
 ### 6.4 Dynamic Lists (public)
 
 - GET `/api/v1/dynamic-lists/{list_name}/active-items`

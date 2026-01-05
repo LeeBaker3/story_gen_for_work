@@ -235,39 +235,97 @@
                         <button type="button" id="char-modal-close" class="action-button-secondary">Close</button>
                     </div>
                     <div class="modal-body">
-                        <img id="char-modal-image" class="detail-image" alt="Character image" style="display:none;" />
-                        <div class="modern-fieldset">
-                            <div>
-                                <label for="modal-char-name">Name</label>
-                                <input id="modal-char-name" type="text" />
+                        <!-- New Character wizard (4-step flow). Hidden by default; shown when clicking "New Character". -->
+                        <div id="char-modal-wizard" style="display:none;">
+                            <div id="char-wizard-steps" class="wizard-steps" aria-label="New character steps">
+                                <div class="wizard-step" data-step="0">Create</div>
+                                <div class="wizard-step" data-step="1">Upload</div>
+                                <div class="wizard-step" data-step="2">Describe</div>
+                                <div class="wizard-step" data-step="3">Generate</div>
                             </div>
-                            <div>
-                                <label for="modal-char-age">Age</label>
-                                <input id="modal-char-age" type="number" min="0" />
+
+                            <div id="char-wizard-panel-0" class="wizard-step-panel">
+                                <div class="modern-fieldset">
+                                    <div>
+                                        <label for="char-wizard-name">Name</label>
+                                        <input id="char-wizard-name" type="text" />
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label for="modal-char-gender">Gender</label>
-                                <select id="modal-char-gender">
-                                    <option value="">Select a gender</option>
-                                </select>
+
+                            <div id="char-wizard-panel-1" class="wizard-step-panel" style="display:none;">
+                                <div class="modern-fieldset">
+                                    <div>
+                                        <label for="char-wizard-photo">Upload photo (JPG, PNG, WEBP)</label>
+                                        <input id="char-wizard-photo" type="file" accept="image/jpeg,image/png,image/webp" />
+                                    </div>
+                                    <img id="char-wizard-photo-preview" class="detail-image" alt="Uploaded photo preview" style="display:none;" />
+                                </div>
                             </div>
-                            <div>
-                                <label for="modal-char-desc">Description</label>
-                                <textarea id="modal-char-desc" rows="3"></textarea>
+
+                            <div id="char-wizard-panel-2" class="wizard-step-panel" style="display:none;">
+                                <div class="modern-fieldset">
+                                    <div>
+                                        <label for="char-wizard-desc">Description</label>
+                                        <textarea id="char-wizard-desc" rows="3"></textarea>
+                                    </div>
+                                    <div>
+                                        <label for="char-wizard-style">Image style</label>
+                                        <select id="char-wizard-style">
+                                            <option value="">Select an image style</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label for="modal-char-clothing">Clothing style</label>
-                                <input id="modal-char-clothing" type="text" />
+
+                            <div id="char-wizard-panel-3" class="wizard-step-panel" style="display:none;">
+                                <div class="modern-fieldset">
+                                    <img id="char-wizard-generated-image" class="detail-image" alt="Generated character reference image" style="display:none;" />
+                                </div>
                             </div>
-                            <div>
-                                <label for="modal-char-traits">Key traits</label>
-                                <input id="modal-char-traits" type="text" />
+
+                            <div class="wizard-nav" style="display:flex; gap:8px; margin-top:12px;">
+                                <button type="button" id="char-wizard-prev" class="action-button-secondary">Back</button>
+                                <button type="button" id="char-wizard-next" class="action-button-primary">Next</button>
                             </div>
-                            <div>
-                                <label for="modal-char-style">Image style</label>
-                                <select id="modal-char-style">
-                                    <option value="">Select an image style</option>
-                                </select>
+                        </div>
+
+                        <!-- Existing edit form (used for editing/duplicating characters). -->
+                        <div id="char-modal-edit-form">
+                            <img id="char-modal-image" class="detail-image" alt="Character image" style="display:none;" />
+                            <div class="modern-fieldset">
+                                <div>
+                                    <label for="modal-char-name">Name</label>
+                                    <input id="modal-char-name" type="text" />
+                                </div>
+                                <div>
+                                    <label for="modal-char-age">Age</label>
+                                    <input id="modal-char-age" type="number" min="0" />
+                                </div>
+                                <div>
+                                    <label for="modal-char-gender">Gender</label>
+                                    <select id="modal-char-gender">
+                                        <option value="">Select a gender</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="modal-char-desc">Description</label>
+                                    <textarea id="modal-char-desc" rows="3"></textarea>
+                                </div>
+                                <div>
+                                    <label for="modal-char-clothing">Clothing style</label>
+                                    <input id="modal-char-clothing" type="text" />
+                                </div>
+                                <div>
+                                    <label for="modal-char-traits">Key traits</label>
+                                    <input id="modal-char-traits" type="text" />
+                                </div>
+                                <div>
+                                    <label for="modal-char-style">Image style</label>
+                                    <select id="modal-char-style">
+                                        <option value="">Select an image style</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>

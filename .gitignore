@@ -59,6 +59,9 @@ yarn.lock
 # Local node runtime caches (created by bootstrap scripts)
 .node-runtime/
 
+# Private local uploads (never commit)
+private_data/
+
 # Frontend test artifacts
 frontend/coverage/
 frontend/test-results/

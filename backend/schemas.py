@@ -384,6 +384,21 @@ class RegenerateImageRequest(BaseModel):
     image_style: Optional[str] = None
 
 
+class CharacterPhotoUploadResponse(BaseModel):
+    """Response for a successful character photo upload."""
+
+    character_id: int
+    content_type: str
+    size_bytes: int
+
+
+class GenerateReferenceFromPhotoRequest(BaseModel):
+    """Request to generate a character reference image using an uploaded photo."""
+
+    description: Optional[str] = None
+    image_style: Optional[str] = None
+
+
 # --- Admin Stats Schema ---
 class AdminStats(BaseModel):
     total_users: int

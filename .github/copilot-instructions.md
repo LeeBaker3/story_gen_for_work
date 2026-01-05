@@ -3,7 +3,7 @@
 This project is a **full-stack web application** with:  
 - **Backend:** Python (FastAPI)  
 - **Frontend:** JavaScript + HTML (with CSS framework as needed)  
-- **Database:** SQLit
+- **Database:** SQLite
 - **Purpose:** The app is used to generate custom stories and images
 
 Copilot should **maintain consistency between frontend and backend code** and follow the conventions below.  

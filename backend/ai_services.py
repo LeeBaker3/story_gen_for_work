@@ -632,8 +632,11 @@ def generate_image(
             opened_files = []
             try:
                 for path in reference_image_paths:
-                    # The path from the DB is relative to the 'data' directory, e.g., 'images/user_1/...'
-                    full_path = os.path.join("data", path)
+                    # Paths may be DB-relative (relative to settings.data_dir) or absolute
+                    # (used for private, non-public uploads).
+                    data_dir = get_settings().data_dir
+                    full_path = path if os.path.isabs(path) else os.path.join(
+                        data_dir, path)
                     if os.path.exists(full_path):
                         opened_files.append(open(full_path, "rb"))
                     else:
