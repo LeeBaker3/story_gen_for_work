@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.6.0...backend-v0.6.1) (2026-01-05)
+
+
+### Documentation
+
+* **changelog:** clean up v0.6.0 notes ([a1eb4f0](https://github.com/LeeBaker3/story_gen_for_work/commit/a1eb4f057189eab3a484874ecca7a1b6139c28e7))
+
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.5.0...backend-v0.6.0) (2026-01-05)
 
 
