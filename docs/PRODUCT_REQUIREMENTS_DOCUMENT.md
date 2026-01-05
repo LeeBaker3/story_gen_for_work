@@ -1,88 +1,3 @@
-# 1. Purpose
-
-The Story Generator Web App is a web-based application that allows users to generate custom illustrated stories using AI. It leverages the OpenAI ChatGPT API for story generation and an AI image generation model for generating corresponding illustrations. Users can log in, input story parameters, preview, edit, and export stories as PDFs.
-
-# 2. Features and Functionality
-
-## 2.1 User Interface (UI)
-*   **Homepage:**
-    *   Modern, clean design.
-    *   Options to:
-        *   Create a new story.
-        *   Log in / Sign up.
-        *   Browse previously created stories.
-*   **Story Creation Form:**
-    *   Select story genre (Children’s, Sci-Fi, Drama, Horror, Action). Dropdowns (e.g., genre) support alphabetical/numerical sorting.
-    *   Enter:
-        *   Story Title (Optional. If left blank, a title will be AI-generated. Can be edited later).
-        *   Story outline.
-        *   Main characters (name, personality, background).
-        *   Includes a collapsible, detailed character creation section. Users can specify attributes like age, gender, physical appearance (hair color, eye color, ethnicity, build), clothing style, and key personality traits. The system will provide defaults or tips to guide users. This information is used to generate upfront character reference images to guide the AI image generation model for consistent character depiction throughout the story.
-        *   Number of pages.
-        *   Option to select a writing style for the story (e.g., narrative, descriptive, poetic, humorous, formal).
-        *   Option to adjust word-to-picture ratio (e.g., one image every X words/paragraphs, or one image per page as default).
-        *   Option to select an image style for story illustrations (e.g., cartoon, watercolor, photorealistic).
-    *   Additional optional fields (tone, setting, etc.).
-*   **Story Preview Page:**
-    *   Displays the story, starting with a Title Page featuring the story title and a cover image.
-    *   Displays generated story per page, with accompanying image.
-    *   Navigation between pages.
-    *   Export options (PDF).
-    *   Option to edit story title, page text, and regenerate pages/images.
-*   **Authentication:**
-    *   Secure login and session management for regular and admin users. Admin users have distinct privileges.
-    *   User dashboard showing saved stories.
-    *   Forgot Password functionality.
-    # 1. Purpose
-
-    Updated: 2025-08-21
-*   **Admin Panel:** (New Section for FR-ADM-01, FR-ADM-05, FR-ADM-06)
-    *   Accessible only to users with admin privileges.
-    *   Interface for managing application-wide settings and dynamic content.
-    *   Functionality to manage dropdown list items (e.g., genres, image styles).
-    *   Interface for User Management (activate, deactivate, delete users).
-    *   Interface for Content Moderation (review and remove stories).
-    *   Interface for System Monitoring (view basic health, usage stats, logs). The logs viewer provides:
-        *   Tail length selection and auto-refresh.
-        *   Follow tail (auto-scroll) behavior when enabled.
-        *   Client-side filtering with plain text or regex, plus invert option.
-    *   **Story Creation Wizard:**
-        *   Step 1 — Basics: Title (optional; AI if blank), Genre, Outline.
-        *   Step 2 — Characters: Pick from saved Characters or create new; view/update description; generate/regenerate reference image; select one or more to include.
-        *   Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Writing Style.
-        *   Step 4 — Review: Summary and confirm.
-        *   UI polish: sticky glass header, animated progress bar (with reduced-motion fallback), toasts, and inline status feedback inside modals (no hidden snackbars behind modals).
-        *   Characters page features: search, pagination, selection, and modal-based image regenerate with buttons disabled and status shown during action.
-    *   **Characters Library:**
-        *   Standalone list of saved characters with thumbnails.
-        *   CRUD: create, update, regenerate image (new version becomes current), optional duplicate/save-as-new.
-        *   Storage uses per-user folders; thumbnails/reference images are served from static mounts.
-    *   If no title is provided by the user, generates a suitable story title based on the outline and other parameters.
-    *   Parses and stores story (including title), pages (with a dedicated title page as the first page), and image metadata in a SQLite database.
-    *   Generates a cover image for the title page using the AI image generation model, based on the final story title, overall themes, and main character descriptions.
-    *   Generates PDF combining story text and locally stored images.
-    *   Provides an endpoint to retrieve a list of stories for the authenticated user.
-        *   Manage dynamic list items (e.g., genres, image styles) used by forms.
-        *   User Management (activate, deactivate, delete users).
-    *   Manages adjustable word-to-picture ratios for story layout.
-    *   Supports different selectable writing styles for ChatGPT, with styles potentially managed dynamically.
-    *   Implements a secure 'Forgot Password' mechanism (e.g., token-based).
-    *   Implements role-based access control (RBAC) to differentiate between regular users and admins.
-    *   Provides CRUD endpoints for managing dynamic list content (e.g., genres, image styles) accessible only by admins.
-    *   Handles user-defined story titles, allowing for creation and updates.
-        *   Configuration Diagnostics endpoint: `/api/v1/admin/monitoring/config` returns masked key presence, model names, mount flags, paths, and whether the OpenAI client is initialized (no secrets leaked).
-    *   Securely stores and manages API keys (e.g., OpenAI API Key), accessible/modifiable only by admins.
-    *   Provides mechanisms to ensure data integrity when dynamic list items (e.g., genres, styles) are modified or deleted by an admin. This includes strategies like soft deletes, preventing deletion of in-use items, or indicating usage to the admin.
-    *   Provides endpoints for admins to manage users (view, activate, deactivate, delete).
-    *   Provides endpoints for admins to moderate content (list all stories, delete stories).
-    *   Provides endpoints for admins to view system statistics and access application logs.
-        *   Text model (default: gpt-4.1-mini): Returns story content in structured JSON format.
-        *   Image model (default: gpt-image-1): Generates images based on page-specific prompts.
-## 3.2 Frontend
-*   Technologies: HTML, CSS (site-wide), JavaScript
-*   Modern responsive design using CSS for theming.
-*   Form validation and dynamic content updates.
-
 # Product Requirements Document (PRD)
 
 Updated: 2025-08-21
@@ -272,6 +187,16 @@ Base path: `/api/v1/characters`
 - DELETE `/{char_id}` — Delete
     - 204 No Content; 404 if not found
 
+- POST `/{char_id}/photo` — Upload private reference photo
+    - multipart/form-data: { photo: (JPG|PNG|WEBP) }
+    - 200 OK → CharacterPhotoUploadResponse { character_id, content_type, size_bytes }
+    - Privacy: the uploaded photo is stored outside `DATA_DIR` and is not publicly accessible via `/static_content/`.
+
+- POST `/{char_id}/generate-from-photo` — Generate 3-view reference image from private photo
+    - Body: GenerateReferenceFromPhotoRequest { description?, image_style? }
+    - 200 OK → CharacterOut (with `current_image.file_path` set)
+    - Output image is stored under `DATA_DIR` and served via `/static_content/` like other generated images.
+
 ### 6.4 Dynamic Lists (public)
 
 - GET `/api/v1/dynamic-lists/{list_name}/active-items`
@@ -340,3 +265,64 @@ Base path: `/api/v1/admin/monitoring`
 
 Schemas
 - The canonical schema definitions live in `backend/schemas.py`. Fields in responses map 1:1 to those Pydantic models unless otherwise noted above.
+
+## 7. Change Notes (2025-09)
+
+### 7.1 Admin Stats Enhancements (2025-09-18)
+
+Summary
+- Provide operators with clearer visibility into background story generation by surfacing precise durations and retry behavior.
+
+API: GET `/api/v1/admin/stats`
+- Adds `avg_attempts_last_24h`: average number of attempts across completed `StoryGenerationTask` records created within the last 24 hours.
+- `avg_task_duration_seconds_last_24h` prefers a precise duration captured at completion (`duration_ms`) with a fallback to `updated_at - created_at`.
+
+Data Model: `StoryGenerationTask`
+- New fields: `attempts`, `started_at`, `completed_at`, `duration_ms`, `last_error` (in addition to legacy `error_message`).
+- `attempts` increments when a page image retry is performed; `duration_ms` is set on terminal states.
+
+Frontend UI
+- Admin → Admin Stats shows a new card “Avg Attempts (24h)”.
+
+Acceptance Criteria
+- When there are completed tasks in the last 24h, `avg_attempts_last_24h` returns a non-null numeric value rounded to 2 decimals; otherwise null.
+- Admin Stats UI renders the value with two decimals (or em dash when null).
+
+### 7.2 Admin Moderation & User Soft Delete (2025-09-18)
+
+Summary
+- Introduce content moderation tools to hide or remove stories and support reversible user deletions via soft-delete.
+
+APIs (admin only)
+- Users
+    - GET `/api/v1/admin/management/users/` — list (exclude soft-deleted by default)
+    - GET `/api/v1/admin/management/users/{id}`
+    - PUT `/api/v1/admin/management/users/{id}`
+    - DELETE `/api/v1/admin/management/users/{id}` — soft delete; cannot delete self
+- Stories
+    - GET `/api/v1/admin/moderation/stories` — list with filters and include flags (hidden/deleted)
+    - PATCH `/api/v1/admin/moderation/stories/{id}/hide` — toggle `is_hidden`
+    - DELETE `/api/v1/admin/moderation/stories/{id}` — soft delete (`is_deleted=true`)
+
+Acceptance Criteria
+- Soft-deleted users do not appear in the admin user list by default.
+- Hidden stories remain visible in moderation lists but are suppressed from user/public views.
+- API responses validate against schema enums for `image_style`, `word_to_picture_ratio`, and `text_density`.
+
+### 7.3 Testing & CI Enhancements (2025-09-19)
+
+Summary
+- Strengthen reliability and regression safety for newly added admin moderation and stats features.
+
+Scope
+- Extended frontend Jest coverage for admin moderation UI: empty state, hide failure rollback, delete failure rollback, filter reapplication baseline (non-persistence) behavior.
+- CI workflow enforces Node version via `.nvmrc` for deterministic test execution.
+
+Non-Goals
+- Persisting moderation filters across reload (explicitly out-of-scope; current tests assert blank-state on reload to document behavior).
+
+Acceptance Criteria
+- Frontend tests cover at least one failure-path each for hide and delete actions.
+- Empty moderation list renders a clear "No stories" message.
+- CI passes with no additional manual Node version intervention.
+- CHANGELOG documents new test coverage and infra alignment.

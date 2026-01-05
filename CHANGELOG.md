@@ -2,16 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-01-05
+### Added
+- 4-step “New Character” flow: create character → upload a private photo → add description → generate a 3-view (front/side/back) reference image.
+- Character photo upload API that stores user uploads outside public static serving (private by default).
+- From-photo reference image generation endpoint that uses the private upload as reference input and saves generated output under public static content.
+
+### Changed
+- Frontend image URLs now consistently resolve via the backend origin for /static_content assets (fixes images not showing when frontend is served separately).
+- CI/workflows updated to upload frontend test artifacts from correct paths and avoid badge pushes during PR builds.
+- Docs updated to describe PRIVATE_DATA_DIR / MAX_UPLOAD_BYTES and the new character endpoints.
+
+### Fixed
+- Reference image path handling now supports absolute reference paths (prevents “reference image not found” for private uploads).
+
+## [0.5.2] - 2025-09-19
+### Added
+- Extended admin moderation UI test coverage (empty state, delete failure rollback, hide failure rollback, filter reapplication behavior).
+- Documentation & CI alignment: clarified moderation test scenarios; ensured frontend workflow uses .nvmrc Node version file consistently.
+
+### Changed
+- Minor internal test harness utilities for moderation extended tests (additional mock scenarios) with no runtime code changes.
+
+### Fixed
+- None (test-only changes). 
+
 ## [0.5.1] - 2025-09-18
 ### Added
 - Admin Stats API and UI now include average attempts over completed tasks in the last 24h.
+ - Admin content moderation endpoints: list stories with filters, hide/unhide, and soft delete.
+ - Admin user management: soft delete action wired in UI and API, prevents self-delete.
 
 ### Changed
 - Admin Stats average task duration now prefers precise duration_ms captured on task completion, with a fallback to updated_at - created_at for legacy rows.
 - README and PRD updated to document new task tracking fields and metrics.
+ - Normalize legacy enum values in moderation responses; align Story.text_density default with schema ("Concise (~30-50 words)").
 
 ### Fixed
 - Ensured SQLite dev/test startup helper adds new StoryGenerationTask columns idempotently to avoid missing column errors during tests.
+ - Admin users list now excludes soft-deleted users by default.
 
 ## [0.5.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.4.4...v0.5.0) (2025-09-16)
 

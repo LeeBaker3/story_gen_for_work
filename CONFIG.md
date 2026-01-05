@@ -26,6 +26,8 @@ Core
 Static & storage
 - FRONTEND_DIR: directory to serve at /static (default: frontend)
 - DATA_DIR: base directory for generated data (default: data)
+- PRIVATE_DATA_DIR: base directory for private user uploads that must not be publicly accessible (default: private_data)
+- MAX_UPLOAD_BYTES: maximum allowed size for uploads (default: 10485760 / 10MB)
 - MOUNT_FRONTEND_STATIC: "1"/"true" to mount /static (default: true unless RUN_ENV=test)
 - MOUNT_DATA_STATIC: "1"/"true" to mount /static_content (default: true unless RUN_ENV=test)
 
@@ -47,10 +49,36 @@ CORS
 Database
 - DATABASE_URL: SQLAlchemy URL (default: sqlite:///./story_generator.db)
 
+## Admin bootstrap (create first admin)
+
+Use `create_admin.py` to create the first admin user, or to promote an existing
+user. The script is idempotent and will not reset passwords unless you request
+it.
+
+Typical local usage (recommended)
+- Create admin (username defaults to email) and prompt for password:
+  - `python create_admin.py --email admin@example.com --prompt-password`
+
+Promote an existing user
+- Promote by username/email without changing password:
+  - `python create_admin.py --username existing@example.com --no-create-if-missing`
+
+Reset password (explicit)
+- Update password for an existing user (requires `--set-password`):
+  - `python create_admin.py --email admin@example.com --set-password --prompt-password`
+
+Database selection
+- By default, uses `DATABASE_URL` (or SQLite fallback).
+- Override for a single run:
+  - `python create_admin.py --email admin@example.com --prompt-password --db-url sqlite:///./story_generator.db`
+- For non-interactive environments, you may provide `ADMIN_PASSWORD` instead of
+  prompting.
+
 ## Notes & safe defaults
 
 - The backend prefers the repository root .env. If backend/.env also exists, it is only used to fill missing values (never overriding root or shell env).
 - Paths saved in the database are relative to DATA_DIR, so they are served under /static_content/ consistently.
+- Uploaded character photos are stored under PRIVATE_DATA_DIR and are never served from /static_content.
 - For CI, use OPENAI_API_KEY=dummy-ci-key and mock OpenAI calls in tests (already done in the test suite).
 
 ## Migration notes

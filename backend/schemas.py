@@ -144,6 +144,10 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
     pages: List[Page] = []
     created_at: datetime  # Added based on previous work
     updated_at: datetime
+    # Admin moderation fields
+    is_hidden: bool = False
+    # Include soft-delete flag for admin views; default False
+    is_deleted: bool = False
 
     model_config = ConfigDict(from_attributes=True)  # Replaced class Config
 
@@ -380,6 +384,21 @@ class RegenerateImageRequest(BaseModel):
     image_style: Optional[str] = None
 
 
+class CharacterPhotoUploadResponse(BaseModel):
+    """Response for a successful character photo upload."""
+
+    character_id: int
+    content_type: str
+    size_bytes: int
+
+
+class GenerateReferenceFromPhotoRequest(BaseModel):
+    """Request to generate a character reference image using an uploaded photo."""
+
+    description: Optional[str] = None
+    image_style: Optional[str] = None
+
+
 # --- Admin Stats Schema ---
 class AdminStats(BaseModel):
     total_users: int
@@ -396,3 +415,8 @@ class AdminStats(BaseModel):
     success_rate_last_24h: Optional[float] = None  # 0-1 ratio
     # Average attempts across completed tasks in the last 24h (nullable)
     avg_attempts_last_24h: Optional[float] = None
+
+
+# --- Admin Moderation Requests ---
+class HideStoryRequest(BaseModel):
+    is_hidden: bool

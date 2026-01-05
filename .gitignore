@@ -56,6 +56,19 @@ yarn-error.log
 package-lock.json
 yarn.lock
 
+# Local node runtime caches (created by bootstrap scripts)
+.node-runtime/
+
+# Private local uploads (never commit)
+private_data/
+
+# Frontend test artifacts
+frontend/coverage/
+frontend/test-results/
+
+# Local bootstrap outputs
+bootstrap.out
+
 # Data files
 data/images/*
 data/logs/*
@@ -66,3 +79,6 @@ data/logs/*
 .vscode/
 .idea/
 *.DS_Store
+
+# Local devcontainer setup (optional)
+.devcontainer/

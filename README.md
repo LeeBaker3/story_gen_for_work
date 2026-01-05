@@ -44,7 +44,7 @@ Run (dev)
     - GET /api/v1/admin/monitoring/logs/{file}?lines=N (tail last N lines; bounds 10–5000)
     - GET /api/v1/admin/monitoring/logs/{file}/download (download full log)
     - GET /api/v1/admin/monitoring/stats (basic system stats)
-    - GET /api/v1/admin/monitoring/metrics (stubbed counter example)
+    - GET /api/v1/admin/monitoring/metrics (Prometheus exposition)
 
 Admin monitoring UI highlights
 - Persisted preferences: selected log file, tail length, auto‑refresh, and filters are saved to localStorage.
@@ -54,6 +54,22 @@ Admin monitoring UI highlights
 Admin Stats
 - Endpoint: GET /api/v1/admin/stats (admin only)
 - Metrics: users (total/active), stories (total/generated/drafts), total characters, task breakdown for last 24h (total/completed/failed/in-progress), average task duration for last 24h (prefers precise duration_ms, falls back to timestamps), success rate (completed / (completed + failed)), and average attempts over completed tasks in the last 24h.
+
+Admin user management
+- List users: GET /api/v1/admin/management/users/ (excludes soft-deleted by default)
+- Get user: GET /api/v1/admin/management/users/{id}
+- Update user: PUT /api/v1/admin/management/users/{id}
+- Soft delete user: DELETE /api/v1/admin/management/users/{id} (cannot delete self)
+
+Admin content moderation
+- List stories for moderation: GET /api/v1/admin/moderation/stories
+    - Query params: page, page_size, user_id, status_filter, created_from, created_to, include_hidden, include_deleted
+    - Returns Story items; hidden/deleted included only if flags are set
+- Hide/unhide a story: PATCH /api/v1/admin/moderation/stories/{id}/hide with body { is_hidden: boolean }
+- Soft delete a story: DELETE /api/v1/admin/moderation/stories/{id}
+Notes
+- Soft-deleted users are excluded from admin lists by default but remain in the database for auditability.
+- Stories support moderation flags is_hidden and is_deleted; hidden stories remain visible to admins but are suppressed from public/user listings.
 
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
@@ -94,6 +110,7 @@ Database
 - DATABASE_URL: database connection string (default sqlite:///./story_generator.db)
 - SQLite is supported out of the box; for Postgres, install a suitable driver (e.g., psycopg)
 - Tables auto-created on startup; seed data is applied during app startup lifespan
+ - In dev/test, startup helpers idempotently add new columns (task tracking, soft-delete/moderation). Use proper migrations (e.g., Alembic) for production.
 
 ## Running
 Dev server
@@ -107,7 +124,7 @@ Static mounts
 Docs
 - Swagger UI: /docs
 - ReDoc: /redoc
- - Configuration Guide: docs/CONFIG.md (env, logging, monitoring endpoints/UI)
+ - Configuration Guide: CONFIG.md (env, logging, monitoring endpoints/UI)
  - API Contracts: see docs/PRODUCT_REQUIREMENTS_DOCUMENT.md (Section 6)
 
 ## Authentication
@@ -137,12 +154,138 @@ Notes
 
 ### Frontend tests (Jest)
 - Location: `frontend/tests`
-- Run locally: npm install && npm test
-- Environment: jsdom with Testing Library; fetch is mocked by default.
-- CI: `.github/workflows/frontend-tests.yml` runs tests on push/PR.
+- Uses jsdom + @testing-library/dom + @testing-library/user-event.
+- `.nvmrc` enforces a consistent Node major version (run `nvm use`).
 
+#### Quick start
+```bash
+# Ensure correct Node version
+nvm use
+
+# Install dependencies (first time or after updates)
+
+
+# Run only frontend tests (serial to reduce flake)
 ## Storage paths
+
+# Watch mode for development
+npm run test:frontend:watch
+
+# Backend tests (pytest) via npm convenience script
+npm run test:backend
+
+# Run all (frontend then backend)
 - Images are stored under DATA_DIR/images/user_{id}/story_{id}/...
+```
+
+#### Node version management
+- The file `.nvmrc` (currently `22`) specifies the expected Node major.
+- Add to your shell profile to auto-switch:
+    ```bash
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    cd /path/to/repo && nvm use
+    ```
+- Optional: `nvm alias default $(cat .nvmrc)` to make it the default.
+
+#### Troubleshooting
+| Symptom | Fix |
+|---------|-----|
+| `command not found: jest` | Run `nvm use && npm install` |
+| Version mismatch / unexpected crashes | Confirm `node -v` matches `.nvmrc`; reinstall deps after switching versions |
+| Hanging tests | Use `--runInBand` (already in `test:frontend`) |
+| Flaky DOM timing | Keep serial execution; add explicit `await waitFor(...)` in tests |
+| Stale node_modules after Node upgrade | `rm -rf node_modules package-lock.json && npm install` |
+
+#### If Node / npm are missing
+Use the portable bootstrap (downloads a local Node under `.node-runtime/`):
+
+```bash
+bash scripts/bootstrap-node.sh
+eval "$(bash scripts/bootstrap-node.sh env)"
+npm install
+npm test
+```
+
+The `pretest` script automatically calls the bootstrap, so a simple `npm test` will attempt to provision Node if absent.
+
+After the first bootstrap you can also:
+```bash
+source ./activate-node.sh   # Adds portable Node to PATH for this shell
+```
+
+Shortcut (single command):
+
+```bash
+bash scripts/run-frontend-tests.sh
+```
+
+#### Portable runtime details & best practices
+The script `scripts/bootstrap-node.sh` supports two modes:
+- Normal: attempts to use existing Node (system or nvm) that satisfies `engines.node`.
+- Portable: forced when you set `PORTABLE_INSTALL=1`, downloading a tarball into `.node-runtime/`.
+
+Common workflows
+```bash
+# Force a specific full version (skips network index lookup):
+NODE_VERSION=22.10.0 PORTABLE_INSTALL=1 bash scripts/bootstrap-node.sh
+
+# Add portable Node to current shell (idempotent):
+source ./activate-node.sh
+
+# Run tests (bootstrap runs again but is a fast no-op once version resolved)
+npm test
+```
+
+Skip index.json fetch
+- If you pass a full semver in `NODE_VERSION` (e.g. `22.10.0`) the bootstrap script no longer attempts to fetch `index.json` to resolve the latest patch.
+- Using only a major (e.g. `.nvmrc` = `22`) triggers a (fast) lookup unless offline; on network failure it falls back to `22.0.0`.
+
+Recommended `pretest` hard‑pin (optional improvement)
+- To avoid any network during CI/local pretest you can change the `pretest` script to:
+    ```json
+    "pretest": "NODE_VERSION=22.10.0 bash scripts/bootstrap-node.sh"
+    ```
+- This is intentionally not committed yet to keep the repo flexible while patch cadence is high; update when you want to lock the patch version.
+
+Manual fallback (air‑gapped / repeated network failures)
+```bash
+mkdir -p .node-runtime && cd .node-runtime
+curl -fSLO https://nodejs.org/dist/v22.10.0/node-v22.10.0-darwin-arm64.tar.gz
+tar -xzf node-v22.10.0-darwin-arm64.tar.gz
+cd ..
+cat > activate-node.sh <<'EOF'
+#!/usr/bin/env bash
+export PATH="$(pwd)/.node-runtime/node-v22.10.0-darwin-arm64/bin:$PATH"
+EOF
+chmod +x activate-node.sh
+source ./activate-node.sh
+node -v && npm -v
+```
+
+Suppress expected console noise in tests (optional)
+- The frontend tests purposefully mount only minimal HTML, so warnings like missing dropdowns/buttons are expected and do not fail the suite.
+- To silence them you can add a filter in `frontend/tests/setup-tests.mjs`:
+    ```js
+    const noisy = [/Select element with ID/, /not found; .* will not work/, /CRITICAL ERROR:/];
+    const origError = console.error;
+    console.error = (...args) => {
+        if (noisy.some(r => r.test(args[0]))) return; // swallow expected noise
+        origError(...args);
+    };
+    ```
+- Keep at least one path (e.g. real exceptions) visible to avoid hiding regressions.
+
+#### CI artifacts
+`npm run test:frontend:ci` generates:
+- JUnit XML: `frontend/test-results/junit.xml`
+- Coverage: `frontend/coverage/`
+
+GitHub Actions uploads these for PR visibility.
+
+#### CI
+- If adding a workflow, ensure it runs `nvm install` / `nvm use` or uses `actions/setup-node` with the version in `.nvmrc`.
+- Cache `~/.npm` based on `package-lock.json` hash.
 - Character references under .../references
 - Filenames are sanitized and include short IDs for uniqueness.
 - Paths saved to DB are always relative to DATA_DIR, so they can be served at /static_content/...
@@ -182,10 +325,20 @@ Related API
 - Inline status messages in modals to avoid hidden snackbars
 - Sticky glass header, themed buttons, animated progress bar (respects reduced motion)
 
-Screenshots (TODO)
-- wizard.png — basic steps
-- characters.png — library grid and modal
-- progress.png — story generation progress bar
+## Screenshots
+
+![Wizard](docs/screenshots/wizard.svg)
+
+![Characters](docs/screenshots/characters.svg)
+
+![Progress](docs/screenshots/progress.svg)
+
+How to update these
+- Replace the files under `docs/screenshots/` with real screenshots (keep the same filenames).
+- Recommended captures:
+    - Wizard: step indicators + form + Character Library panel.
+    - Characters: grid + open modal with inline status.
+    - Progress: generation progress area visible during polling.
 
 ## How to run the frontend via backend static mounts
 
@@ -264,6 +417,30 @@ With a process manager/proxy
 - frontend/ (static assets)
 - data/ (generated images, logs; configurable via DATA_DIR)
 - story_generator.db (SQLite, dev default)
+- .devcontainer/ (VS Code Dev Container configuration for reproducible Python + Node environment)
+
+## Dev Container (Reproducible Environment)
+You can develop inside a container with consistent Python (3.13) and Node (22) versions without installing them locally.
+
+Prereqs
+- VS Code + Dev Containers extension (or GitHub Codespaces)
+
+Usage
+1. Open the repository in VS Code.
+2. Run: Command Palette → Dev Containers: Reopen in Container.
+3. On first build it will:
+    - Build the base image (Ubuntu + Python 3.13 + Node 22.10.0)
+    - Create a `.venv` virtual environment
+    - Install backend requirements and npm dependencies
+4. Once the container is ready:
+    - Run backend: `uvicorn backend.main:app --reload --host 0.0.0.0` (port 8000 is forwarded)
+    - Run tests: `pytest -q` or `npm test`
+
+Notes
+- Adjust pinned Node version by editing `ARG NODE_VERSION` in `.devcontainer/Dockerfile`.
+- If you change dependencies, re-run `postCreateCommand` tasks manually or rebuild the container.
+- The portable bootstrap script still works inside the container; normally not needed since Node is system-installed there.
+
 
 ## CI with GitHub Actions
 You can run tests on every push or pull request using GitHub Actions.

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Characters page screenshot placeholder">
+    <rect width="1200" height="675" fill="#f5f5f5"/>
+    <rect x="80" y="70" width="1040" height="535" rx="18" fill="#ffffff" stroke="#cccccc"/>
+    <rect x="80" y="70" width="1040" height="52" rx="18" fill="#eeeeee" stroke="#cccccc"/>
+    <text x="600" y="105" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="18" fill="#333">Characters</text>
+
+    <text x="120" y="185" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="28" fill="#222">Library grid + modal edit/regenerate</text>
+    <rect x="120" y="225" width="960" height="70" rx="12" fill="#f8f8f8" stroke="#e0e0e0"/>
+    <text x="140" y="270" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="18" fill="#555">Placeholder image. Replace with a real screenshot showing the grid and open modal.</text>
+
+    <rect x="120" y="325" width="420" height="240" rx="12" fill="#fafafa" stroke="#e0e0e0"/>
+    <rect x="560" y="325" width="520" height="240" rx="12" fill="#fafafa" stroke="#e0e0e0"/>
+    <text x="140" y="365" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="16" fill="#555">Grid: thumbnails, search, pagination</text>
+    <text x="580" y="365" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="16" fill="#555">Modal: inline status + Save / Save as new / Regenerate</text>
+</svg>

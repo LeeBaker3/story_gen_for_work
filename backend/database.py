@@ -37,6 +37,8 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)  # New field
+    # Soft delete flag for admin-controlled deletions
+    is_deleted = Column(Boolean, default=False)
     role = Column(String, default="user")  # New field (e.g., "user", "admin")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
@@ -61,9 +63,13 @@ class Story(Base):
     # FR13: Added word_to_picture_ratio column
     word_to_picture_ratio = Column(
         String, nullable=True, default="One image per page")
-    # New Req: Added text_density column
-    text_density = Column(String, nullable=True,
-                          default="Concise")  # Default to Concise
+    # New Req: Added text_density column (align with schema enum values)
+    text_density = Column(
+        String,
+        nullable=True,
+        # Align default with schemas.TextDensity.CONCISE.value
+        default="Concise (~30-50 words)",
+    )
     owner_id = Column(Integer, ForeignKey("users.id"))
     # Represents draft creation or story generation time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -73,6 +79,9 @@ class Story(Base):
     generated_at = Column(DateTime(timezone=True), nullable=True)
     # True if story is a draft, False if generated
     is_draft = Column(Boolean, default=True, nullable=False)
+    # Admin moderation flags
+    is_hidden = Column(Boolean, default=False, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
 
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",
@@ -234,6 +243,7 @@ class CharacterImage(Base):
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
     _ensure_story_generation_task_new_columns()
+    _ensure_soft_delete_and_moderation_columns()
 
 
 def _ensure_story_generation_task_new_columns():
@@ -268,3 +278,42 @@ def _ensure_story_generation_task_new_columns():
         except Exception:
             # Swallow any inspection errors silently (non-fatal for app start)
             pass
+
+
+def _ensure_soft_delete_and_moderation_columns():
+    """Idempotently add soft-delete/moderation columns for Users and Stories in SQLite.
+
+    This mirrors the approach used for StoryGenerationTask new columns to keep
+    dev/test environments working without formal migrations. In production,
+    prefer Alembic migrations.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    tables_required_cols = {
+        "users": {
+            "is_deleted": "BOOLEAN DEFAULT 0",
+        },
+        "stories": {
+            "is_hidden": "BOOLEAN DEFAULT 0",
+            "is_deleted": "BOOLEAN DEFAULT 0",
+        },
+    }
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
+                            )
+                        except Exception:
+                            # Ignore if racing or not supported
+                            pass
+            except Exception:
+                # Non-fatal in dev/test
+                pass

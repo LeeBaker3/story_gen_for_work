@@ -7,6 +7,18 @@ if (
 } else {
     API_BASE_URL = "https://story-gen-for-work.onrender.com"; // Deployed environment
 }
+
+function staticContentUrl(path) {
+    if (!path) return "";
+    const p = String(path).trim();
+    if (!p) return "";
+    if (p.startsWith("http://") || p.startsWith("https://")) return p;
+
+    const base = API_BASE_URL.replace(/\/$/, "");
+    if (p.startsWith("/static_content/")) return `${base}${p}`;
+    if (p.startsWith("static_content/")) return `${base}/${p}`;
+    return `${base}/static_content/${p.replace(/^\/+/, "")}`;
+}
 console.log("script.js file loaded and parsed by the browser.");
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -259,7 +271,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const card = document.createElement('div');
             card.className = 'character-card';
             card.innerHTML = `
-                <div class="thumb">${item.thumbnail_path ? `<img src="/static_content/${item.thumbnail_path}" alt="${escapeHTML(item.name)} thumbnail">` : '<div class="no-thumb">No image</div>'}</div>
+                <div class="thumb">${item.thumbnail_path ? `<img src="${staticContentUrl(item.thumbnail_path)}" alt="${escapeHTML(item.name)} thumbnail">` : '<div class="no-thumb">No image</div>'}</div>
                 <div class="meta">
                   <div class="name" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
                     <span>${escapeHTML(item.name)}</span>
@@ -347,6 +359,240 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // --- Characters Page: Edit/Duplicate Modal ---
     // One-time wire of modal buttons to ensure they respond
+    const charWizardState = {
+        step: 0,
+        characterId: null,
+        photoFile: null,
+        photoPreviewUrl: null,
+        generatedImagePath: null,
+    };
+
+    function getCharWizardEls() {
+        const modal = document.getElementById('char-modal');
+        return {
+            modal,
+            backdrop: document.getElementById('char-modal-backdrop'),
+            wizard: document.getElementById('char-modal-wizard'),
+            editForm: document.getElementById('char-modal-edit-form'),
+            modalActions: modal?.querySelector('.modal-actions'),
+            steps: Array.from(document.querySelectorAll('#char-wizard-steps .wizard-step')),
+            panels: [
+                document.getElementById('char-wizard-panel-0'),
+                document.getElementById('char-wizard-panel-1'),
+                document.getElementById('char-wizard-panel-2'),
+                document.getElementById('char-wizard-panel-3'),
+            ],
+            prev: document.getElementById('char-wizard-prev'),
+            next: document.getElementById('char-wizard-next'),
+            name: document.getElementById('char-wizard-name'),
+            photo: document.getElementById('char-wizard-photo'),
+            photoPreview: document.getElementById('char-wizard-photo-preview'),
+            desc: document.getElementById('char-wizard-desc'),
+            style: document.getElementById('char-wizard-style'),
+            generatedImage: document.getElementById('char-wizard-generated-image'),
+            status: document.getElementById('char-modal-status'),
+        };
+    }
+
+    function setCharWizardMode(enabled) {
+        const { modal, wizard, editForm, modalActions } = getCharWizardEls();
+        if (!modal) return;
+        modal.dataset.mode = enabled ? 'wizard' : 'edit';
+        if (wizard) wizard.style.display = enabled ? '' : 'none';
+        if (editForm) editForm.style.display = enabled ? 'none' : '';
+        if (modalActions) modalActions.style.display = enabled ? 'none' : '';
+    }
+
+    function resetCharWizardState() {
+        const { name, photo, photoPreview, desc, style, generatedImage, status } = getCharWizardEls();
+        if (charWizardState.photoPreviewUrl && window.URL?.revokeObjectURL) {
+            try { window.URL.revokeObjectURL(charWizardState.photoPreviewUrl); } catch { }
+        }
+        charWizardState.step = 0;
+        charWizardState.characterId = null;
+        charWizardState.photoFile = null;
+        charWizardState.photoPreviewUrl = null;
+        charWizardState.generatedImagePath = null;
+        if (name) name.value = '';
+        if (desc) desc.value = '';
+        if (style) style.value = '';
+        if (photo) photo.value = '';
+        if (photoPreview) {
+            photoPreview.src = '';
+            photoPreview.style.display = 'none';
+        }
+        if (generatedImage) {
+            generatedImage.src = '';
+            generatedImage.style.display = 'none';
+        }
+        if (status) {
+            status.textContent = '';
+            status.className = 'inline-status';
+            status.style.display = 'none';
+        }
+    }
+
+    function setWizardStatus(msg, type = 'info') {
+        const { status } = getCharWizardEls();
+        if (!status) return;
+        status.textContent = String(msg);
+        status.className = `inline-status inline-status--${type}`;
+        status.style.display = '';
+    }
+
+    function setWizardBusy(isBusy, msg = '') {
+        const { next, prev, status } = getCharWizardEls();
+        if (next) next.disabled = isBusy;
+        if (prev) prev.disabled = isBusy;
+        const region = status?.closest('[data-status-region]');
+        if (region) region.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        if (isBusy && msg) setWizardStatus(msg, 'info');
+    }
+
+    function updateCharWizardUI() {
+        const { panels, steps, prev, next, modal } = getCharWizardEls();
+        panels.forEach((el, i) => {
+            if (el) el.style.display = i === charWizardState.step ? 'block' : 'none';
+        });
+        steps.forEach((dot, i) => {
+            dot.classList.toggle('active', i === charWizardState.step);
+            dot.setAttribute('aria-current', i === charWizardState.step ? 'step' : 'false');
+        });
+        if (prev) prev.disabled = charWizardState.step === 0;
+        if (next) {
+            if (charWizardState.step === 0) next.textContent = 'Create';
+            else if (charWizardState.step === 1) next.textContent = 'Upload';
+            else if (charWizardState.step === 2) next.textContent = 'Next';
+            else next.textContent = 'Generate';
+        }
+        // Title
+        const title = document.getElementById('char-modal-title');
+        if (title) {
+            const id = modal?.getAttribute('data-id');
+            title.textContent = id ? `New Character #${id}` : 'New Character';
+        }
+    }
+
+    async function charWizardNext() {
+        const { modal, name, photo, desc, style, generatedImage } = getCharWizardEls();
+        if (!modal) return;
+
+        // Step 1: create character
+        if (charWizardState.step === 0) {
+            const n = (name?.value || '').trim();
+            if (!n) {
+                setWizardStatus('Please enter a character name.', 'warning');
+                return;
+            }
+            setWizardBusy(true, 'Creating character…');
+            try {
+                const created = await apiRequest('/api/v1/characters/', 'POST', {
+                    name: n,
+                    generate_image: false,
+                });
+                const id = created?.id;
+                if (!id) throw new Error('Missing character id');
+                charWizardState.characterId = Number(id);
+                modal.setAttribute('data-id', String(id));
+                setWizardStatus('Character created. Upload a photo next.', 'success');
+                charWizardState.step = 1;
+                updateCharWizardUI();
+            } catch (e) {
+                setWizardStatus('Failed to create character.', 'error');
+            } finally {
+                setWizardBusy(false);
+            }
+            return;
+        }
+
+        const id = charWizardState.characterId || Number(modal.getAttribute('data-id'));
+        if (!id) {
+            setWizardStatus('Missing character id. Please start over.', 'error');
+            return;
+        }
+
+        // Step 2: upload photo
+        if (charWizardState.step === 1) {
+            const file = photo?.files?.[0] || charWizardState.photoFile;
+            if (!file) {
+                setWizardStatus('Please choose a photo to upload.', 'warning');
+                return;
+            }
+            setWizardBusy(true, 'Uploading photo…');
+            try {
+                const fd = new FormData();
+                fd.append('photo', file);
+                await apiRequest(`/api/v1/characters/${id}/photo`, 'POST', fd, true);
+                setWizardStatus('Photo uploaded. Add a description next.', 'success');
+                charWizardState.step = 2;
+                updateCharWizardUI();
+            } catch (e) {
+                setWizardStatus('Failed to upload photo.', 'error');
+            } finally {
+                setWizardBusy(false);
+            }
+            return;
+        }
+
+        // Step 3: describe
+        if (charWizardState.step === 2) {
+            const d = (desc?.value || '').trim();
+            const s = (style?.value || '').trim() || null;
+            if (!d) {
+                setWizardStatus('Please add a description.', 'warning');
+                return;
+            }
+            setWizardBusy(true, 'Saving description…');
+            try {
+                await apiRequest(`/api/v1/characters/${id}`, 'PUT', {
+                    description: d,
+                    image_style: s,
+                });
+                setWizardStatus('Description saved. Generate the reference image.', 'success');
+                charWizardState.step = 3;
+                updateCharWizardUI();
+            } catch (e) {
+                setWizardStatus('Failed to save description.', 'error');
+            } finally {
+                setWizardBusy(false);
+            }
+            return;
+        }
+
+        // Step 4: generate
+        if (charWizardState.step === 3) {
+            const d = (desc?.value || '').trim();
+            const s = (style?.value || '').trim() || null;
+            if (!d) {
+                setWizardStatus('Please add a description before generating.', 'warning');
+                return;
+            }
+            setWizardBusy(true, 'Generating reference image…');
+            try {
+                const result = await apiRequest(`/api/v1/characters/${id}/generate-from-photo`, 'POST', {
+                    description: d,
+                    image_style: s,
+                });
+                const path = result?.current_image?.file_path;
+                if (generatedImage && path) {
+                    generatedImage.src = staticContentUrl(path);
+                    generatedImage.style.display = '';
+                }
+                setWizardStatus('Reference image generated.', 'success');
+            } catch (e) {
+                setWizardStatus('Failed to generate reference image.', 'error');
+            } finally {
+                setWizardBusy(false);
+            }
+        }
+    }
+
+    function charWizardPrev() {
+        if (charWizardState.step <= 0) return;
+        charWizardState.step -= 1;
+        updateCharWizardUI();
+    }
+
     (function initCharactersModalWiring() {
         const backdrop = document.getElementById('char-modal-backdrop');
         const modal = document.getElementById('char-modal');
@@ -361,6 +607,12 @@ document.addEventListener("DOMContentLoaded", function () {
             setTimeout(() => {
                 backdrop.classList.remove('open');
                 modal.classList.remove('open');
+                // Clean up wizard state if it was active
+                if (modal.dataset.mode === 'wizard') {
+                    resetCharWizardState();
+                    setCharWizardMode(false);
+                }
+                delete modal.dataset.mode;
                 delete document.body.dataset.charModalState;
             }, 50);
         }
@@ -372,6 +624,32 @@ document.addEventListener("DOMContentLoaded", function () {
             if (ev.target === modal) { ev.stopPropagation(); closeModal(); }
         });
         window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && modal.classList.contains('open')) closeModal(); }, true);
+
+        // Wizard navigation wiring (optional: tests may mount without these elements)
+        const wizardPrev = document.getElementById('char-wizard-prev');
+        const wizardNext = document.getElementById('char-wizard-next');
+        const wizardPhoto = document.getElementById('char-wizard-photo');
+        if (wizardPrev) wizardPrev.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); charWizardPrev(); });
+        if (wizardNext) wizardNext.addEventListener('click', async (ev) => { ev.preventDefault(); ev.stopPropagation(); await charWizardNext(); });
+        if (wizardPhoto) {
+            wizardPhoto.addEventListener('change', () => {
+                const { photoPreview } = getCharWizardEls();
+                const f = wizardPhoto.files?.[0] || null;
+                charWizardState.photoFile = f;
+                if (!photoPreview) return;
+                if (charWizardState.photoPreviewUrl && window.URL?.revokeObjectURL) {
+                    try { window.URL.revokeObjectURL(charWizardState.photoPreviewUrl); } catch { }
+                }
+                if (f && window.URL?.createObjectURL) {
+                    charWizardState.photoPreviewUrl = window.URL.createObjectURL(f);
+                    photoPreview.src = charWizardState.photoPreviewUrl;
+                    photoPreview.style.display = '';
+                } else {
+                    photoPreview.src = '';
+                    photoPreview.style.display = 'none';
+                }
+            });
+        }
 
         async function collectModalPayload() {
             const nameEl = document.getElementById('modal-char-name');
@@ -396,6 +674,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (saveBtn) saveBtn.addEventListener('click', async (ev) => {
             ev.preventDefault(); ev.stopPropagation();
             const modalEl = document.getElementById('char-modal');
+            const regenBtnEl = document.getElementById('char-modal-regenerate');
             const statusEl = document.getElementById('char-modal-status');
             const actionsEl = modalEl?.querySelector('.modal-actions');
             const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
@@ -422,13 +701,28 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             try {
                 const id = document.getElementById('char-modal')?.getAttribute('data-id');
-                if (!id) return;
-                setBusy('Saving changes…');
                 const payload = await collectModalPayload();
-                await apiRequest(`/api/v1/characters/${id}`, 'PUT', payload);
-                await fetchCharactersPage();
-                setDone('Character updated.', 'success');
-                // Keep modal open for further edits
+
+                if (id) {
+                    setBusy('Saving changes…');
+                    await apiRequest(`/api/v1/characters/${id}`, 'PUT', payload);
+                    await fetchCharactersPage();
+                    setDone('Character updated.', 'success');
+                    if (regenBtnEl) regenBtnEl.disabled = false;
+                    // Keep modal open for further edits
+                } else {
+                    setBusy('Creating character…');
+                    const created = await apiRequest('/api/v1/characters/', 'POST', {
+                        ...payload,
+                        generate_image: false,
+                    });
+                    await fetchCharactersPage();
+                    setDone('Character created.', 'success');
+                    if (created?.id) {
+                        // Switch modal into edit mode for the newly created character
+                        await openCharacterModal(created.id);
+                    }
+                }
             } catch (e) {
                 setDone('Failed to save changes.', 'error');
             }
@@ -521,7 +815,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (imgEl) {
                         const path = detail?.current_image?.file_path || detail?.thumbnail_path || null;
                         if (path) {
-                            imgEl.src = `/static_content/${path}`;
+                            imgEl.src = staticContentUrl(path);
                             imgEl.style.display = '';
                         }
                     }
@@ -545,6 +839,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     })();
     async function openCharacterModal(id) {
+        setCharWizardMode(false);
         let detail;
         try {
             detail = await apiRequest(`/api/v1/characters/${id}`);
@@ -562,6 +857,8 @@ document.addEventListener("DOMContentLoaded", function () {
             inlineStatus.style.display = 'none';
             inlineStatus.className = 'inline-status';
         }
+        // Ensure wizard state is reset if previously used
+        resetCharWizardState();
         modal.setAttribute('data-id', String(detail.id));
         const title = document.getElementById('char-modal-title');
         const nameEl = document.getElementById('modal-char-name');
@@ -623,7 +920,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (imgEl) {
             const path = detail?.current_image?.file_path || detail?.thumbnail_path || null;
             if (path) {
-                imgEl.src = `/static_content/${path}`;
+                imgEl.src = staticContentUrl(path);
                 imgEl.style.display = '';
             } else {
                 imgEl.style.display = 'none';
@@ -646,6 +943,33 @@ document.addEventListener("DOMContentLoaded", function () {
         modal.classList.add('open');
     }
 
+    async function openNewCharacterModal() {
+        const backdrop = document.getElementById('char-modal-backdrop');
+        const modal = document.getElementById('char-modal');
+        if (!modal || !backdrop) return;
+
+        // Enter wizard mode
+        resetCharWizardState();
+        setCharWizardMode(true);
+
+        // Reset inline status on open
+        const inlineStatus = document.getElementById('char-modal-status');
+        if (inlineStatus) {
+            inlineStatus.textContent = '';
+            inlineStatus.style.display = 'none';
+            inlineStatus.className = 'inline-status';
+        }
+
+        modal.removeAttribute('data-id');
+        // Populate image styles for wizard step 3 (best effort)
+        try { await populateDropdown('char-wizard-style', 'image_styles'); } catch (e) { /* ignore */ }
+        charWizardState.step = 0;
+        updateCharWizardUI();
+
+        backdrop.classList.add('open');
+        modal.classList.add('open');
+    }
+
     function hideAllSections() {
         [authSection, storyCreationSection, storyPreviewSection, browseStoriesSection, charactersSection].forEach(sec => {
             if (sec) sec.style.display = 'none';
@@ -655,6 +979,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (navCharacters) {
         navCharacters.addEventListener('click', () => {
             showCharactersPage();
+        });
+    }
+
+    // Characters page: New Character
+    const charactersPageNewBtn = document.getElementById('characters-page-new');
+    if (charactersPageNewBtn) {
+        charactersPageNewBtn.addEventListener('click', async () => {
+            await openNewCharacterModal();
         });
     }
 
@@ -1171,13 +1503,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         imageElement.classList.add("title-page-cover-image");
                         // Ensure the path is correctly formed for static content
                         if (page.image_path.startsWith("data/")) {
-                            imageElement.src =
-                                "/static_content/" + page.image_path.substring("data/".length);
+                            imageElement.src = staticContentUrl(
+                                page.image_path.substring("data/".length),
+                            );
                         } else if (page.image_path.startsWith("/static_content/")) {
-                            imageElement.src = page.image_path; // Already correctly prefixed
+                            imageElement.src = staticContentUrl(page.image_path);
                         } else {
                             // Assuming it might be a relative path that needs the prefix
-                            imageElement.src = "/static_content/" + page.image_path;
+                            imageElement.src = staticContentUrl(page.image_path);
                         }
                         imageElement.alt = story.title
                             ? `Cover image for ${story.title}`
@@ -1214,13 +1547,14 @@ document.addEventListener("DOMContentLoaded", function () {
                         imageElement.classList.add("content-page-image");
                         // Ensure the path is correctly formed for static content
                         if (page.image_path.startsWith("data/")) {
-                            imageElement.src =
-                                "/static_content/" + page.image_path.substring("data/".length);
+                            imageElement.src = staticContentUrl(
+                                page.image_path.substring("data/".length),
+                            );
                         } else if (page.image_path.startsWith("/static_content/")) {
-                            imageElement.src = page.image_path; // Already correctly prefixed
+                            imageElement.src = staticContentUrl(page.image_path);
                         } else {
                             // Assuming it might be a relative path that needs the prefix
-                            imageElement.src = "/static_content/" + page.image_path;
+                            imageElement.src = staticContentUrl(page.image_path);
                         }
                         imageElement.alt = `Image for page ${page.page_number}`;
                         imageElement.style.maxWidth = "300px";
@@ -2080,7 +2414,6 @@ document.addEventListener("DOMContentLoaded", function () {
         // a11y: announce progress changes and mark busy
         progressArea.setAttribute('aria-busy', 'true');
         statusMessage.setAttribute('aria-live', 'polite');
-        let pollingInterval;
         // Backoff and timeout settings
         const baseIntervalMs = __pollingConfig.baseIntervalMs;
         let currentIntervalMs = baseIntervalMs;
@@ -2088,17 +2421,20 @@ document.addEventListener("DOMContentLoaded", function () {
         const startedAt = Date.now();
         const maxDurationMs = __pollingConfig.maxDurationMs; // overridable
 
+        let stopped = false;
+
         const poll = async () => {
             try {
                 const task = await apiRequest(`/api/v1/stories/generation-status/${taskId}`);
                 if (task) {
+                    const status = String(task.status || '').toLowerCase();
                     // Show progress if provided
                     if (typeof task.progress === 'number') {
                         progressBar.style.width = `${task.progress}%`;
                         progressBar.textContent = `${task.progress}%`;
                     }
                     // Map status message or derive from current_step
-                    const step = task.current_step || '';
+                    const step = String(task.current_step || '').toLowerCase();
                     const stepMap = {
                         initializing: 'Initializing...',
                         generating_text: 'Generating story content...',
@@ -2109,8 +2445,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Backend does not return status_message; expose a helpful default
                     statusMessage.textContent = stepMap[step] || 'Processing...';
 
-                    if (task.status === 'completed' || task.status === 'success') {
-                        clearInterval(pollingInterval);
+                    if (status === 'completed' || status === 'success') {
+                        stopped = true;
                         statusMessage.textContent = 'Story generation complete! Loading...';
                         progressArea.style.display = 'none';
                         progressArea.setAttribute('aria-busy', 'false');
@@ -2121,8 +2457,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         } else {
                             throw new Error("Polling complete, but no story_id was returned.");
                         }
-                    } else if (task.status === 'failed') {
-                        clearInterval(pollingInterval);
+                    } else if (status === 'failed') {
+                        stopped = true;
                         progressArea.style.display = 'none';
                         progressArea.setAttribute('aria-busy', 'false');
                         // Backend surfaces failure details as last_error in the API schema
@@ -2130,7 +2466,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
                 }
             } catch (error) {
-                clearInterval(pollingInterval);
+                stopped = true;
                 progressArea.style.display = 'none';
                 progressArea.setAttribute('aria-busy', 'false');
                 console.error("Error during status polling:", error);
@@ -2140,7 +2476,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Kick off immediately then schedule subsequent ticks via setTimeout (simpler & test-friendly)
         await poll();
-        let stopped = false;
         async function tick() {
             if (stopped) return;
             // Timeout guard

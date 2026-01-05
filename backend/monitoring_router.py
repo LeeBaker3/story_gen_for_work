@@ -7,7 +7,7 @@ accessible only to authenticated admin users.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 import os
-from fastapi.responses import PlainTextResponse, FileResponse
+from fastapi.responses import PlainTextResponse, FileResponse, Response
 from typing import List, Optional
 import sys
 import platform
@@ -19,6 +19,9 @@ from backend.auth import get_current_admin_user
 from backend.logging_config import app_logger, error_logger
 from backend.settings import get_settings
 from backend import ai_services
+from backend.metrics import APP_LOG_FILES_TOTAL
+
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 _settings = get_settings()
 LOG_DIRECTORY = _settings.logs_dir or "data/logs"
@@ -125,17 +128,22 @@ def get_log_file(log_file: str, lines: Optional[int] = Query(default=1000, ge=10
 
 @monitoring_router.get("/metrics", response_class=PlainTextResponse)
 def metrics_stub():
-    """Minimal Prometheus-style metrics stub for future expansion."""
+    """Expose Prometheus metrics.
+
+    This endpoint is admin-authenticated because this router is mounted under
+    the admin prefix.
+    """
     try:
-        # Count log files as a trivial example metric
         count = 0
         if os.path.isdir(LOG_DIRECTORY):
             count = len([f for f in os.listdir(
-                LOG_DIRECTORY) if f.endswith('.log')])
-        return f"app_log_files_total {count}\n"
+                LOG_DIRECTORY) if f.endswith(".log")])
+        APP_LOG_FILES_TOTAL.set(count)
     except Exception:
-        # Never fail metrics endpoint; return 0 on error
-        return "app_log_files_total 0\n"
+        # Never fail metrics endpoint; return metrics with best-effort values.
+        APP_LOG_FILES_TOTAL.set(0)
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @monitoring_router.get("/logs/{log_file}/download")
