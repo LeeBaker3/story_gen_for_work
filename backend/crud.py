@@ -12,6 +12,29 @@ import uuid  # Import uuid for generating task IDs
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+def _coerce_datetime_to_utc(value: datetime) -> datetime:
+    """Coerce a datetime into an aware UTC datetime.
+
+    SQLite frequently returns timezone-naive datetimes even when SQLAlchemy
+    columns are declared with `timezone=True`. To avoid runtime errors when
+    computing durations, we treat naive datetimes as UTC.
+
+    Parameters
+    ----------
+    value:
+        Datetime value from the database or application code.
+
+    Returns
+    -------
+    datetime
+        A timezone-aware UTC datetime.
+    """
+
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
 # User CRUD
 
 
@@ -739,8 +762,13 @@ def update_story_generation_task(
             if task.completed_at is None:
                 task.completed_at = now
             if task.started_at and task.completed_at and task.duration_ms is None:
-                task.duration_ms = int(
-                    (task.completed_at - task.started_at).total_seconds() * 1000)
+                started_at_utc = _coerce_datetime_to_utc(task.started_at)
+                completed_at_utc = _coerce_datetime_to_utc(task.completed_at)
+                duration_ms = int(
+                    (completed_at_utc - started_at_utc).total_seconds() * 1000
+                )
+                # Guard against negative values due to clock skew or bad data.
+                task.duration_ms = max(0, duration_ms)
         task.status = new_status
     if progress is not None:
         task.progress = progress

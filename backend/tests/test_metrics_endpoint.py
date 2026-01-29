@@ -20,3 +20,6 @@ def test_metrics_endpoint_returns_prometheus_text(client, admin_auth_headers):
     assert "app_http_requests_total" in body
     assert "app_http_request_duration_seconds" in body
     assert "app_log_files_total" in body
+    assert "app_openai_text_requests_total" in body
+    assert "app_openai_text_latency_seconds" in body
+    assert "app_openai_text_errors_total" in body

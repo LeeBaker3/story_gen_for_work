@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Prometheus metrics for OpenAI text generation (Responses vs Chat Completions), latency, and errors.
+
+### Changed
+- Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
+- Optional Responses API pathway for story text (`USE_OPENAI_RESPONSES_API`).
+- Optional fallback between text paths (`OPENAI_TEXT_ENABLE_FALLBACK`).
+
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.5.0...backend-v0.6.0) (2026-01-05)
 
 

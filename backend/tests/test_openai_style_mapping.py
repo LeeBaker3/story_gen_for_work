@@ -46,7 +46,10 @@ def test_get_openai_image_style_reads_dynamic_list_mapping(db_session):
 @patch("backend.ai_services._truncate_prompt", side_effect=lambda p, max_length=4000: p)
 @patch("backend.ai_services.client")
 def test_generate_image_passes_style_when_supported(mock_openai_client, _mock_truncate):
-    """If the SDK accepts `style`, it should be passed through."""
+    """If the model supports `style`, it should be passed through.
+
+    Per OpenAI Images API docs, `style` is only supported for `dall-e-3`.
+    """
 
     prompt = "A test prompt"
     fake_image_bytes = b"img"
@@ -58,10 +61,12 @@ def test_generate_image_passes_style_when_supported(mock_openai_client, _mock_tr
     mock_image_api_response.data = [mock_image_data]
     mock_openai_client.images.generate.return_value = mock_image_api_response
 
-    result = ai_services.generate_image(prompt=prompt, openai_style="vivid")
+    with patch.object(ai_services, "IMAGE_MODEL", "dall-e-3"):
+        result = ai_services.generate_image(
+            prompt=prompt, openai_style="vivid")
 
     mock_openai_client.images.generate.assert_called_once_with(
-        model=ai_services.IMAGE_MODEL,
+        model="dall-e-3",
         prompt=prompt,
         size="1024x1024",
         quality="auto",
@@ -76,7 +81,11 @@ def test_generate_image_passes_style_when_supported(mock_openai_client, _mock_tr
 def test_generate_image_retries_without_style_on_type_error(
     mock_openai_client, _mock_truncate
 ):
-    """If the SDK rejects `style`, we retry without it."""
+    """If the SDK rejects `style`, we retry without it.
+
+    This retry logic only applies when using a model that supports the `style`
+    parameter (i.e., `dall-e-3`).
+    """
 
     prompt = "A test prompt"
     fake_image_bytes = b"img"
@@ -94,7 +103,9 @@ def test_generate_image_retries_without_style_on_type_error(
 
     mock_openai_client.images.generate.side_effect = _side_effect
 
-    result = ai_services.generate_image(prompt=prompt, openai_style="vivid")
+    with patch.object(ai_services, "IMAGE_MODEL", "dall-e-3"):
+        result = ai_services.generate_image(
+            prompt=prompt, openai_style="vivid")
 
     assert mock_openai_client.images.generate.call_count == 2
     # First attempt includes style
