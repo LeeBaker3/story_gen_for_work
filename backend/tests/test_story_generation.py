@@ -65,7 +65,7 @@ def mock_dependencies(db_session_mock, current_user_mock):
     app.dependency_overrides = {}
 
 
-def test_create_story_generation_task_successfully(client, db_session_mock, story_create_input_mock, current_user_mock):
+def test_create_story_generation_task_successfully(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that POST /stories/ successfully creates a generation task.
     """
@@ -87,21 +87,23 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         updated_at=now
     )
     # No existing story
-    crud.get_story_by_title_and_owner = MagicMock(return_value=None)
-    crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner",
+                        MagicMock(return_value=None))
+    monkeypatch.setattr(crud, "create_story_db_entry",
+                        MagicMock(return_value=mock_story_db))
     # FastAPI response_model validation will call model_validate and expects attributes accessible.
     # Ensure refresh is a no-op that leaves timestamps intact.
     db_session_mock.refresh = MagicMock()
 
     # Mock the CRUD function for creating the task
-    crud.create_story_generation_task = MagicMock(return_value=schemas.StoryGenerationTask(
+    monkeypatch.setattr(crud, "create_story_generation_task", MagicMock(return_value=schemas.StoryGenerationTask(
         id=mock_task_id,
         story_id=mock_story_id,
         user_id=current_user_mock.id,
         status=schemas.GenerationTaskStatus.PENDING,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC)
-    ))
+    )))
 
     with patch('backend.public_router.generate_story_as_background_task') as mock_background_task:
         response = client.post(
@@ -118,13 +120,16 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         mock_background_task.assert_called_once()
 
 
-def test_create_story_with_existing_title_fails(client, db_session_mock, story_create_input_mock, current_user_mock):
+def test_create_story_with_existing_title_fails(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that creating a story with an existing title for the same user fails.
     """
     # Mock that a story with the same title already exists for this user
-    crud.get_story_by_title_and_owner = MagicMock(
-        return_value=MagicMock(spec=database.Story))
+    monkeypatch.setattr(
+        crud,
+        "get_story_by_title_and_owner",
+        MagicMock(return_value=MagicMock(spec=database.Story)),
+    )
 
     response = client.post(
         "/api/v1/stories/",
@@ -136,7 +141,7 @@ def test_create_story_with_existing_title_fails(client, db_session_mock, story_c
     assert "already exists" in response.json()["detail"]
 
 
-def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock):
+def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock, monkeypatch):
     """Ensure that when character_ids are provided, existing character data is merged with new main_characters without duplication and reference image paths are preserved."""
     mock_story_id = 42
     now = datetime.now(UTC)
@@ -165,7 +170,8 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
         "text_density": "Concise (~30-50 words)"
     }
 
-    crud.get_story_by_title_and_owner = MagicMock(return_value=None)
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner",
+                        MagicMock(return_value=None))
 
     class FakeStory:
         def __init__(self):
@@ -185,13 +191,15 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
             self.pages = []
 
     mock_story_db = FakeStory()
-    crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "create_story_db_entry",
+                        MagicMock(return_value=mock_story_db))
 
     def _update_story_title(db, story_id, new_title):
         mock_story_db.title = new_title
         mock_story_db.updated_at = datetime.now(UTC)
         return mock_story_db
-    crud.update_story_title = MagicMock(side_effect=_update_story_title)
+    monkeypatch.setattr(crud, "update_story_title",
+                        MagicMock(side_effect=_update_story_title))
 
     filter_mock = MagicMock()
     filter_mock.filter.return_value = filter_mock
@@ -216,7 +224,7 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
         "reference_image_path") == "images/user_1/characters/7/img.png"
 
 
-def test_get_story_status(client, db_session_mock):
+def test_get_story_status(client, db_session_mock, monkeypatch):
     """
     Test polling the generation status of a task.
     """
@@ -232,7 +240,8 @@ def test_get_story_status(client, db_session_mock):
         updated_at=datetime.now(UTC)
     )
 
-    crud.get_story_generation_task = MagicMock(return_value=mock_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=mock_task))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -244,12 +253,13 @@ def test_get_story_status(client, db_session_mock):
     assert response_data["current_step"] == "generating_page_images"
 
 
-def test_get_story_status_not_found(client, db_session_mock):
+def test_get_story_status_not_found(client, db_session_mock, monkeypatch):
     """
     Test polling for a task that does not exist.
     """
     mock_task_id = str(uuid.uuid4())
-    crud.get_story_generation_task = MagicMock(return_value=None)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=None))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -257,7 +267,7 @@ def test_get_story_status_not_found(client, db_session_mock):
     assert response.json()["detail"] == "Task not found"
 
 
-def test_get_story_status_unauthorized(client, db_session_mock, current_user_mock):
+def test_get_story_status_unauthorized(client, db_session_mock, current_user_mock, monkeypatch):
     """
     Test that a user cannot poll for a task that belongs to another user.
     """
@@ -273,7 +283,8 @@ def test_get_story_status_unauthorized(client, db_session_mock, current_user_moc
         updated_at=datetime.now(UTC)
     )
 
-    crud.get_story_generation_task = MagicMock(return_value=mock_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=mock_task))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -281,7 +292,7 @@ def test_get_story_status_unauthorized(client, db_session_mock, current_user_moc
     assert response.json()["detail"] == "Not authorized to view this task"
 
 
-def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mock):
+def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mock, monkeypatch):
     """Validate that task lifecycle updates populate started_at, completed_at, duration_ms and attempts."""
     mock_task_id = str(uuid.uuid4())
     now = datetime.now(UTC)
@@ -297,10 +308,15 @@ def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mo
         updated_at=now,
     )
     # Simulate DB returning evolving object reference
-    crud.get_story_generation_task = MagicMock(return_value=base_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=base_task))
     # Move to in_progress
-    crud.update_story_generation_task = MagicMock(
-        side_effect=lambda db, task_id, **kwargs: _apply_updates(base_task, **kwargs))
+    monkeypatch.setattr(
+        crud,
+        "update_story_generation_task",
+        MagicMock(side_effect=lambda db, task_id, **
+                  kwargs: _apply_updates(base_task, **kwargs)),
+    )
 
     # Transition to in_progress
     crud.update_story_generation_task(

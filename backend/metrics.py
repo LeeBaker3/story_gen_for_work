@@ -51,6 +51,55 @@ PAGE_IMAGE_RETRIES_TOTAL = Counter(
 )
 
 
+OPENAI_TEXT_REQUESTS_TOTAL = Counter(
+    "app_openai_text_requests_total",
+    "Total OpenAI text-generation requests issued by the app.",
+    ["path", "outcome"],
+)
+
+
+OPENAI_TEXT_ERRORS_TOTAL = Counter(
+    "app_openai_text_errors_total",
+    "Total OpenAI text-generation errors by path and error type.",
+    ["path", "error_type"],
+)
+
+
+OPENAI_TEXT_LATENCY_SECONDS = Histogram(
+    "app_openai_text_latency_seconds",
+    "Latency of OpenAI text-generation calls in seconds.",
+    ["path", "outcome"],
+)
+
+
+def observe_openai_text_call(
+    *,
+    path: str,
+    outcome: str,
+    duration_seconds: float,
+    error_type: str | None = None,
+) -> None:
+    """Record metrics for an OpenAI text-generation call.
+
+    Parameters:
+        path: The text API path used ("responses" or "chat_completions").
+        outcome: "success" or "error".
+        duration_seconds: Duration in seconds.
+        error_type: Exception class name when outcome is "error".
+    """
+
+    safe_path = (path or "unknown").strip().lower()
+    safe_outcome = (outcome or "unknown").strip().lower()
+    OPENAI_TEXT_REQUESTS_TOTAL.labels(
+        path=safe_path, outcome=safe_outcome).inc()
+    OPENAI_TEXT_LATENCY_SECONDS.labels(path=safe_path, outcome=safe_outcome).observe(
+        max(0.0, float(duration_seconds))
+    )
+    if safe_outcome == "error":
+        et = (error_type or "unknown").strip()[:64]
+        OPENAI_TEXT_ERRORS_TOTAL.labels(path=safe_path, error_type=et).inc()
+
+
 def observe_story_generation(*, status: str, duration_seconds: float) -> None:
     """Record completion metrics for a story generation task.
 

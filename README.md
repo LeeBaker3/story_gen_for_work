@@ -98,8 +98,10 @@ Logging
 
 OpenAI models and retries
 - OPENAI_API_KEY: key for OpenAI
-- TEXT_MODEL: default gpt-4.1-mini
-- IMAGE_MODEL: default gpt-image-1
+- TEXT_MODEL: default gpt-5-mini
+- IMAGE_MODEL: default gpt-image-1.5
+- USE_OPENAI_RESPONSES_API: 1/true to use Responses API for story text (default: false)
+- OPENAI_TEXT_ENABLE_FALLBACK: 1/true to fall back to the other text path if the primary fails (default: false)
 - RETRY_MAX_ATTEMPTS: default 3
 - RETRY_BACKOFF_BASE: default 1.5
 
@@ -151,6 +153,11 @@ Notes
 - Tests use an in-memory SQLite DB and override the app DB dependency; no local DB file is modified.
 - Some tests rely on /static_content being mounted. If RUN_ENV=test is set, also set MOUNT_DATA_STATIC=true to enable static serving in tests.
  - Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
+
+### OpenAI smoke test (manual)
+Use the real-API smoke test to validate your API key, text generation, and image endpoints:
+- Run: `python scripts/smoke_test_openai.py`
+- If you want to test Images Edits, set `SMOKE_EDIT_IMAGE_PATH` to a real local PNG/JPG/WebP file.
 
 ### Frontend tests (Jest)
 - Location: `frontend/tests`

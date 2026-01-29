@@ -79,8 +79,8 @@ class BaseSettings:
 
         # OpenAI / models
         self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
-        self.text_model: str = os.getenv("TEXT_MODEL", "gpt-4.1-mini")
-        self.image_model: str = os.getenv("IMAGE_MODEL", "gpt-image-1")
+        self.text_model: str = os.getenv("TEXT_MODEL", "gpt-5-mini")
+        self.image_model: str = os.getenv("IMAGE_MODEL", "gpt-image-1.5")
 
         # Retry / backoff
         self.retry_max_attempts: int = int(
@@ -89,6 +89,18 @@ class BaseSettings:
             os.getenv("RETRY_BACKOFF_BASE", "1.5"))
 
         # Feature flags
+        # When enabled, story text generation uses the OpenAI Responses API.
+        # Default is disabled for incremental migration.
+        self.use_openai_responses_api: bool = os.getenv(
+            "USE_OPENAI_RESPONSES_API", ""
+        ).lower() in ("1", "true", "yes")
+
+        # Optional resilience: when enabled, fall back to the other text path
+        # (Responses <-> Chat Completions) if the primary path errors.
+        self.openai_text_enable_fallback: bool = os.getenv(
+            "OPENAI_TEXT_ENABLE_FALLBACK", ""
+        ).lower() in ("1", "true", "yes")
+
         self.enable_image_style_mapping: bool = os.getenv(
             "ENABLE_IMAGE_STYLE_MAPPING", "").lower() in ("1", "true", "yes")
 

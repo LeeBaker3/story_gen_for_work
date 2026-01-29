@@ -13,6 +13,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from sqlalchemy.orm import Session
 import asyncio
 import io
+import time
 
 # Import loggers
 from .logging_config import api_logger, error_logger, app_logger
@@ -20,6 +21,7 @@ from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
 from .image_style_mapping import get_openai_image_style, map_style
+from .metrics import observe_openai_text_call
 
 load_dotenv()
 # Explicitly load project root .env (preferred). For backward compatibility,
@@ -67,10 +69,125 @@ logger = logging.getLogger(__name__)
 error_logger = logging.getLogger('error_logger')
 warning_logger = logging.getLogger('warning_logger')
 
-TEXT_MODEL = getattr(_settings, "text_model", "gpt-4.1-mini")
-IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1")
+TEXT_MODEL = getattr(_settings, "text_model", "gpt-5-mini")
+IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1.5")
 IMAGE_SIZE = "1024x1024"
 MAX_PROMPT_LENGTH = 4000
+
+
+def _images_api_supports_style(model: str) -> bool:
+    """Return True if the Images API `style` param is supported for model.
+
+    Per current OpenAI Images API docs, `style` is only supported for `dall-e-3`.
+    """
+
+    model_value = (model or "").strip().lower()
+    return model_value == "dall-e-3"
+
+
+def _use_openai_responses_api() -> bool:
+    """Return True when Responses API is enabled for story text generation."""
+
+    return bool(getattr(_settings, "use_openai_responses_api", False))
+
+
+def _generate_story_text_via_responses(prompt: str) -> str:
+    """Generate the story JSON text using the OpenAI Responses API.
+
+    Parameters
+    ----------
+    prompt:
+        The full user prompt including all formatting requirements.
+
+    Returns
+    -------
+    str
+        The model's output text, expected to be a single JSON object.
+    """
+
+    _ensure_client_available()
+
+    response = client.responses.create(
+        model=TEXT_MODEL,
+        # Keep the same semantics as the existing system+user prompt.
+        instructions=(
+            "You are a creative story writer that outputs structured JSON. "
+            "Adherence to all formatting and content constraints, including "
+            "specified text density per page, is critical."
+        ),
+        input=prompt,
+        # Structured outputs shape differs from Chat Completions.
+        text={"format": {"type": "json_object"}},
+        # Avoid server-side storage by default.
+        store=False,
+    )
+
+    output_text = getattr(response, "output_text", None)
+    if not isinstance(output_text, str) or not output_text.strip():
+        raise ValueError("Responses API returned empty output_text for story.")
+
+    return output_text
+
+
+def _generate_story_text_via_chat_completions(prompt: str) -> str:
+    """Generate the story JSON text using Chat Completions.
+
+    Parameters
+    ----------
+    prompt:
+        The full user prompt including all formatting requirements.
+
+    Returns
+    -------
+    str
+        The model's output text, expected to be a single JSON object.
+    """
+
+    _ensure_client_available()
+
+    try:
+        response = client.chat.completions.create(
+            model=TEXT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a creative story writer that outputs structured JSON. "
+                        "Adherence to all formatting and content constraints, including "
+                        "specified text density per page, is critical."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"},
+        )
+    except Exception as e:
+        # Some models (notably reasoning-focused ones) may reject sampling params
+        # like `temperature`. If so, retry once without it.
+        if "Unsupported parameter" in str(e) and "temperature" in str(e):
+            response = client.chat.completions.create(
+                model=TEXT_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a creative story writer that outputs structured JSON. "
+                            "Adherence to all formatting and content constraints, including "
+                            "specified text density per page, is critical."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+        else:
+            raise
+
+    response_text = response.choices[0].message.content
+    if not isinstance(response_text, str) or not response_text.strip():
+        raise ValueError("Chat Completions returned empty content for story.")
+    return response_text
 
 
 def _ensure_client_available():
@@ -390,16 +507,75 @@ Output Requirements:
     try:
         app_logger.info(
             f"Sending request to ChatGPT API with prompt: {prompt[:200]}...")
-        response = client.chat.completions.create(
-            model=TEXT_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            response_format={"type": "json_object"}
+        primary_path = "responses" if _use_openai_responses_api() else "chat_completions"
+        fallback_enabled = bool(
+            getattr(_settings, "openai_text_enable_fallback", False)
         )
-        response_text = response.choices[0].message.content
+        fallback_path = "chat_completions" if primary_path == "responses" else "responses"
+
+        paths_to_try = [primary_path]
+        if fallback_enabled:
+            paths_to_try.append(fallback_path)
+
+        last_error: Exception | None = None
+
+        for attempt_index, path in enumerate(paths_to_try, start=1):
+            start_ts = time.perf_counter()
+            try:
+                if path == "responses":
+                    response_text = _generate_story_text_via_responses(prompt)
+                else:
+                    response_text = _generate_story_text_via_chat_completions(
+                        prompt)
+
+                elapsed = time.perf_counter() - start_ts
+                observe_openai_text_call(
+                    path=path,
+                    outcome="success",
+                    duration_seconds=elapsed,
+                )
+                api_logger.info(
+                    "OpenAI text generation succeeded",
+                    extra={
+                        "event": "openai_text_generation",
+                        "path": path,
+                        "model": TEXT_MODEL,
+                        "duration_ms": int(elapsed * 1000),
+                        "attempt": attempt_index,
+                        "fallback_used": attempt_index > 1,
+                    },
+                )
+                break
+            except Exception as e:
+                elapsed = time.perf_counter() - start_ts
+                observe_openai_text_call(
+                    path=path,
+                    outcome="error",
+                    duration_seconds=elapsed,
+                    error_type=type(e).__name__,
+                )
+                api_logger.warning(
+                    "OpenAI text generation failed",
+                    extra={
+                        "event": "openai_text_generation",
+                        "path": path,
+                        "model": TEXT_MODEL,
+                        "duration_ms": int(elapsed * 1000),
+                        "attempt": attempt_index,
+                        "will_fallback": fallback_enabled
+                        and attempt_index < len(paths_to_try),
+                        "error_type": type(e).__name__,
+                    },
+                )
+                last_error = e
+                response_text = None
+                continue
+
+        if response_text is None:
+            # Preserve original exception behavior for callers and tenacity.
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("OpenAI text generation failed with no error.")
         api_logger.info(
             f"Received response from ChatGPT API. Length: {len(response_text)}")
 
@@ -619,7 +795,7 @@ def generate_image(
 
         response = None
         style_value = None
-        if openai_style:
+        if _images_api_supports_style(IMAGE_MODEL) and openai_style:
             style_candidate = str(openai_style).strip().lower()
             if style_candidate in ("vivid", "natural"):
                 style_value = style_candidate

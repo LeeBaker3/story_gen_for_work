@@ -247,6 +247,10 @@ def config_diagnostics():
             "openai_key_masked": masked,
             "text_model": settings.text_model,
             "image_model": settings.image_model,
+            "use_openai_responses_api": settings.use_openai_responses_api,
+            "openai_text_enable_fallback": getattr(
+                settings, "openai_text_enable_fallback", False
+            ),
             "run_env": settings.run_env,
             "enable_image_style_mapping": settings.enable_image_style_mapping,
             "mount_frontend_static": settings.mount_frontend_static,
