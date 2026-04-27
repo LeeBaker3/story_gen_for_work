@@ -1283,31 +1283,37 @@ document.addEventListener("DOMContentLoaded", function () {
         newCharacterEntry.classList.add("character-entry");
         newCharacterEntry.innerHTML = `
             <hr>
-            <h4>Character ${characterCount} <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}">Show Details</button></h4>
+            <div class="character-entry-header">
+                <h4 class="character-entry-title">Character ${characterCount}</h4>
+                <div class="character-entry-actions">
+                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}">Show Details</button>
+                    <button type="button" class="remove-character-button action-button-danger" aria-label="Delete character ${characterCount} from this story">Delete from Story</button>
+                </div>
+            </div>
             <div class="form-group">
                 <label for="char-name-${characterCount}">Name:</label>
-                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" required>
+                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" class="char-name" required>
             </div>
             <div id="char-details-${characterCount}" class="character-details-fields" style="display: none;">
                 <div class="form-group">
                     <label for="char-age-${characterCount}">Age (Optional):</label>
-                    <input type="number" id="char-age-${characterCount}" name="char-age-${characterCount}">
+                    <input type="number" id="char-age-${characterCount}" name="char-age-${characterCount}" class="char-age">
                 </div>
                 <div class="form-group">
                     <label for="char-gender-${characterCount}">Gender (Optional):</label>
-                    <select id="char-gender-${characterCount}" name="char-gender-${characterCount}"></select>
+                    <select id="char-gender-${characterCount}" name="char-gender-${characterCount}" class="char-gender"></select>
                 </div>
                 <div class="form-group">
                     <label for="char-physical-appearance-${characterCount}">Physical Appearance (Optional):</label>
-                    <textarea id="char-physical-appearance-${characterCount}" name="char-physical-appearance-${characterCount}" rows="2"></textarea>
+                    <textarea id="char-physical-appearance-${characterCount}" name="char-physical-appearance-${characterCount}" class="char-physical-appearance" rows="2"></textarea>
                 </div>
                 <div class="form-group">
                     <label for="char-clothing-style-${characterCount}">Clothing Style (Optional):</label>
-                    <textarea id="char-clothing-style-${characterCount}" name="char-clothing-style-${characterCount}" rows="2"></textarea>
+                    <textarea id="char-clothing-style-${characterCount}" name="char-clothing-style-${characterCount}" class="char-clothing-style" rows="2"></textarea>
                 </div>
                 <div class="form-group">
                     <label for="char-key-traits-${characterCount}">Key Traits/Habits (Optional):</label>
-                    <textarea id="char-key-traits-${characterCount}" name="char-key-traits-${characterCount}" rows="2"></textarea>
+                    <textarea id="char-key-traits-${characterCount}" name="char-key-traits-${characterCount}" class="char-key-traits" rows="2"></textarea>
                 </div>
             </div>
         `;
@@ -2389,13 +2395,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const __pollingConfig = {
         baseIntervalMs: 3000,
         maxIntervalMs: 15000,
-        maxDurationMs: 5 * 60 * 1000, // 5 minutes in production
+        slowNoticeMs: 5 * 60 * 1000,
+        maxDurationMs: 30 * 60 * 1000,
     };
 
     function __setPollingConfig(cfg) {
         if (!cfg || typeof cfg !== 'object') return;
         if (typeof cfg.baseIntervalMs === 'number') __pollingConfig.baseIntervalMs = cfg.baseIntervalMs;
         if (typeof cfg.maxIntervalMs === 'number') __pollingConfig.maxIntervalMs = cfg.maxIntervalMs;
+        if (typeof cfg.slowNoticeMs === 'number') __pollingConfig.slowNoticeMs = cfg.slowNoticeMs;
         if (typeof cfg.maxDurationMs === 'number') __pollingConfig.maxDurationMs = cfg.maxDurationMs;
     }
 
@@ -2419,9 +2427,11 @@ document.addEventListener("DOMContentLoaded", function () {
         let currentIntervalMs = baseIntervalMs;
         const maxIntervalMs = __pollingConfig.maxIntervalMs;
         const startedAt = Date.now();
+        const slowNoticeMs = __pollingConfig.slowNoticeMs;
         const maxDurationMs = __pollingConfig.maxDurationMs; // overridable
 
         let stopped = false;
+        let slowNoticeShown = false;
 
         const poll = async () => {
             try {
@@ -2485,6 +2495,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 progressArea.setAttribute('aria-busy', 'false');
                 displayMessage('Story generation timed out. Please try again later.', 'error');
                 return;
+            }
+            if (!slowNoticeShown && Date.now() - startedAt > slowNoticeMs) {
+                slowNoticeShown = true;
+                displayMessage(
+                    'Story generation is still running. This can take several minutes.',
+                    'warning',
+                    { persistMs: 10000 }
+                );
             }
             try {
                 await poll();
@@ -3093,14 +3111,25 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
         mainCharactersFieldset.addEventListener("click", function (event) {
-            if (event.target.classList.contains("character-details-toggle")) {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+
+            if (target.classList.contains("remove-character-button")) {
+                const characterEntry = target.closest(".character-entry");
+                if (characterEntry) {
+                    characterEntry.remove();
+                }
+                return;
+            }
+
+            if (target.classList.contains("character-details-toggle")) {
                 console.log(
                     "[Toggle Click] Button clicked:",
-                    event.target,
+                    target,
                     "ID:",
-                    event.target.id,
+                    target.id,
                 );
-                const targetId = event.target.dataset.target;
+                const targetId = target.dataset.target;
                 console.log("[Toggle Click] Data-target ID:", targetId);
                 const detailsDiv = document.getElementById(targetId);
                 console.log("[Toggle Click] Details div found:", detailsDiv);
@@ -3112,9 +3141,9 @@ document.addEventListener("DOMContentLoaded", function () {
                         `[Toggle Click] Details div (${targetId}) isHidden (computed): ${isHidden}, current style.display: '${detailsDiv.style.display}'`,
                     );
                     detailsDiv.style.display = isHidden ? "block" : "none";
-                    event.target.textContent = isHidden ? "Hide Details" : "Show Details";
+                    target.textContent = isHidden ? "Hide Details" : "Show Details";
                     console.log(
-                        `[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${event.target.textContent}'`,
+                        `[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${target.textContent}'`,
                     );
                 } else {
                     console.error(

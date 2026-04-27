@@ -1,6 +1,7 @@
 import base64
 from unittest.mock import patch, MagicMock, call
 import pytest
+import requests
 from backend import ai_services
 
 
@@ -36,6 +37,51 @@ def test_generate_image(mock_openai_client, mock_truncate_prompt):
     )
 
     assert result_bytes == fake_image_bytes
+
+
+def test_should_retry_openai_error_excludes_bad_request():
+    """Client-side request errors should not be retried."""
+
+    bad_request = ai_services.openai.BadRequestError(
+        message="blocked",
+        response=MagicMock(request=MagicMock(), status_code=400),
+        body={"error": {"code": "moderation_blocked"}},
+    )
+
+    assert ai_services._should_retry_openai_error(bad_request) is False
+
+
+def test_should_retry_openai_error_retries_transport_failures():
+    """Transport failures should still be retried."""
+
+    assert ai_services._should_retry_openai_error(
+        requests.exceptions.ConnectionError("network")
+    ) is True
+
+
+@patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
+@patch('backend.ai_services.client')
+def test_generate_image_returns_none_when_moderation_blocked(
+    mock_openai_client,
+    mock_truncate_prompt,
+):
+    """Moderation-blocked image requests should degrade to a missing image."""
+
+    bad_request = ai_services.openai.BadRequestError(
+        message="blocked",
+        response=MagicMock(request=MagicMock(), status_code=400),
+        body={
+            "error": {
+                "code": "moderation_blocked",
+                "type": "image_generation_user_error",
+                "message": "Rejected by safety system.",
+            }
+        },
+    )
+    mock_openai_client.images.generate.side_effect = bad_request
+
+    assert ai_services.generate_image(prompt="blocked prompt") is None
+    mock_truncate_prompt.assert_called_once_with("blocked prompt")
 
 
 @pytest.mark.asyncio

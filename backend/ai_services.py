@@ -9,7 +9,7 @@ import base64
 import uuid
 import sys
 import logging
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from sqlalchemy.orm import Session
 import asyncio
 import io
@@ -47,12 +47,68 @@ if not OPENAI_API_KEY:
         "OPENAI_API_KEY not found in environment variables during import; AI services will be disabled until configured.")
 
 # Define a retry decorator for OpenAI API calls
+
+
+def _should_retry_openai_error(exc: BaseException) -> bool:
+    """Return True only for transient OpenAI and transport failures."""
+
+    if isinstance(exc, requests.exceptions.RequestException):
+        return True
+
+    if isinstance(exc, (openai.Timeout, openai.APIConnectionError,
+                        openai.RateLimitError)):
+        return True
+
+    non_retriable_types = (
+        getattr(openai, "BadRequestError", ()),
+        getattr(openai, "AuthenticationError", ()),
+        getattr(openai, "PermissionDeniedError", ()),
+        getattr(openai, "NotFoundError", ()),
+        getattr(openai, "ConflictError", ()),
+        getattr(openai, "UnprocessableEntityError", ()),
+    )
+    if isinstance(exc, non_retriable_types):
+        return False
+
+    return isinstance(exc, openai.APIError)
+
+
+def _get_openai_error_details(exc: BaseException) -> Dict[str, Any]:
+    """Return the nested OpenAI error payload for SDK exceptions when present."""
+
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return {}
+    error = body.get("error")
+    if isinstance(error, dict):
+        return error
+    return {}
+
+
+def _is_openai_image_moderation_block(exc: BaseException) -> bool:
+    """Return True when the image request was blocked by OpenAI safety checks."""
+
+    bad_request_type = getattr(openai, "BadRequestError", ())
+    if not isinstance(exc, bad_request_type):
+        return False
+
+    error = _get_openai_error_details(exc)
+    code = str(error.get("code") or "").strip().lower()
+    error_type = str(error.get("type") or "").strip().lower()
+    message = str(error.get("message") or exc).strip().lower()
+
+    return (
+        code == "moderation_blocked"
+        or error_type == "image_generation_user_error"
+        and "safety system" in message
+    )
+
+
 api_retry = retry(
     stop=stop_after_attempt(getattr(_settings, "retry_max_attempts", 5)),
     wait=wait_exponential(multiplier=getattr(
         _settings, "retry_backoff_base", 1.0), min=2, max=60),
-    retry=retry_if_exception_type((openai.APIError, openai.Timeout, openai.APIConnectionError,
-                                  openai.RateLimitError, requests.exceptions.RequestException)))
+    retry=retry_if_exception(_should_retry_openai_error))
 
 # Initialize the client only if key is available; tests may patch `client`.
 client = OpenAI(api_key=OPENAI_API_KEY,
@@ -878,6 +934,15 @@ def generate_image(
         # Raise a standard permission-related error for upstream HTTP mapping
         raise PermissionError(
             "OpenAI authentication failed. Check OPENAI_API_KEY.")
+    except getattr(openai, "BadRequestError", ()) as e:
+        if _is_openai_image_moderation_block(e):
+            error_logger.warning(
+                "OpenAI image request blocked by moderation; continuing without an image: %s",
+                e,
+            )
+            return None
+        error_logger.error(f"OpenAI bad request in AI image generation: {e}")
+        raise
     except openai.APIError as e:
         error_logger.error(f"OpenAI API error in AI image generation: {e}")
         raise

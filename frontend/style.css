@@ -497,6 +497,30 @@ button.action-button-danger:hover,
     gap: 0.3rem;
 }
 
+.character-entry > .character-entry-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.character-entry > .character-entry-header .character-entry-title {
+    margin: 0;
+}
+
+.character-entry > .character-entry-header .character-entry-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.character-entry > .character-entry-header .character-entry-actions button {
+    align-self: center;
+}
+
 
 /* Story Preview */
 #story-preview-section h2,

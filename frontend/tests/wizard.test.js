@@ -130,4 +130,20 @@ describe('wizard navigation', () => {
         fireEvent.click(prev);
         expect(document.getElementById('step-2-options').style.display).toBe('block');
     });
+
+  test('added character row can be removed', () => {
+    const addButton = document.getElementById('add-character-button');
+
+    fireEvent.click(addButton);
+
+    expect(document.getElementById('char-name-2')).not.toBeNull();
+
+    const removeButton = document.querySelector('.remove-character-button');
+    expect(removeButton).not.toBeNull();
+
+    fireEvent.click(removeButton);
+
+    expect(document.getElementById('char-name-2')).toBeNull();
+    expect(document.querySelector('.remove-character-button')).toBeNull();
+  });
 });

@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from backend.database import DynamicList, DynamicListItem
+from backend.database import DynamicList, DynamicListItem, Story, User
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -66,3 +66,35 @@ def test_get_public_list_items_empty_list(client: TestClient, db_session: Sessio
     response = client.get("/api/v1/dynamic-lists/empty_list/active-items")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_delete_story_via_api_prefix(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    """Test deleting a user-owned story through the public API prefix."""
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com").first()
+    assert owner is not None
+
+    story = Story(
+        title="Delete Me",
+        story_outline="A story to remove.",
+        genre="fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    response = client.delete(
+        f"/api/v1/stories/{story.id}",
+        headers=regular_user_auth_headers,
+    )
+
+    assert response.status_code == 204
+    assert db_session.query(Story).filter(Story.id == story.id).first() is None

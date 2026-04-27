@@ -1,12 +1,12 @@
 
 # Project Overview
-This project is a **full-stack web application** with:  
-- **Backend:** Python (FastAPI)  
-- **Frontend:** JavaScript + HTML (with CSS framework as needed)  
-- **Database:** SQLite
-- **Purpose:** The app is used to generate custom stories and images
+This project is a **full-stack web application** with:
+- **Backend:** Python (FastAPI)
+- **Frontend:**
+- **Database:**
+- **Purpose:** T
 
-Copilot should **maintain consistency between frontend and backend code** and follow the conventions below.  
+Copilot should **maintain consistency between frontend and backend code** and follow the conventions below.
 
 # Python Coding Conventions
 
@@ -18,13 +18,8 @@ Copilot should **maintain consistency between frontend and backend code** and fo
 - Use the `typing` module for type annotations (e.g., `List[str]`, `Dict[str, int]`).
 - Break down complex functions into smaller, more manageable functions.
 
-## JavaScript / Frontend Instructions
-- Use ES6 modules (import/export), no var.
-- Use fetch with async/await for API calls.
-- Keep functions small and modular.
-- Avoid jQuery unless explicitly needed.
-- DOM queries are scoped (#app, component roots) to avoid leaks.
-- Avoid adding dependencies unless necessary.
+## Frontend Instructions
+- TBC
 
 ## HTML Instructions
 - Use semantic HTML5 (<main>, <section>, <nav>, <header>, <footer> etc).
@@ -65,8 +60,8 @@ Copilot should **maintain consistency between frontend and backend code** and fo
 - Include comments for edge cases and the expected behavior in those cases.
 - Write unit tests for functions and document them with docstrings explaining the test cases.
 - Backend: pytest for unit tests. (structure: backend/test).
-- Frontend: Test JS logic with Jest if configured (structure: frontend/tests).
-- Linters/formatters: ruff/flake8 + black (Python), eslint + prettier (JS).
+- Frontend: TBC
+- Linters/formatters: ruff/flake8 + black (Python)
 
 ## Example of Proper Documentation
 
@@ -138,7 +133,7 @@ Example:
 
 3. Run Tests & Linting
 - Run all unit tests (pytest, Jest).
-- Lint Python (flake8, black) and JavaScript (ESLint). Run and fix issues as needed
+- Lint Python (flake8, black) and Frontend (TBC). Run and fix issues as needed
 
 
 4. Commit Format

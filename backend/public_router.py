@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import asyncio
 import io
+import os
 from datetime import timedelta
 
 from backend import crud, schemas, auth, database, pdf_generator
@@ -13,6 +14,77 @@ from backend.logging_config import app_logger, error_logger
 from backend.story_generation_service import generate_story_as_background_task
 
 public_router = APIRouter()
+
+
+def _character_detail_from_saved_character(
+    character: database.Character,
+) -> schemas.CharacterDetail:
+    """Convert a saved Character row into a story CharacterDetail payload."""
+
+    return schemas.CharacterDetail(
+        name=character.name,
+        description=character.description,
+        age=character.age,
+        gender=character.gender,
+        clothing_style=character.clothing_style,
+        key_traits=character.key_traits,
+        reference_image_path=character.current_image.file_path
+        if getattr(character, "current_image", None)
+        else None,
+    )
+
+
+def _merge_selected_characters_into_story_input(
+    story_input: schemas.StoryCreate,
+    db: Session,
+    user_id: int,
+) -> schemas.StoryCreate:
+    """Enrich selected story characters with saved library details and images."""
+
+    if not story_input.character_ids:
+        return story_input
+
+    saved_characters = db.query(database.Character).filter(
+        database.Character.user_id == user_id,
+        database.Character.id.in_(story_input.character_ids),
+    ).all()
+
+    saved_by_name = {
+        (character.name or "").strip().casefold(): character
+        for character in saved_characters
+        if (character.name or "").strip()
+    }
+
+    merged_characters: List[schemas.CharacterDetail] = []
+    for character in story_input.main_characters or []:
+        key = (character.name or "").strip().casefold()
+        saved_character = saved_by_name.pop(key, None) if key else None
+        if saved_character is None:
+            merged_characters.append(character)
+            continue
+
+        saved_detail = _character_detail_from_saved_character(saved_character)
+        merged_characters.append(
+            character.model_copy(
+                update={
+                    "description": character.description or saved_detail.description,
+                    "age": character.age if character.age is not None else saved_detail.age,
+                    "gender": character.gender or saved_detail.gender,
+                    "clothing_style": character.clothing_style
+                    or saved_detail.clothing_style,
+                    "key_traits": character.key_traits or saved_detail.key_traits,
+                    "reference_image_path": character.reference_image_path
+                    or saved_detail.reference_image_path,
+                }
+            )
+        )
+
+    for saved_character in saved_by_name.values():
+        merged_characters.append(
+            _character_detail_from_saved_character(saved_character)
+        )
+
+    return story_input.model_copy(update={"main_characters": merged_characters})
 
 
 @public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
@@ -57,6 +129,11 @@ async def create_new_story(
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(auth.get_current_active_user)
 ):
+    story_input = _merge_selected_characters_into_story_input(
+        story_input,
+        db,
+        current_user.id,
+    )
     draft_id = story_input.draft_id
     app_logger.info(
         f"User {current_user.username} initiating new story creation. Input: {story_input.model_dump(exclude_none=True)}. Draft ID: {draft_id}")
@@ -149,6 +226,51 @@ async def read_story(
     app_logger.info(
         f"Story {story_id} ({db_story.title}) retrieved for user {current_user.username}.")
     return db_story
+
+
+@public_router.delete("/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_story(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user)
+):
+    """Delete a story owned by the current authenticated user."""
+    app_logger.info(
+        f"User {current_user.username} attempting to delete story ID: {story_id}")
+    db_story = crud.get_story(db, story_id=story_id, user_id=current_user.id)
+
+    if not db_story:
+        error_logger.warning(
+            f"Story with ID {story_id} not found for deletion attempt by user {current_user.username}.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+
+    if db_story.owner_id != current_user.id:
+        error_logger.warning(
+            f"User {current_user.username} attempted to delete unauthorized story {story_id}.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this story",
+        )
+
+    story_image_folder_on_disk = os.path.join(
+        "data", "images", f"user_{current_user.id}", f"story_{story_id}")
+    if os.path.exists(story_image_folder_on_disk):
+        app_logger.info(
+            f"Image folder found for story {story_id}: {story_image_folder_on_disk}. Deferring physical file deletion.")
+
+    deleted_successfully = crud.delete_story_db_entry(db=db, story_id=story_id)
+    if not deleted_successfully:
+        error_logger.error(
+            f"Failed to delete story {story_id} from database for user {current_user.username}, though initial checks passed.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not delete story from database.",
+        )
+
+    app_logger.info(
+        f"Story ID {story_id} successfully deleted by user {current_user.username}.")
+    return
 
 
 @public_router.get("/users/me/", response_model=schemas.User)

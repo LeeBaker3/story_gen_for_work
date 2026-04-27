@@ -20,7 +20,10 @@ function mountDom() {
           <div id="generation-status-message"></div>
         </div>
       </section>
-      <section id="story-preview-section" style="display:none;"></section>
+      <section id="story-preview-section" style="display:none;">
+        <div id="story-preview-content"></div>
+        <button id="export-pdf-button" style="display:none;"></button>
+      </section>
       <div id="snackbar" style="display:none;"></div>
     </main>`;
 }
@@ -93,5 +96,70 @@ describe('polling timeout and failure scenarios', () => {
 
     // After failure we should not accumulate large call counts
     expect(callCount).toBe(2);
+  });
+
+  test('keeps polling after slow notice and completes before hard timeout', async () => {
+    jest.useFakeTimers();
+    let statusCalls = 0;
+
+    global.fetch = jest.fn(async (url) => {
+      const value = String(url);
+      if (value.includes('/generation-status/')) {
+        statusCalls++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'task-3',
+            story_id: 321,
+            status: statusCalls >= 4 ? 'completed' : 'in_progress',
+            progress: statusCalls >= 4 ? 100 : statusCalls * 20,
+            current_step: statusCalls >= 4 ? 'finalizing' : 'generating_page_images',
+          }),
+          headers: { get: () => 'application/json' },
+        };
+      }
+      if (value.includes('/api/v1/stories/321')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ id: 321, title: 'Finished', pages: [] }),
+          headers: { get: () => 'application/json' },
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+    });
+
+    await import('../../frontend/script.js');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+
+    const { pollForStatus, setPollingConfig } = window.__TEST_API__ || {};
+    setPollingConfig({
+      baseIntervalMs: 10,
+      maxIntervalMs: 10,
+      slowNoticeMs: 20,
+      maxDurationMs: 200,
+    });
+
+    pollForStatus('task-3');
+
+    await jest.advanceTimersByTimeAsync(25);
+
+    await waitFor(() => {
+      const snackbar = document.getElementById('snackbar');
+      expect(snackbar.textContent).toMatch(/still running/i);
+    });
+
+    await jest.advanceTimersByTimeAsync(50);
+
+    await waitFor(() => {
+      expect(statusCalls).toBe(4);
+      const preview = document.getElementById('story-preview-section');
+      expect(preview.style.display).toBe('block');
+      const snackbar = document.getElementById('snackbar');
+      expect(snackbar.textContent).not.toMatch(/timed out/i);
+    });
+
+    jest.useRealTimers();
   });
 });

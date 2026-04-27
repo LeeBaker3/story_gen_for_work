@@ -4,11 +4,22 @@ import uuid
 from datetime import datetime
 import time
 from sqlalchemy.orm import Session
+from tenacity import RetryError
 from . import crud, schemas, database, ai_services
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
 from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
+
+
+def _format_task_error_message(error: Exception) -> str:
+    """Return the most useful error message for a failed generation task."""
+
+    if isinstance(error, RetryError):
+        retry_cause = error.last_attempt.exception()
+        if retry_cause is not None:
+            return str(retry_cause)
+    return str(error)
 
 
 async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
@@ -34,6 +45,19 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
 
         character_details_map = {}
         for character_input in story_input.main_characters:
+            existing_reference_path = getattr(
+                character_input, 'reference_image_path', None)
+            if existing_reference_path:
+                app_logger.info(
+                    "Reusing saved reference image for character '%s': %s",
+                    character_input.name,
+                    existing_reference_path,
+                )
+                character_details_map[character_input.name] = (
+                    character_input.model_dump(exclude_none=True)
+                )
+                continue
+
             # Build file paths for saving each character reference via helper
             char_image_save_path_on_disk, char_image_path_for_db = character_ref_paths(
                 user_id, story_id, character_input.name or "character"
@@ -231,7 +255,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             db,
             task_id,
             status=schemas.GenerationTaskStatus.FAILED,
-            error_message=str(e),
+            error_message=_format_task_error_message(e),
             current_step=schemas.GenerationTaskStep.FINALIZING,
         )
 
