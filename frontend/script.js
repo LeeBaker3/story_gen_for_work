@@ -1529,6 +1529,32 @@ document.addEventListener("DOMContentLoaded", function () {
         textCard.style.fontFamily = "inherit";
     }
 
+    /**
+     * Re-applies preview styles to all visible page stages without destroying
+     * the DOM. Used by control input handlers so native UI elements (colour
+     * pickers, selects) are not detached mid-interaction.
+     */
+    function applyLivePreviewUpdate() {
+        const story = storyEditorState.story;
+        if (!story || !story.pages) return;
+        story.pages.forEach((page) => {
+            const pageSettings = getPageEffectiveSettings(story, page);
+            const preview = document.querySelector(
+                `.story-editor-page-preview[data-page-id="${page.id}"]`
+            );
+            if (!preview) return;
+            const pageStage = preview.querySelector(".story-editor-page-stage");
+            const textCard = preview.querySelector(".story-editor-text-card");
+            if (pageStage && textCard) {
+                applyEditorPreviewStyles(pageStage, textCard, pageSettings);
+            }
+            const textContent = preview.querySelector(
+                ".story-editor-text-card-content"
+            );
+            if (textContent) textContent.textContent = page.text || "";
+        });
+    }
+
     function buildStoryEditorPayload({ includeAllPages = false } = {}) {
         const story = storyEditorState.story;
         if (!story) return null;
@@ -1772,7 +1798,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const input = shell.querySelector(selector);
             input.addEventListener("input", (event) => {
                 story.editor_settings[key] = parser(event.target.value);
-                renderStoryEditor();
+                applyLivePreviewUpdate();
                 scheduleStoryEditorAutosave();
             });
         });
@@ -1784,7 +1810,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const vertical = shell.querySelector("#story-editor-text-position-v")?.value || "bottom";
                 const horizontal = shell.querySelector("#story-editor-text-position-h")?.value || "center";
                 story.editor_settings.text_position = combineTextPosition(vertical, horizontal);
-                renderStoryEditor();
+                applyLivePreviewUpdate();
                 scheduleStoryEditorAutosave();
             });
         });
@@ -1826,11 +1852,11 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="story-editor-page-controls">
                             <label class="story-editor-field-label">Page Text</label>
                             <textarea class="story-editor-textarea" data-page-field="text" data-page-id="${page.id}" rows="5">${escapeHTML(page.text || "")}</textarea>
+                            <div>
+                                <label class="story-editor-field-label">Text Position Override</label>
+                                ${createTextPositionSelects(page.editor_state.text_position || pageSettings.text_position, "page-text-pos-" + page.id, page.id)}
+                            </div>
                             <div class="story-editor-inline-grid">
-                                <div>
-                                    <label class="story-editor-field-label">Text Position Override</label>
-                                    ${createTextPositionSelects(page.editor_state.text_position || pageSettings.text_position, "page-text-pos-" + page.id, page.id)}
-                                </div>
                                 <div>
                                     <label class="story-editor-field-label">Font Size Override</label>
                                     <input class="story-editor-number" data-page-field="font_size" data-page-id="${page.id}" type="number" min="16" max="56" value="${page.editor_state.font_size ?? ""}" placeholder="Default ${pageSettings.font_size}">
@@ -1872,7 +1898,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 } else {
                     page.editor_state[field] = event.target.value || null;
                 }
-                renderStoryEditor();
+                applyLivePreviewUpdate();
                 scheduleStoryEditorAutosave();
             });
         });
