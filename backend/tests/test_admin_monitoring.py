@@ -224,3 +224,22 @@ def test_config_diagnostics_endpoint(client, monkeypatch, admin_auth_headers):
         "logs_dir", "client_initialized"
     ]:
         assert key in data
+
+
+def test_config_diagnostics_endpoint_strips_absolute_path_details(
+    client,
+    admin_auth_headers,
+):
+    """The diagnostics response should expose only basename path values."""
+
+    response = client.get(
+        "/api/v1/admin/monitoring/config",
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "/" not in data["data_dir"]
+    assert "\\" not in data["data_dir"]
+    assert "/" not in data["logs_dir"]
+    assert "\\" not in data["logs_dir"]

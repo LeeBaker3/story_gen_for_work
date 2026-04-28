@@ -14,7 +14,7 @@ from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.rate_limiting import limiter
 from backend.settings import get_settings
-from backend.story_generation_service import generate_story_as_background_task
+from backend import story_generation_service
 from backend import storage_paths
 from backend.storage_paths import page_image_paths
 
@@ -133,25 +133,6 @@ def _extract_reference_image_paths(db_story: database.Story) -> List[str]:
         if path:
             paths.append(path)
     return paths
-
-
-def _text_position_guidance(text_position: str) -> str:
-    """Return prompt guidance to reserve space for overlay text."""
-
-    normalized = str(text_position or "bottom").strip().lower()
-    if normalized not in VALID_TEXT_POSITIONS:
-        normalized = "bottom"
-    if normalized == "center":
-        return (
-            "Keep the central area visually calm and uncluttered so story text "
-            "can sit there clearly."
-        )
-    return (
-        f"Leave clear, readable visual space in the {normalized} area of the "
-        "composition for overlaid story text."
-    )
-
-
 @public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
 async def register_user(
     user: schemas.UserCreate,
@@ -228,8 +209,13 @@ async def create_new_story(
         raise HTTPException(
             status_code=500, detail="Could not create generation task.")
 
-    background_tasks.add_task(generate_story_as_background_task,
-                              task.id, db_story.id, current_user.id, story_input)
+    background_tasks.add_task(
+        story_generation_service.generate_story_as_background_task,
+        task.id,
+        db_story.id,
+        current_user.id,
+        story_input,
+    )
 
     return task
 
@@ -406,7 +392,7 @@ async def regenerate_story_page_image_api(
     effective_settings = crud.get_effective_page_editor_settings(
         db_story, db_page)
     text_position = str(effective_settings.get("text_position") or "bottom")
-    guidance = _text_position_guidance(text_position)
+    guidance = story_generation_service._text_position_guidance(text_position)
     style_reference = db_story.image_style or schemas.ImageStyle.DEFAULT.value
     base_prompt = db_page.image_description or db_page.text or db_story.title
     prompt_content = f"{base_prompt}. {guidance}"

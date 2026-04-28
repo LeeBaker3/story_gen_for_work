@@ -79,11 +79,15 @@ def _resolve_font_name(font_family: Any) -> str:
 
 
 def _resolve_image_path(image_path: str) -> str:
-    """Resolve a DB-relative image path to an absolute filesystem path."""
+    """Resolve and canonicalize an image path, ensuring it stays within data/."""
 
-    project_root = os.path.abspath(os.path.join(
+    project_root = os.path.realpath(os.path.join(
         os.path.dirname(__file__), os.pardir))
-    return os.path.join(project_root, "data", image_path)
+    data_root = os.path.join(project_root, "data")
+    full_path = os.path.realpath(os.path.join(data_root, image_path))
+    if not full_path.startswith(data_root + os.sep) and full_path != data_root:
+        raise ValueError(f"Image path escapes data directory: {image_path!r}")
+    return full_path
 
 
 def _text_box_geometry(text_position: str) -> Tuple[float, float, float, float]:
@@ -239,7 +243,10 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
             full_image_path = None
             image_path = getattr(page, "image_path", None)
             if image_path:
-                full_image_path = _resolve_image_path(image_path)
+                try:
+                    full_image_path = _resolve_image_path(image_path)
+                except ValueError:
+                    full_image_path = None
 
             try:
                 if full_image_path and os.path.exists(full_image_path):

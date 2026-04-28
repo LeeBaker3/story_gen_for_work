@@ -164,6 +164,24 @@ def test_create_story_pdf_missing_image_falls_back_to_placeholder(tmp_path) -> N
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "missing-image-story.pdf")
 
 
+def test_create_story_pdf_escaped_image_path_falls_back_to_placeholder(tmp_path) -> None:
+    story = MockPdfStory(
+        id=106,
+        title="Escaped Image Story",
+        pages=[
+            MockPdfPage(
+                page_number=1,
+                text="This page has an invalid escaped image path.",
+                image_path="../outside.png",
+            )
+        ],
+    )
+
+    pdf_bytes = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "escaped-image-story.pdf")
+
+
 def test_create_story_pdf_honors_text_position_overrides(tmp_path) -> None:
     story = MockPdfStory(
         id=104,

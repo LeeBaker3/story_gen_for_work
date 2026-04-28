@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import os
 import uuid
+from PIL import Image as PILImage
 
 from . import schemas, auth, crud, database, ai_services, storage_paths
 from .settings import get_settings
@@ -185,6 +186,15 @@ async def upload_character_photo(
     tmp_path = os.path.join(upload_dir, f"upload_{uuid.uuid4().hex}.tmp")
     try:
         size_bytes = await _write_upload_to_path(photo, tmp_path, settings.max_upload_bytes)
+        try:
+            with PILImage.open(tmp_path) as img:
+                img.verify()
+        except Exception:
+            os.remove(tmp_path)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Uploaded file is not a valid image.",
+            )
         os.replace(tmp_path, final_path)
     finally:
         # Ensure temp file is cleaned up if anything failed.

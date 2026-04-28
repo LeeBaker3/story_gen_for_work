@@ -256,8 +256,8 @@ def config_diagnostics():
             "mount_frontend_static": settings.mount_frontend_static,
             "mount_data_static": settings.mount_data_static,
             "frontend_static_dir": settings.frontend_static_dir,
-            "data_dir": settings.data_dir,
-            "logs_dir": LOG_DIRECTORY,
+            "data_dir": os.path.basename(settings.data_dir) if settings.data_dir else "data",
+            "logs_dir": os.path.basename(LOG_DIRECTORY) if LOG_DIRECTORY else "logs",
             "client_initialized": client_initialized,
         }
     except Exception:

@@ -106,7 +106,10 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         updated_at=datetime.now(UTC)
     )))
 
-    with patch('backend.public_router.generate_story_as_background_task') as mock_background_task:
+    with patch(
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task"
+    ) as mock_background_task:
         response = client.post(
             "/api/v1/stories/",
             json=story_create_input_mock,
@@ -223,7 +226,10 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
     filter_mock.all.return_value = [existing_character_obj]
     db_session_mock.query.return_value = filter_mock
 
-    with patch("backend.public_router.generate_story_as_background_task"):
+    with patch(
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task"
+    ):
         response = client.post(
             "/api/v1/stories/",
             json=incoming_payload,

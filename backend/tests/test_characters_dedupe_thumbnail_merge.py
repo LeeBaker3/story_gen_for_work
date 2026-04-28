@@ -107,7 +107,8 @@ def test_story_creation_merge_avoids_duplicate_names(
         ),
     )
     monkeypatch.setattr(
-        "backend.public_router.generate_story_as_background_task",
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task",
         lambda *args, **kwargs: None,
     )
 
