@@ -60,10 +60,16 @@ def test_seed_database_on_empty_db(db_session: Session):
         DynamicListItem).filter_by(list_name='genres').count()
     image_styles_count = db_session.query(
         DynamicListItem).filter_by(list_name='image_styles').count()
+    text_positions_count = db_session.query(
+        DynamicListItem).filter_by(list_name='text_positions').count()
+    font_families_count = db_session.query(
+        DynamicListItem).filter_by(list_name='font_families').count()
 
     assert genres_count > 5
     assert image_styles_count > 5
-    assert db_session.query(DynamicList).count() >= 2
+    assert text_positions_count == 5
+    assert font_families_count >= 6
+    assert db_session.query(DynamicList).count() >= 4
 
 
 def test_seed_database_on_non_empty_db(db_session: Session):

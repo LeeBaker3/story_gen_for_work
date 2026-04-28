@@ -71,10 +71,10 @@
             <h2>Create a New Story</h2>
             <!-- Phase 3 Wizard: Step indicators (basic skeleton) -->
             <div id="wizard-steps" class="wizard-steps" aria-label="Story creation steps">
-                <div class="wizard-step" data-step="0">Basics</div>
-                <div class="wizard-step" data-step="1">Characters</div>
-                <div class="wizard-step" data-step="2">Options</div>
-                <div class="wizard-step" data-step="3">Review</div>
+                <button type="button" class="wizard-step" data-step="0" aria-current="step">Basics</button>
+                <button type="button" class="wizard-step" data-step="1" aria-disabled="true">Characters</button>
+                <button type="button" class="wizard-step" data-step="2" aria-disabled="true">Options</button>
+                <button type="button" class="wizard-step" data-step="3" aria-disabled="true">Review</button>
             </div>
             <form id="story-creation-form" class="modern-form">
                 <!-- Step 0: Basics -->
@@ -188,6 +188,30 @@
                         <select id="story-text-density" name="text_density" required>
                             <!-- Options will be populated dynamically -->
                         </select>
+                    </div>
+                    <div>
+                        <label for="story-default-text-position">Default Text Placement:</label>
+                        <select id="story-default-text-position" name="default_text_position">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-default-font-family">Default Font Family:</label>
+                        <select id="story-default-font-family" name="default_font_family">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-default-font-size">Default Font Size:</label>
+                        <input type="number" id="story-default-font-size" name="default_font_size" min="16" max="56" value="28">
+                    </div>
+                    <div>
+                        <label for="story-default-font-color">Default Font Color:</label>
+                        <input type="color" id="story-default-font-color" name="default_font_color" value="#ffffff">
+                    </div>
+                    <div>
+                        <label for="story-default-text-box-opacity">Text Box Opacity:</label>
+                        <input type="range" id="story-default-text-box-opacity" name="default_text_box_opacity" min="0" max="1" step="0.1" value="0.6">
                     </div>
                 </div>
 

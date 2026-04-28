@@ -394,6 +394,19 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
 - It is absolutely crucial that every page has a non-empty "Image_description".
 """
 
+    editor_settings = story_input.get('editor_settings') or {}
+    default_text_position = str(
+        editor_settings.get('text_position', 'bottom')
+    ).strip().lower()
+    if default_text_position not in {'top', 'bottom', 'left', 'right', 'center'}:
+        default_text_position = 'bottom'
+
+    text_layout_instruction = (
+        f"Default page text placement is {default_text_position}. "
+        "Every Image_description should compose the artwork so this area stays readable "
+        "and less visually busy for story text overlay."
+    )
+
     # Enhanced character instructions for the prompt
     character_visual_instructions = [
         "IMPORTANT: The following visual details for each character are key to maintaining consistency across all images.",
@@ -519,6 +532,8 @@ Further Instructions:
 - The desired visual style for all images is: '{image_style_description}'. All "Image_description" fields that are not null must reflect this style (e.g., by appending ', {image_style_description} style' or similar phrasing to the description).
 - Optional tone: {story_input.get('tone', 'N/A')}.
 - Optional setting: {story_input.get('setting', 'N/A')}.
+- Page text placement for the layout defaults: {default_text_position}.
+- Layout guidance for all generated page images: {text_layout_instruction}
 
 Output Requirements:
 - The final output MUST be a single JSON object.

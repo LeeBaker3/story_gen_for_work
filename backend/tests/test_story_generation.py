@@ -303,7 +303,6 @@ def test_public_story_creation_merges_selected_character_reference_paths(
     )
 
 
-
 def test_get_story_status(client, db_session_mock, monkeypatch):
     """
     Test polling the generation status of a task.
@@ -612,7 +611,8 @@ async def test_generate_story_as_background_task_skips_existing_reference_images
                 await generate_story_as_background_task(task_id, story_id, user_id, story_input)
 
                 mock_ai_services.generate_character_reference_image.assert_not_called()
-                story_content_input = mock_ai_services.generate_story_from_chatgpt.call_args.args[0]
+                story_content_input = mock_ai_services.generate_story_from_chatgpt.call_args.args[
+                    0]
                 assert story_content_input['main_characters'][0]['reference_image_path'] == (
                     "images/user_1/characters/7/img.png"
                 )
@@ -656,7 +656,8 @@ async def test_generate_story_as_background_task_tolerates_missing_page_images()
                         }
                     ],
                 })
-                mock_ai_services.generate_image_for_page = AsyncMock(return_value=None)
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value=None)
 
                 from backend.story_generation_service import generate_story_as_background_task
 
@@ -690,3 +691,57 @@ async def test_generate_story_as_background_task_tolerates_missing_page_images()
                     task_id,
                     error_message="Completed with 1 page image(s) missing due to generation failures.",
                 )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_uses_wizard_text_position_guidance():
+    """Initial page image generation should include wizard text-placement guidance."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-layout-guidance"
+    story_id = 10
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Guided Layout Story",
+        genre="Fantasy",
+        story_outline="A ship sails through a storm.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+        editor_settings=schemas.StoryEditorSettings(text_position="top"),
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                    "Title": "Guided Layout Story",
+                    "Pages": [
+                        {
+                            "Page_number": 1,
+                            "Text": "Mina sails through the storm.",
+                            "Image_description": "A ship in rough seas.",
+                            "Characters_in_scene": ["Mina"],
+                        }
+                    ],
+                })
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value="images/user_1/story_10/page_1.png"
+                )
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input)
+
+                page_content = mock_ai_services.generate_image_for_page.await_args.kwargs[
+                    "page_content"
+                ]
+                assert "top area" in page_content.lower()

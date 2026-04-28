@@ -30,7 +30,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - Authentication
     - Secure login/session; admin role; signup confirmation (double password with client-side validation); forgot password (planned).
 - Admin Panel
-    - Manage dynamic lists (genres, image styles) used by forms; user management; content moderation; monitoring (logs, basic stats); diagnostics endpoint for safe configuration checks.
+    - Manage dynamic lists (genres, image styles, text positions, font families) used by forms; user management; content moderation; monitoring (logs, basic stats); diagnostics endpoint for safe configuration checks.
 
 ### 2.2 Frontend
 - HTML/CSS/JS (vanilla) with semantic HTML, scoped queries, and ES6 modules.

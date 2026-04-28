@@ -26,6 +26,14 @@ VALUES
 INSERT OR
 IGNORE INTO dynamic_lists (list_name, list_label)
 VALUES
+    ('text_positions', 'Text Positions');
+INSERT OR
+IGNORE INTO dynamic_lists (list_name, list_label)
+VALUES
+    ('font_families', 'Font Families');
+INSERT OR
+IGNORE INTO dynamic_lists (list_name, list_label)
+VALUES
     ('genders', 'Genders');
 
 INSERT OR
@@ -63,6 +71,19 @@ VALUES
     ('text_density', 'Concise (~30-50 words)', 'Concise (~30-50 words)', 1, 1, NULL),
     ('text_density', 'Standard (~60-90 words)', 'Standard (~60-90 words)', 1, 2, NULL),
     ('text_density', 'Detailed (~100-150 words)', 'Detailed (~100-150 words)', 1, 3, NULL),
+    -- Text Positions
+    ('text_positions', 'top', 'Top', 1, 1, NULL),
+    ('text_positions', 'bottom', 'Bottom', 1, 2, NULL),
+    ('text_positions', 'left', 'Left', 1, 3, NULL),
+    ('text_positions', 'right', 'Right', 1, 4, NULL),
+    ('text_positions', 'center', 'Center', 1, 5, NULL),
+    -- Font Families
+    ('font_families', 'storybook', 'Storybook', 1, 1, NULL),
+    ('font_families', 'classic', 'Classic', 1, 2, NULL),
+    ('font_families', 'modern', 'Modern', 1, 3, NULL),
+    ('font_families', 'handwritten', 'Handwritten', 1, 4, NULL),
+    ('font_families', 'dyslexia-friendly', 'Dyslexia-friendly', 1, 5, NULL),
+    ('font_families', 'large print', 'Large print', 1, 6, NULL),
     -- Genders (generic list; free-form allowed but common options provided)
     ('genders', 'Female', 'Female', 1, 1, NULL),
     ('genders', 'Male', 'Male', 1, 2, NULL),

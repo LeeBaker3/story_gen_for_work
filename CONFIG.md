@@ -79,6 +79,61 @@ Database selection
 - For non-interactive environments, you may provide `ADMIN_PASSWORD` instead of
   prompting.
 
+## Dynamic Lists Reference
+
+Dynamic lists are admin-editable option sets that populate dropdowns in the story wizard, editor, and PDF export. They are managed in the Admin Panel under **Dynamic Lists** and seeded with sensible defaults on first startup.
+
+Use the admin panel to add, disable, or reorder items without restarting the app. Disabling an item hides it from new story creation but does not affect existing stories that already reference it.
+
+> **Note:** Removing or renaming a `font_families` value requires that the corresponding font is registered in the PDF generator. Test PDF export after any font-family changes.
+
+### Seeded lists
+
+| List name | Admin label | Purpose |
+|---|---|---|
+| `genres` | Genres | Story genre (e.g., Fantasy, Sci-Fi) used in wizard Step 3 and image prompts |
+| `image_styles` | Image Styles | Visual style for AI image generation (e.g., Watercolor, Pixel Art) |
+| `tones` | Tones | Narrative tone (e.g., Humorous, Serious) |
+| `settings` | Settings | Story setting (e.g., Forest, Space Station) |
+| `writing_styles` | Writing Styles | Writing style (e.g., Descriptive, Minimalist) |
+| `text_positions` | Text Positions | Default placement of text on a page in the wizard, editor, and PDF export |
+| `font_families` | Font Families | Default document typography applied in the editor and PDF export |
+
+### `text_positions` — Text Positions
+
+Controls where text is positioned on a page by default. Chosen in the wizard (Step 3) and editable per-page in the story editor. The value is also passed to image generation prompts so the AI can leave suitable visual space.
+
+Default seeded values:
+
+| Value | Label | Notes |
+|---|---|---|
+| `top` | Top | Text at the top of the page |
+| `bottom` | Bottom | Text at the bottom of the page |
+| `left` | Left | Text in a left-side column |
+| `right` | Right | Text in a right-side column |
+| `center` | Center | Text overlaid in the centre |
+
+Affects: wizard Step 3 dropdown, editor page-level override, PDF layout, image generation prompt guidance.
+
+### `font_families` — Font Families
+
+Controls the default document typography. Chosen in the wizard (Step 3) and editable as a document-wide default in the story editor.
+
+Default seeded values:
+
+| Value | Label | Notes |
+|---|---|---|
+| `storybook` | Storybook | Friendly, rounded font suited to children's stories |
+| `classic` | Classic | Traditional serif font |
+| `modern` | Modern | Clean sans-serif font |
+| `handwritten` | Handwritten | Script-style font |
+| `dyslexia-friendly` | Dyslexia-friendly | High-legibility font designed for readability |
+| `large print` | Large print | Larger base size for low-vision readers |
+
+Affects: wizard Step 3 dropdown, editor document defaults, PDF export font selection.
+
+> **Important:** Adding a new font-family item requires registering the corresponding font file in the PDF generator (`backend/pdf_generator.py`). Disabling an item is safe; it will be hidden from new stories but existing stories are not affected.
+
 ## Notes & safe defaults
 
 - The backend prefers the repository root .env. If backend/.env also exists, it is only used to fill missing values (never overriding root or shell env).

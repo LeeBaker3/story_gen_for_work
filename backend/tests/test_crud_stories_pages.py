@@ -141,6 +141,123 @@ def test_update_story_title(db_session: Session, test_user: User):
     assert refetched_story.title == new_title
 
 
+def test_save_story_editor_persists_defaults_and_page_overrides(
+    db_session: Session,
+    test_user: User,
+):
+    story_data = schemas.StoryBase(
+        title="Editable Story",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="Editable outline",
+        main_characters=[],
+        num_pages=2,
+    )
+    story = crud.create_story_db_entry(
+        db=db_session,
+        story_data=story_data,
+        user_id=test_user.id,
+        title="Editable Story",
+        is_draft=False,
+    )
+    crud.update_story_with_generated_content(
+        db_session,
+        story.id,
+        {
+            "Title": "Editable Story",
+            "Pages": [
+                {"Page_number": 0, "Text": "Editable Story", "Image_description": "cover",
+                    "image_url": "images/user_1/story_1/cover.png"},
+                {"Page_number": 1, "Text": "Original page text", "Image_description": "page",
+                    "image_url": "images/user_1/story_1/page1.png"},
+            ],
+        },
+    )
+    db_session.refresh(story)
+    page = next(item for item in story.pages if item.page_number == 1)
+
+    updated_story = crud.save_story_editor(
+        db=db_session,
+        story_id=story.id,
+        user_id=test_user.id,
+        editor_update=schemas.StoryEditorUpdate(
+            title="Edited Story",
+            editor_settings=schemas.StoryEditorSettings(
+                font_family="classic",
+                font_size=30,
+                font_color="#ffeeaa",
+                text_position="top",
+                text_box_opacity=0.4,
+            ),
+            pages=[
+                schemas.StoryEditorPageUpdate(
+                    id=page.id,
+                    text="Edited page text",
+                    editor_state=schemas.PageEditorState(
+                        text_position="left",
+                        font_size=22,
+                        font_color="#112233",
+                    ),
+                )
+            ],
+        ),
+    )
+
+    assert updated_story is not None
+    assert updated_story.title == "Edited Story"
+    assert updated_story.editor_settings["font_family"] == "classic"
+    db_session.refresh(page)
+    assert page.text == "Edited page text"
+    assert page.editor_state["text_position"] == "left"
+    assert page.editor_state["font_color"] == "#112233"
+    assert page.editor_state["original_text"] == "Original page text"
+
+
+def test_restore_page_text_uses_original_generated_text(
+    db_session: Session,
+    test_user: User,
+):
+    story_data = schemas.StoryBase(
+        title="Restore Text",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="Restore outline",
+        main_characters=[],
+        num_pages=1,
+    )
+    story = crud.create_story_db_entry(
+        db=db_session,
+        story_data=story_data,
+        user_id=test_user.id,
+        title="Restore Text",
+        is_draft=False,
+    )
+    crud.update_story_with_generated_content(
+        db_session,
+        story.id,
+        {
+            "Title": "Restore Text",
+            "Pages": [
+                {"Page_number": 1, "Text": "Generated text", "Image_description": "page",
+                    "image_url": "images/user_1/story_1/page1.png"},
+            ],
+        },
+    )
+    db_session.refresh(story)
+    page = story.pages[0]
+    page.text = "Edited text"
+    page.editor_state = crud.get_page_editor_state(page)
+    db_session.commit()
+
+    restored = crud.restore_page_text(
+        db=db_session,
+        story_id=story.id,
+        page_id=page.id,
+        user_id=test_user.id,
+    )
+
+    assert restored is not None
+    assert restored.text == "Generated text"
+
+
 def test_update_story_title_non_existent(db_session: Session):
     updated_story = crud.update_story_title(
         db=db_session, story_id=8888, new_title="No Such Story")

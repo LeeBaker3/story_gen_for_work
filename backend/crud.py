@@ -4,13 +4,47 @@ from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
 from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
 from passlib.context import CryptContext
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
 # Ensure datetime and timezone are imported
 from datetime import datetime, timezone
 import uuid  # Import uuid for generating task IDs
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_story_editor_settings(story: Story) -> Dict[str, Any]:
+    """Return normalized document editor settings for a story."""
+
+    settings = dict(schemas.EDITOR_DEFAULTS)
+    if isinstance(getattr(story, "editor_settings", None), dict):
+        settings.update(story.editor_settings)
+    return settings
+
+
+def get_page_editor_state(page: Page) -> Dict[str, Any]:
+    """Return normalized editor state for a page, including restore points."""
+
+    state: Dict[str, Any] = {}
+    if isinstance(getattr(page, "editor_state", None), dict):
+        state.update(page.editor_state)
+
+    if not state.get("original_text"):
+        state["original_text"] = page.text
+    if not state.get("original_image_path"):
+        state["original_image_path"] = page.image_path
+    return state
+
+
+def get_effective_page_editor_settings(story: Story, page: Page) -> Dict[str, Any]:
+    """Return the effective editor settings for a specific page."""
+
+    settings = get_story_editor_settings(story)
+    page_state = get_page_editor_state(page)
+    for key in ("text_position", "font_size", "font_color"):
+        value = page_state.get(key)
+        if value not in (None, ""):
+            settings[key] = value
+    return settings
 
 
 def _coerce_datetime_to_utc(value: datetime) -> datetime:
@@ -57,8 +91,7 @@ def create_user(db: Session, user: schemas.UserCreate):
         username=user.username,
         email=user.email,
         hashed_password=hashed_password,
-        # Ensure role is set, default to 'user'
-        role=user.role if user.role else 'user',
+        role="user",
         # Ensure is_active is set, default to True
         is_active=user.is_active if user.is_active is not None else True
     )  # Added user.email
@@ -115,6 +148,11 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
 
     image_style_value = story_data.image_style.value \
         if story_data.image_style else schemas.ImageStyle.DEFAULT.value
+    editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
+    if getattr(story_data, "editor_settings", None):
+        editor_settings_value.update(
+            story_data.editor_settings.model_dump(exclude_none=True)
+        )
 
     # Use the title from story_data if it exists, otherwise use the title argument
     final_title = getattr(story_data, 'title', None) or title
@@ -137,7 +175,8 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         text_density=text_density_value,
         owner_id=user_id,
         is_draft=is_draft,  # FR24
-        generated_at=None if is_draft else datetime.now(timezone.utc)  # FR24
+        generated_at=None if is_draft else datetime.now(timezone.utc),  # FR24
+        editor_settings=editor_settings_value,
     )
     db.add(db_story)
     db.commit()
@@ -153,6 +192,11 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
     word_to_picture_ratio_value = story_data.word_to_picture_ratio.value if story_data.word_to_picture_ratio else schemas.WordToPictureRatio.PER_PAGE.value
     text_density_value = story_data.text_density.value if story_data.text_density else schemas.TextDensity.CONCISE.value
     image_style_value = story_data.image_style.value if story_data.image_style else schemas.ImageStyle.DEFAULT.value
+    editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
+    if getattr(story_data, "editor_settings", None):
+        editor_settings_value.update(
+            story_data.editor_settings.model_dump(exclude_none=True)
+        )
 
     db_story_draft = Story(
         title=story_data.title,  # Can be None or a preliminary title
@@ -167,7 +211,8 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
         text_density=text_density_value,
         owner_id=user_id,
         is_draft=True,
-        generated_at=None  # Drafts are not "generated" in the final sense
+        generated_at=None,  # Drafts are not "generated" in the final sense
+        editor_settings=editor_settings_value,
     )
     db.add(db_story_draft)
     db.commit()
@@ -288,10 +333,124 @@ def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[S
     db_story = db.query(Story).filter(Story.id == story_id).first()
     if db_story:
         db_story.title = new_title
+        title_page = db.query(Page).filter(
+            Page.story_id == story_id,
+            Page.page_number == 0,
+        ).first()
+        if title_page:
+            title_page.text = new_title
+            title_page.editor_state = get_page_editor_state(title_page)
         db.commit()
         db.refresh(db_story)
         return db_story
     return None
+
+
+def save_story_editor(
+    db: Session,
+    story_id: int,
+    user_id: int,
+    editor_update: schemas.StoryEditorUpdate,
+) -> Optional[Story]:
+    """Persist story editor title/defaults/page text and override changes."""
+
+    db_story = get_story(db, story_id=story_id, user_id=user_id)
+    if not db_story:
+        return None
+
+    if editor_update.title is not None:
+        db_story.title = editor_update.title.strip() or db_story.title
+        title_page = db.query(Page).filter(
+            Page.story_id == story_id,
+            Page.page_number == 0,
+        ).first()
+        if title_page:
+            title_page.text = db_story.title
+            title_page.editor_state = get_page_editor_state(title_page)
+
+    if editor_update.editor_settings is not None:
+        current_settings = get_story_editor_settings(db_story)
+        current_settings.update(
+            editor_update.editor_settings.model_dump(exclude_none=True)
+        )
+        db_story.editor_settings = current_settings
+
+    pages_by_id = {
+        page.id: page
+        for page in db.query(Page).filter(Page.story_id == story_id).all()
+    }
+    for page_update in editor_update.pages:
+        db_page = pages_by_id.get(page_update.id)
+        if not db_page:
+            continue
+
+        if page_update.text is not None:
+            db_page.text = page_update.text
+            if db_page.page_number == 0:
+                db_story.title = page_update.text.strip() or db_story.title
+
+        state = get_page_editor_state(db_page)
+        if page_update.editor_state is not None:
+            state.update(
+                page_update.editor_state.model_dump(exclude_none=True))
+        db_page.editor_state = state
+
+    db.commit()
+    db.refresh(db_story)
+    return db_story
+
+
+def restore_page_text(
+    db: Session,
+    story_id: int,
+    page_id: int,
+    user_id: int,
+) -> Optional[Page]:
+    """Restore a page's text to its original generated content."""
+
+    db_story = get_story(db, story_id=story_id, user_id=user_id)
+    if not db_story:
+        return None
+    db_page = db.query(Page).filter(Page.id == page_id,
+                                    Page.story_id == story_id).first()
+    if not db_page:
+        return None
+
+    state = get_page_editor_state(db_page)
+    original_text = state.get("original_text")
+    if original_text is not None:
+        db_page.text = original_text
+        if db_page.page_number == 0:
+            db_story.title = original_text
+        db_page.editor_state = state
+        db.commit()
+        db.refresh(db_page)
+    return db_page
+
+
+def restore_page_image(
+    db: Session,
+    story_id: int,
+    page_id: int,
+    user_id: int,
+) -> Optional[Page]:
+    """Restore a page's image to its original generated asset."""
+
+    db_story = get_story(db, story_id=story_id, user_id=user_id)
+    if not db_story:
+        return None
+    db_page = db.query(Page).filter(Page.id == page_id,
+                                    Page.story_id == story_id).first()
+    if not db_page:
+        return None
+
+    state = get_page_editor_state(db_page)
+    original_image_path = state.get("original_image_path")
+    db_page.image_path = original_image_path
+    db_page.editor_state = state
+    db.commit()
+    db.refresh(db_page)
+    return db_page
 
 # Page CRUD (will be used internally when story is generated)
 
@@ -661,6 +820,7 @@ def update_story_with_generated_content(db: Session, story_id: int, story_conten
     # Update story title
     if 'Title' in story_content:
         db_story.title = story_content['Title']
+    db_story.editor_settings = get_story_editor_settings(db_story)
 
     # Delete existing pages to prevent duplicates
     db.query(Page).filter(Page.story_id == story_id).delete(
@@ -692,7 +852,11 @@ def update_story_with_generated_content(db: Session, story_id: int, story_conten
                 page_number=page_number,
                 text=page_data.get('Text'),
                 image_description=page_data.get('Image_description'),
-                image_path=page_data.get('image_url')
+                image_path=page_data.get('image_url'),
+                editor_state={
+                    "original_text": page_data.get('Text'),
+                    "original_image_path": page_data.get('image_url'),
+                },
             )
             db.add(new_page)
 

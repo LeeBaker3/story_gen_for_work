@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta  # Add this import
 # Changed from backend.models to backend.database
 # Changed from backend.database to backend.schemas
@@ -19,6 +20,8 @@ from pathlib import Path  # Add pathlib import
 # Add project root to sys.path to allow for absolute imports of backend module
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+os.environ.setdefault("TESTING", "true")
 
 
 # Use an in-memory SQLite database for testing, shared across connections

@@ -12,6 +12,23 @@ from .logging_config import app_logger, error_logger
 from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
 
 
+def _text_position_guidance(text_position: str) -> str:
+    """Return prompt guidance to leave readable space for overlaid text."""
+
+    normalized = str(text_position or "bottom").strip().lower()
+    if normalized not in {"top", "bottom", "left", "right", "center"}:
+        normalized = "bottom"
+    if normalized == "center":
+        return (
+            "Keep the central area visually calm and uncluttered so story text "
+            "can be placed there clearly."
+        )
+    return (
+        f"Leave clear, readable visual space in the {normalized} area of the "
+        "composition for overlaid story text."
+    )
+
+
 def _format_task_error_message(error: Exception) -> str:
     """Return the most useful error message for a failed generation task."""
 
@@ -106,6 +123,10 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             story_content = await story_content
         app_logger.info(
             f"Completed story content generation for task_id: {task_id}")
+        editor_settings = story_content_input.get('editor_settings') or {}
+        text_position_guidance = _text_position_guidance(
+            editor_settings.get('text_position', 'bottom')
+        )
 
         # Step 3: Generate Page Images
         crud.update_story_generation_task_progress(
@@ -159,7 +180,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                     if attempt > 0:
                         PAGE_IMAGE_RETRIES_TOTAL.inc()
                     page_image_url = await ai_services.generate_image_for_page(
-                        page_content=image_description,
+                        page_content=f"{image_description}. {text_position_guidance}",
                         style_reference=image_style,
                         characters_in_scene=characters_in_scene,
                         db=db,

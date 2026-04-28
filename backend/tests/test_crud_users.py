@@ -100,7 +100,7 @@ def test_create_user_with_specific_role_and_status(db_session: Session):
     assert db_user is not None
     assert db_user.username == "adminuser_specific_test"
     assert db_user.email == "testadmin@example.com"
-    assert db_user.role == "admin"
+    assert db_user.role == "user"
     assert db_user.is_active is False
 
     # Verify password (optional, as it's hashed)
@@ -117,6 +117,17 @@ def test_create_user_role_is_none(db_session: Session):
     # Explicitly set role to None, should default to "user"
     user_in = schemas.UserCreate(
         username="testroleNone", password="password", role=None)
+    db_user = crud.create_user(db=db_session, user=user_in)
+    assert db_user.role == "user"
+
+
+def test_create_user_ignores_supplied_admin_role(db_session: Session):
+    user_in = schemas.UserCreate(
+        username="role_escalation_attempt",
+        password="password",
+        email="role_escalation@example.com",
+        role="admin",
+    )
     db_user = crud.create_user(db=db_session, user=user_in)
     assert db_user.role == "user"
 

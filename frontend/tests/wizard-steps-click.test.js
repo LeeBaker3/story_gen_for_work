@@ -18,10 +18,10 @@ function mountWizardWithModal() {
       <section id="auth-section" style="display:none;"></section>
       <section id="story-creation-section" style="display:none;">
         <div id="wizard-steps">
-          <div class="wizard-step" data-step="0">Basics</div>
-          <div class="wizard-step" data-step="1">Characters</div>
-          <div class="wizard-step" data-step="2">Options</div>
-          <div class="wizard-step" data-step="3">Review</div>
+          <button type="button" class="wizard-step" data-step="0" aria-current="step">Basics</button>
+          <button type="button" class="wizard-step" data-step="1" aria-disabled="true">Characters</button>
+          <button type="button" class="wizard-step" data-step="2" aria-disabled="true">Options</button>
+          <button type="button" class="wizard-step" data-step="3" aria-disabled="true">Review</button>
         </div>
         <form id="story-creation-form">
           <div id="step-0-basics" class="wizard-step-panel">
@@ -59,7 +59,9 @@ describe('wizard step indicator clicks', () => {
         document.dispatchEvent(new Event('DOMContentLoaded'));
     });
 
-    test('clicking step dot navigates and closes any open character modal', () => {
+    test('clicking a reachable step pill navigates and closes any open character modal', () => {
+      fireEvent.click(document.getElementById('wizard-next'));
+
         // Simulate opening modal
         const modal = document.getElementById('char-modal');
         const backdrop = document.getElementById('char-modal-backdrop');
@@ -67,14 +69,13 @@ describe('wizard step indicator clicks', () => {
         backdrop.classList.add('open');
         document.body.dataset.charModalState = 'open';
 
-        // Click step 2 dot
-        const step2 = Array.from(document.querySelectorAll('#wizard-steps .wizard-step')).find(d => d.getAttribute('data-step') === '2');
-        fireEvent.click(step2);
+      // Click reachable step 0 pill
+      const step0 = Array.from(document.querySelectorAll('#wizard-steps .wizard-step')).find(d => d.getAttribute('data-step') === '0');
+      fireEvent.click(step0);
 
         expect(modal.classList.contains('open')).toBe(false);
         expect(backdrop.classList.contains('open')).toBe(false);
         expect(document.body.dataset.charModalState).toBeUndefined();
-        // Ensure step 2 is visible
-        expect(document.getElementById('step-2-options').style.display).toBe('block');
+      expect(document.getElementById('step-0-basics').style.display).toBe('block');
     });
 });

@@ -82,6 +82,7 @@ class Story(Base):
     # Admin moderation flags
     is_hidden = Column(Boolean, default=False, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    editor_settings = Column(JSON, nullable=True)
 
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",
@@ -96,6 +97,7 @@ class Page(Base):
     text = Column(Text, nullable=False)
     image_description = Column(Text, nullable=True)  # Prompt for DALL-E
     image_path = Column(String, nullable=True)  # Path to locally stored image
+    editor_state = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
@@ -244,6 +246,7 @@ def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
     _ensure_story_generation_task_new_columns()
     _ensure_soft_delete_and_moderation_columns()
+    _ensure_story_editor_columns()
 
 
 def _ensure_story_generation_task_new_columns():
@@ -316,4 +319,38 @@ def _ensure_soft_delete_and_moderation_columns():
                             pass
             except Exception:
                 # Non-fatal in dev/test
+                pass
+
+
+def _ensure_story_editor_columns():
+    """Idempotently add story/page editor columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "stories": {
+            "editor_settings": "JSON NULL",
+        },
+        "pages": {
+            "editor_state": "JSON NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
+                            )
+                        except Exception:
+                            pass
+            except Exception:
                 pass

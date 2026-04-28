@@ -1,0 +1,73 @@
+[Architecture] admin_update_user silently ignores invalid role string in CRUD layer
+[Architecture] StoryBase.generated_at in request schema — server-assigned value should be response-only
+[Architecture] Per-page font_family override not in PageEditorState schema
+[Architecture] PDF page size hardcoded — PRD requires configurable page format
+[Architecture] dependencies.py is empty — dead file
+[Architecture] update_story_draft uses brittle string-mangling to detect enum class names
+[Architecture] ai_services.py overwrites error_logger import with bare logging.getLogger
+[Architecture] StoryGenerationTask.retry_attempts schema field maps to wrong DB column — always returns 0
+[Architecture] GET /stories/ loads full page data for all stories in list view
+[Architecture] admin_list_stories drops pagination total — admin UI cannot paginate correctly
+[Architecture] _text_position_guidance function duplicated in two modules
+\[UX\] Wizard step pills are not keyboard or screen-reader navigable
+\[Architecture\] No schema migration framework — new columns not added to existing databases
+\[Architecture\] Task status stored as plain String — compared with raw literals instead of enum values
+\[Architecture\] PageEditorState schema missing text_box_opacity field
+\[Architecture\] writing_styles seeded but Story model has no writing_style field — value silently dropped
+[Architecture] writing_styles seeded but Story model has no writing_style field — value silently dropped
+[Architecture] No schema migration framework — new columns not added to existing databases
+[Architecture] Task status stored as plain String — compared with raw literals instead of enum values
+[Architecture] PageEditorState schema missing text_box_opacity field
+[Architecture] writing_styles seeded but Story model has no writing_style field — value silently dropped
+[UX] Wizard Options and Review steps missing PRD-required inputs (writing style, page format, image fill)
+[UX] Step-pill clicks bypass forward validation — user can jump to Review with missing data
+[UX] Admin modals missing dialog semantics (focus trap, Escape, focus restoration)
+[UX] No inline field-level validation errors — only global snackbar
+[UX] Wizard step pills are not keyboard or screen-reader navigable
+[Architecture] writing_styles seeded but Story model has no writing_style field — value silently dropped
+[Architecture] Missing indexes on Story, Page, and StoryGenerationTask foreign keys
+[Architecture] Image files never deleted when story is deleted — disk grows unboundedly
+[Architecture] DEFAULT_EDITOR_SETTINGS defined in three places — must stay manually in sync
+[Architecture] Synchronous OpenAI call blocks asyncio event loop during story generation
+[Architecture] Synchronous OpenAI call blocks asyncio event loop during story generation
+[Architecture] Partial story content left on generation failure — no cleanup
+[Architecture] CRITICAL: create_story_pdf defined twice — second definition causes NameError
+[Architecture] No stuck-task recovery on server restart
+[Architecture] Pydantic enums duplicate dynamic-list DB — admin-added values rejected with 422
+[Architecture] Stale duplicate endpoints in main.py create split API contract
+[Architecture] CRITICAL: create_story_pdf defined twice — second definition causes NameError
+[Security] PDF image path resolved from DB value without path canonicalisation
+[Security] Internal exception messages returned in 5xx HTTP responses
+[Security] No JWT token revocation — compromised tokens valid for 24 hours
+[Security] No dependency vulnerability scanning in CI pipeline
+[Security] Hardcoded production URL committed in frontend JS
+[Security] Commented-out drop_all in main.py startup — one keystroke from data loss
+[Security] Prompt injection — user story outline injected verbatim into OpenAI prompt
+[Security] Absolute filesystem paths exposed in admin config diagnostics endpoint
+[Security] Duplicate /users/ endpoint with weaker email uniqueness validation
+[Security] File upload type not verified via magic bytes (MIME spoofing)
+[Security] Full user story input (including PII) logged verbatim at INFO level
+[Security] Path traversal in character image filename construction
+[Security] Stored XSS in admin dynamic list item editor
+[Security] Reflected XSS in story review step (populateReview)
+[Security] No rate limiting on POST /api/v1/token (login endpoint)
+[Security] CORS middleware configured but never registered in the app
+[Security] Stored XSS — email value injected via unescaped innerHTML in admin user edit row
+[Security] Generated story images accessible without authentication
+[Security] Hardcoded fallback JWT secret key in auth.py
+[Security] Self-assignable admin role at registration
+Frontend testing strategy is missing
+Frontend testing strategy is missing
+Telemetry: capture and expose retry counts and per-page failures for generation tasks
+FR-AI-03: Use Dynamic Lists for default ImageStyle and OpenAI prompt mapping
+CI: add basic lint/test GitHub Actions workflow
+Docs: add docs/CONFIG.md and .env.example
+Background task state machine: smarter retry/backoff and resume
+Configurable ImageStyle -> OpenAI 'style' mapping (FR-AI-03)
+Admin: logs browser and basic system stats endpoints
+Integration test: verify images and prompt sidecars written and served via /static_content
+Centralize storage path building for images (avoid drift)
+Health/metrics endpoints: GET /healthz and stub /metrics
+Wire BaseSettings into logging_config (use settings.logging_config_file & logs_dir)
+Wire BaseSettings into ai_services (models, retry/backoff)
+Backlog: Settings integration, logging config, task state machine, and admin/metrics follow-ups
