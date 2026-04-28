@@ -645,6 +645,7 @@ button.action-button-danger:hover,
 }
 
 .story-editor-page-stage {
+    box-sizing: border-box;
     position: relative;
     width: 100%;
     aspect-ratio: 612 / 792;
