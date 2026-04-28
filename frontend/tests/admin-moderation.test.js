@@ -60,9 +60,12 @@ function installApiMock({ stories = [], userRole = 'admin', hideFail = false, de
     }
 
     if (url.includes('/api/v1/admin/moderation/stories') && (!opts.method || opts.method === 'GET')) {
-      // Return current list reflecting any modifications
-      const list = currentStories.filter(s => true); // clone
-      return new Response(JSON.stringify(list), { status: 200 });
+      // Return the current paginated list reflecting any modifications.
+      const list = currentStories.filter(s => true);
+      return new Response(
+        JSON.stringify({ total: list.length, items: list }),
+        { status: 200 }
+      );
     }
 
     const hideMatch = url.match(/\/api\/v1\/admin\/moderation\/stories\/(\d+)\/hide$/);
