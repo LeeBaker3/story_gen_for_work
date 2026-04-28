@@ -437,7 +437,7 @@ def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db),
 
 # --- Admin Content Moderation ---
 
-@admin_router.get("/moderation/stories", response_model=List[schemas.Story])
+@admin_router.get("/moderation/stories", response_model=None)
 def admin_list_stories(
     page: int = 1,
     page_size: int = 20,
@@ -448,7 +448,7 @@ def admin_list_stories(
     include_hidden: bool = False,
     include_deleted: bool = False,
     db: Session = Depends(get_db)
-):
+) -> dict:
     total, items = crud.list_stories_admin(
         db,
         page=page,
@@ -474,8 +474,7 @@ def admin_list_stories(
         except Exception:
             # Non-fatal: leave value as-is
             pass
-    # For now return just items; a future enhancement can return a paginated envelope
-    return items
+    return {"total": total, "items": items}
 
 
 class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema

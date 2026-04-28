@@ -89,7 +89,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             if char_details and char_details.get('reference_image_path'):
                 character_details_map[character_input.name] = char_details
 
-        app_logger.info(
+        app_logger.debug(
             f"Completed character image generation for task_id: {task_id}. Details: {character_details_map}")
 
         # Upsert generated/merged character details into user's library for reuse

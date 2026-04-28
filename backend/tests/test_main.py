@@ -196,3 +196,43 @@ def test_secure_secret_key_guard_allows_testing(monkeypatch):
     monkeypatch.setenv("TESTING", "true")
 
     main_module._assert_secure_secret_key()
+
+
+def test_create_story_draft_endpoint_hides_internal_exception_details(
+    client,
+    mock_normal_user,
+    monkeypatch,
+):
+    """Test that draft creation returns a safe 500 message on unexpected errors."""
+
+    def raise_internal_error(*args, **kwargs):
+        raise Exception("internal db error")
+
+    app.dependency_overrides[auth.get_current_active_user] = (
+        lambda: mock_normal_user
+    )
+    app.dependency_overrides[main_module.get_db] = lambda: None
+    monkeypatch.setattr(
+        main_module.crud,
+        "create_story_draft",
+        raise_internal_error,
+    )
+
+    try:
+        response = client.post(
+            "/stories/drafts/",
+            json={
+                "title": "Broken Draft",
+                "genre": "Sci-Fi",
+                "story_outline": "A short outline",
+                "main_characters": [],
+                "num_pages": 1,
+            },
+        )
+    finally:
+        del app.dependency_overrides[auth.get_current_active_user]
+        del app.dependency_overrides[main_module.get_db]
+
+    assert response.status_code == 500
+    assert "internal db error" not in response.json()["detail"]
+    assert response.json()["detail"] == "Failed to create story draft."

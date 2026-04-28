@@ -570,7 +570,7 @@ Output Requirements:
 
     response_text = None
     try:
-        app_logger.info(
+        app_logger.debug(
             f"Sending request to ChatGPT API with prompt: {prompt[:200]}...")
         primary_path = "responses" if _use_openai_responses_api() else "chat_completions"
         fallback_enabled = bool(

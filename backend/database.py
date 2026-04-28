@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum, text  # Added Boolean and text
+from sqlalchemy import CheckConstraint, create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum, text  # Added Boolean and text
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
@@ -70,7 +70,7 @@ class Story(Base):
         # Align default with schemas.TextDensity.CONCISE.value
         default="Concise (~30-50 words)",
     )
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     # Represents draft creation or story generation time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
@@ -92,7 +92,7 @@ class Story(Base):
 class Page(Base):
     __tablename__ = "pages"
     id = Column(Integer, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey("stories.id"))
+    story_id = Column(Integer, ForeignKey("stories.id"), index=True)
     page_number = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     image_description = Column(Text, nullable=True)  # Prompt for DALL-E
@@ -145,11 +145,17 @@ class DynamicListItem(Base):
 
 class StoryGenerationTask(Base):
     __tablename__ = 'story_generation_tasks'
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'completed', 'failed')",
+            name="ck_story_generation_task_status",
+        ),
+    )
 
     id = Column(String, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    status = Column(String, nullable=False, default='PENDING')
+    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    status = Column(String, nullable=False, default='pending', index=True)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)

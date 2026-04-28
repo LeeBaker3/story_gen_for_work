@@ -228,7 +228,10 @@ async def backfill_characters_for_user(
             exc,
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred.",
+        ) from exc
 
 
 @app.post("/stories/drafts/", response_model=schemas.Story)
@@ -265,7 +268,7 @@ async def create_story_draft_endpoint(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not create story draft: {exc}",
+            detail="Failed to create story draft.",
         ) from exc
 
 
@@ -337,7 +340,7 @@ async def update_story_draft_endpoint(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not update story draft: {exc}",
+            detail="Failed to update story draft.",
         ) from exc
 
 

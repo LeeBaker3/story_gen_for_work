@@ -12,6 +12,13 @@ import uuid  # Import uuid for generating task IDs
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+_FIELD_ENUM_MAP: Dict[str, type] = {
+    "image_style": schemas.ImageStyle,
+    "word_to_picture_ratio": schemas.WordToPictureRatio,
+    "text_density": schemas.TextDensity,
+}
+
 def get_story_editor_settings(story: Story) -> Dict[str, Any]:
     """Return normalized document editor settings for a story."""
 
@@ -234,28 +241,15 @@ def update_story_draft(db: Session, story_id: int, story_update_data: schemas.St
     for key, value in update_data.items():
         if key == "main_characters":
             setattr(db_story_draft, key, jsonable_encoder(value))
-        elif hasattr(schemas, key.replace("_", " ").title().replace(" ", "")):  # Handle Enum types
-            # Attempt to get the Enum class dynamically
-            enum_class_name = key.replace("_", " ").title().replace(" ", "")
-            if enum_class_name == "ImageStyle":
-                enum_cls = schemas.ImageStyle
-            elif enum_class_name == "WordToPictureRatio":
-                enum_cls = schemas.WordToPictureRatio
-            elif enum_class_name == "TextDensity":
-                enum_cls = schemas.TextDensity
-            else:
-                enum_cls = None
-
+        else:
+            enum_cls = _FIELD_ENUM_MAP.get(key)
             if enum_cls and isinstance(value, str):
                 # Store the .value for enums
                 setattr(db_story_draft, key, enum_cls(value).value)
             elif enum_cls and isinstance(value, enum_cls):
                 setattr(db_story_draft, key, value.value)
             else:
-                # Fallback for other types or if enum not found
                 setattr(db_story_draft, key, value)
-        else:
-            setattr(db_story_draft, key, value)
 
     db.commit()
     db.refresh(db_story_draft)
