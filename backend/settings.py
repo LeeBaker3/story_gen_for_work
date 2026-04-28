@@ -79,8 +79,8 @@ class BaseSettings:
 
         # OpenAI / models
         self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
-        self.text_model: str = os.getenv("TEXT_MODEL", "gpt-5-mini")
-        self.image_model: str = os.getenv("IMAGE_MODEL", "gpt-image-1.5")
+        self.text_model: str = os.getenv("TEXT_MODEL", "gpt-5.4-mini")
+        self.image_model: str = os.getenv("IMAGE_MODEL", "gpt-image-2")
 
         # Retry / backoff
         self.retry_max_attempts: int = int(
