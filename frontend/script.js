@@ -1614,6 +1614,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 page.__original = JSON.parse(JSON.stringify(page));
             });
             currentStoryId = updatedStory.id;
+            renderStoryEditor();
             if (statusEl) statusEl.textContent = `Saved ${new Date().toLocaleTimeString()}`;
             if (toast) displayMessage("Story changes saved.", "success");
         } catch (error) {
