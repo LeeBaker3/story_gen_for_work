@@ -1731,8 +1731,8 @@ document.addEventListener("DOMContentLoaded", function () {
         ).join("");
         return `
             <div style="display:flex;gap:0.5rem;align-items:center;">
-                <select id="${idPrefix}-v" class="story-editor-select" style="flex:1" ${pageAttr ? `data-page-field="text_position_v"${pageAttr}` : ""}>${verticalOptions}</select>
-                <select id="${idPrefix}-h" class="story-editor-select" style="flex:1" ${pageAttr ? `data-page-field="text_position_h"${pageAttr}` : ""}>${horizontalOptions}</select>
+                <select id="${idPrefix}-v" class="story-editor-select" style="flex:1;min-width:0" ${pageAttr ? `data-page-field="text_position_v"${pageAttr}` : ""}>${verticalOptions}</select>
+                <select id="${idPrefix}-h" class="story-editor-select" style="flex:1;min-width:0" ${pageAttr ? `data-page-field="text_position_h"${pageAttr}` : ""}>${horizontalOptions}</select>
             </div>
         `;
     }
