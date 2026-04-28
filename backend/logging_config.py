@@ -200,6 +200,7 @@ except Exception as e:
 app_logger = logging.getLogger("story_generator_app")
 api_logger = logging.getLogger("story_generator_api")
 error_logger = logging.getLogger("story_generator_error")
+warning_logger = app_logger
 
 
 def reload_logging_config(path: Optional[str] = None):

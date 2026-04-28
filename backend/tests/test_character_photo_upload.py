@@ -157,3 +157,40 @@ def test_generate_from_photo_creates_public_reference_image(
     ref_paths = called[-1][1]
     assert ref_paths and os.path.isabs(ref_paths[0])
     assert ref_paths[0].startswith(private_dir)
+
+
+def test_generate_from_photo_keeps_output_inside_character_directory_for_traversal_name(
+    monkeypatch, tmp_path, client, db_session, regular_user_auth_headers
+):
+    data_dir, _ = _reset_settings(monkeypatch, tmp_path)
+
+    resp = client.post(
+        "/api/v1/characters/",
+        json={"name": "../../cover_story_9999", "generate_image": False},
+        headers=regular_user_auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    char_id = int(resp.json()["id"])
+
+    upload_resp = client.post(
+        f"/api/v1/characters/{char_id}/photo",
+        files={"photo": ("photo.png", b"abc123", "image/png")},
+        headers=regular_user_auth_headers,
+    )
+    assert upload_resp.status_code == 200, upload_resp.text
+
+    monkeypatch.setattr(ai_services, "generate_image", lambda *args, **kwargs: b"fakepngbytes")
+
+    generate_resp = client.post(
+        f"/api/v1/characters/{char_id}/generate-from-photo",
+        json={"description": "A brave knight", "image_style": "Default"},
+        headers=regular_user_auth_headers,
+    )
+    assert generate_resp.status_code == 200, generate_resp.text
+
+    user_id = _get_regular_user_id(db_session)
+    file_path = generate_resp.json()["current_image"]["file_path"]
+    expected_prefix = f"images/user_{user_id}/characters/{char_id}/"
+    assert file_path.startswith(expected_prefix)
+    assert ".." not in file_path
+    assert os.path.exists(os.path.join(data_dir, file_path))

@@ -8,7 +8,6 @@ from typing import List, Dict, Any, Optional
 import base64
 import uuid
 import sys
-import logging
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from sqlalchemy.orm import Session
 import asyncio
@@ -16,7 +15,7 @@ import io
 import time
 
 # Import loggers
-from .logging_config import api_logger, error_logger, app_logger
+from .logging_config import api_logger, error_logger, app_logger, warning_logger
 from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
@@ -119,11 +118,6 @@ EXPECTED_PAGE_KEYS = ["Page_number", "Text",
                       "Image_description", "Characters_in_scene"]
 
 OPENAI_CLIENT = None
-
-# Initialize logging
-logger = logging.getLogger(__name__)
-error_logger = logging.getLogger('error_logger')
-warning_logger = logging.getLogger('warning_logger')
 
 TEXT_MODEL = getattr(_settings, "text_model", "gpt-5-mini")
 IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1.5")

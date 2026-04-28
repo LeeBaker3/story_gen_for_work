@@ -7,6 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
 from backend import auth, crud, database, schemas
@@ -22,6 +24,7 @@ from backend.metrics import (
 )
 from backend.monitoring_router import monitoring_router
 from backend.public_router import public_router
+from backend.rate_limiting import limiter
 from backend.settings import get_settings
 
 
@@ -82,6 +85,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

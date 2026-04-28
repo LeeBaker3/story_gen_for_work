@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status, Body
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -6,15 +6,20 @@ from typing import List, Optional
 import asyncio
 import io
 import os
+import shutil
 from datetime import timedelta
 
 from backend import crud, schemas, auth, database, pdf_generator, ai_services
 from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
+from backend.rate_limiting import limiter
+from backend.settings import get_settings
 from backend.story_generation_service import generate_story_as_background_task
+from backend import storage_paths
 from backend.storage_paths import page_image_paths
 
 public_router = APIRouter()
+settings = get_settings()
 
 VALID_TEXT_POSITIONS = {"top", "bottom", "left", "right", "center"}
 
@@ -164,7 +169,14 @@ async def register_user(
 
 
 @public_router.post("/token", response_model=schemas.Token, tags=["authentication"])
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit(settings.login_rate_limit)
+async def login_for_access_token(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """Authenticate a user and return an access token."""
+
     user = auth.authenticate_user(db, form_data.username, form_data.password)
 
     if not user:
@@ -455,12 +467,6 @@ async def delete_story(
             detail="Not authorized to delete this story",
         )
 
-    story_image_folder_on_disk = os.path.join(
-        "data", "images", f"user_{current_user.id}", f"story_{story_id}")
-    if os.path.exists(story_image_folder_on_disk):
-        app_logger.info(
-            f"Image folder found for story {story_id}: {story_image_folder_on_disk}. Deferring physical file deletion.")
-
     deleted_successfully = crud.delete_story_db_entry(db=db, story_id=story_id)
     if not deleted_successfully:
         error_logger.error(
@@ -468,6 +474,17 @@ async def delete_story(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not delete story from database.",
+        )
+
+    story_image_dir = storage_paths.story_images_abs(current_user.id, story_id)
+    try:
+        if os.path.isdir(story_image_dir):
+            shutil.rmtree(story_image_dir)
+    except OSError as exc:
+        app_logger.warning(
+            "Could not delete story images for story %s: %s",
+            story_id,
+            exc,
         )
 
     app_logger.info(

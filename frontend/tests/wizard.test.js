@@ -265,6 +265,30 @@ describe('wizard navigation', () => {
         };
       }
       return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+
+    test('review step escapes user-controlled values before using innerHTML', async () => {
+      document.getElementById('story-title').value = '<img src=x data-review-xss="title">';
+      document.getElementById('story-outline').value = '<svg data-review-xss="outline"></svg>';
+      document.querySelector('.char-name').value = '<b data-review-xss="character">Alice</b>';
+      document.getElementById('story-default-text-position').value = 'top"><img data-review-xss="position">';
+
+      const next = document.getElementById('wizard-next');
+      fireEvent.click(next);
+      fireEvent.click(next);
+      const textPositionSelect = document.getElementById('story-default-text-position');
+      textPositionSelect.innerHTML += '<option value="top\"><img data-review-xss=&quot;position&quot;>">Injected</option>';
+      textPositionSelect.value = 'top"><img data-review-xss="position">';
+      fireEvent.click(next);
+
+      const review = document.getElementById('review-container');
+      expect(review.querySelector('[data-review-xss="title"]')).toBeNull();
+      expect(review.querySelector('[data-review-xss="outline"]')).toBeNull();
+      expect(review.querySelector('[data-review-xss="character"]')).toBeNull();
+      expect(review.querySelector('[data-review-xss="position"]')).toBeNull();
+      expect(review.textContent).toContain('<img src=x data-review-xss="title">');
+      expect(review.textContent).toContain('<svg data-review-xss="outline"></svg>');
+      expect(review.textContent).toContain('<b data-review-xss="character">Alice</b>');
+    });
     });
 
     fireEvent.click(document.getElementById('generate-story-button'));

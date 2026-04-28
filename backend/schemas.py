@@ -323,7 +323,7 @@ class StoryGenerationTaskBase(BaseModel):
     story_id: int
     status: GenerationTaskStatus = GenerationTaskStatus.PENDING
     current_step: GenerationTaskStep = GenerationTaskStep.INITIALIZING
-    retry_attempts: int = 0
+    attempts: int = 0
     last_error: Optional[str] = None
 
 
@@ -337,8 +337,6 @@ class StoryGenerationTask(StoryGenerationTaskBase):
     progress: int = 0
     created_at: datetime
     updated_at: datetime
-    # New extended tracking fields
-    attempts: int = 0
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_ms: Optional[int] = None

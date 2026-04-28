@@ -24,6 +24,21 @@ sys.path.insert(0, str(project_root))
 os.environ.setdefault("TESTING", "true")
 
 
+@pytest.fixture(scope="function", autouse=True)
+def reset_rate_limiter_state() -> Generator[None, None, None]:
+    """Clear in-memory rate-limit state between tests when available."""
+
+    limiter = getattr(app.state, "limiter", None)
+    storage = getattr(limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+
+    yield
+
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+
+
 # Use an in-memory SQLite database for testing, shared across connections
 SQLALCHEMY_DATABASE_URL = "sqlite:///file:testdb?mode=memory&cache=shared&uri=true"
 

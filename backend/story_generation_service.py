@@ -116,8 +116,10 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         story_content_input['main_characters'] = list(
             character_details_map.values())
 
-        story_content = ai_services.generate_story_from_chatgpt(
-            story_content_input)
+        story_content = await asyncio.to_thread(
+            ai_services.generate_story_from_chatgpt,
+            story_content_input,
+        )
         # Some tests may mock this as an async function; await if coroutine
         if asyncio.iscoroutine(story_content):
             story_content = await story_content
@@ -272,13 +274,39 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
     except Exception as e:
         error_logger.error(
             f"Error during background story generation for task_id {task_id}: {e}", exc_info=True)
-        crud.update_story_generation_task(
-            db,
-            task_id,
-            status=schemas.GenerationTaskStatus.FAILED,
-            error_message=_format_task_error_message(e),
-            current_step=schemas.GenerationTaskStep.FINALIZING,
-        )
+        try:
+            db.rollback()
+        except Exception:
+            error_logger.warning(
+                "Rollback failed while handling story generation failure for "
+                "task_id %s",
+                task_id,
+                exc_info=True,
+            )
+
+        error_message = _format_task_error_message(e)
+
+        try:
+            crud.update_story_generation_task(
+                db,
+                task_id,
+                status=schemas.GenerationTaskStatus.FAILED,
+                error_message=error_message,
+                current_step=schemas.GenerationTaskStep.FINALIZING,
+            )
+
+            failed_story = crud.get_story(db, story_id, user_id)
+            if failed_story is not None:
+                failed_story.is_draft = True
+                if hasattr(failed_story, 'generated_at'):
+                    failed_story.generated_at = None
+                db.commit()
+        except Exception:
+            error_logger.error(
+                "Failed to persist failure cleanup for task_id %s",
+                task_id,
+                exc_info=True,
+            )
 
         observe_story_generation(
             status="failed",
@@ -286,3 +314,6 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         )
     finally:
         db.close()
+
+
+run_story_generation = generate_story_as_background_task

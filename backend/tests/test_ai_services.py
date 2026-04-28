@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock, call
 import pytest
 import requests
 from backend import ai_services
+from backend import logging_config
 
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
@@ -57,6 +58,13 @@ def test_should_retry_openai_error_retries_transport_failures():
     assert ai_services._should_retry_openai_error(
         requests.exceptions.ConnectionError("network")
     ) is True
+
+
+def test_ai_services_uses_configured_loggers():
+    """ai_services should keep the configured logger instances from logging_config."""
+
+    assert ai_services.error_logger is logging_config.error_logger
+    assert ai_services.warning_logger is logging_config.warning_logger
 
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)

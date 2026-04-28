@@ -1,6 +1,8 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from backend import settings as settings_mod, storage_paths
 from backend.database import DynamicList, DynamicListItem, Story, User
 from unittest.mock import AsyncMock, patch
 
@@ -94,6 +96,30 @@ def test_register_user_forces_user_role(
     assert created_user.role == "user"
 
 
+def test_login_endpoint_rate_limits_by_ip(client: TestClient):
+    """The login endpoint should throttle repeated attempts from one IP."""
+
+    for _ in range(10):
+        response = client.post(
+            "/api/v1/token",
+            data={
+                "username": "user@example.com",
+                "password": "wrong-password",
+            },
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/api/v1/token",
+        data={
+            "username": "user@example.com",
+            "password": "wrong-password",
+        },
+    )
+
+    assert response.status_code == 429
+
+
 def test_delete_story_via_api_prefix(
     client: TestClient,
     db_session: Session,
@@ -124,6 +150,50 @@ def test_delete_story_via_api_prefix(
 
     assert response.status_code == 204
     assert db_session.query(Story).filter(Story.id == story.id).first() is None
+
+
+def test_delete_story_via_api_prefix_removes_story_images(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+    monkeypatch,
+    tmp_path,
+):
+    """Deleting a story should remove its generated image directory."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    settings_mod._settings_instance = None
+    settings_mod.get_settings()
+
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com").first()
+    assert owner is not None
+
+    story = Story(
+        title="Delete Images Too",
+        story_outline="A story with generated assets.",
+        genre="fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    story_dir = storage_paths.story_images_abs(owner.id, story.id)
+    os.makedirs(story_dir, exist_ok=True)
+    with open(os.path.join(story_dir, "page_1.png"), "wb") as image_file:
+        image_file.write(b"image-bytes")
+
+    response = client.delete(
+        f"/api/v1/stories/{story.id}",
+        headers=regular_user_auth_headers,
+    )
+
+    assert response.status_code == 204
+    assert db_session.query(Story).filter(Story.id == story.id).first() is None
+    assert not os.path.exists(story_dir)
 
 
 def test_save_story_editor_via_api_prefix(

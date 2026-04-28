@@ -1117,14 +1117,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const characters = data.main_characters?.map(c => c.name).filter(Boolean) || [];
         const reusedCount = Array.isArray(data.character_ids) ? data.character_ids.length : 0;
         s.innerHTML = `
-            <p><strong>Title:</strong> ${data.title || '(AI will generate)'}</p>
-            <p><strong>Genre:</strong> ${data.genre || '(not set)'}</p>
-            <p><strong>Outline:</strong> ${data.story_outline || '(empty)'}</p>
-            <p><strong>Characters:</strong> ${characters.length ? characters.join(', ') : '(none)'}</p>
+            <p><strong>Title:</strong> ${escapeHTML(data.title || '(AI will generate)')}</p>
+            <p><strong>Genre:</strong> ${escapeHTML(data.genre || '(not set)')}</p>
+            <p><strong>Outline:</strong> ${escapeHTML(data.story_outline || '(empty)')}</p>
+            <p><strong>Characters:</strong> ${escapeHTML(characters.length ? characters.join(', ') : '(none)')}</p>
             <p><strong>Reused characters:</strong> ${reusedCount}</p>
-            <p><strong>Pages:</strong> ${data.num_pages || '(not set)'} | <strong>Style:</strong> ${data.image_style || '(not set)'}</p>
-            <p><strong>Ratio:</strong> ${data.word_to_picture_ratio || '(not set)'} | <strong>Density:</strong> ${data.text_density || '(not set)'}</p>
-            <p><strong>Layout:</strong> ${editorSettings.text_position || 'bottom'} text | <strong>Font:</strong> ${editorSettings.font_family || 'storybook'} ${editorSettings.font_size || 28}px | <strong>Colour:</strong> ${editorSettings.font_color || '#ffffff'} | <strong>Text box opacity:</strong> ${editorSettings.text_box_opacity ?? 0.6}</p>
+            <p><strong>Pages:</strong> ${escapeHTML(data.num_pages || '(not set)')} | <strong>Style:</strong> ${escapeHTML(data.image_style || '(not set)')}</p>
+            <p><strong>Ratio:</strong> ${escapeHTML(data.word_to_picture_ratio || '(not set)')} | <strong>Density:</strong> ${escapeHTML(data.text_density || '(not set)')}</p>
+            <p><strong>Layout:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')} text | <strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
         `;
         review.appendChild(s);
     }
