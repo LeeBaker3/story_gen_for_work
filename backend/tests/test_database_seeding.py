@@ -67,7 +67,7 @@ def test_seed_database_on_empty_db(db_session: Session):
 
     assert genres_count > 5
     assert image_styles_count > 5
-    assert text_positions_count == 5
+    assert text_positions_count == 9
     assert font_families_count >= 6
     assert db_session.query(DynamicList).count() >= 4
 

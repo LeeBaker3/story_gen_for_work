@@ -645,10 +645,12 @@ button.action-button-danger:hover,
 
 .story-editor-page-stage {
     position: relative;
-    min-height: 520px;
+    width: 100%;
+    aspect-ratio: 612 / 792;
     border-radius: 12px;
     overflow: hidden;
     display: flex;
+    flex-direction: column;
     padding: 1rem;
     background: linear-gradient(180deg, #253047, #1b2333);
 }

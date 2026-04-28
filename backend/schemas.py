@@ -97,7 +97,7 @@ EDITOR_DEFAULTS: Dict[str, Any] = {
     "font_family": "storybook",
     "font_size": 28,
     "font_color": "#ffffff",
-    "text_position": "bottom",
+    "text_position": "bottom-center",
     "text_box_opacity": 0.6,
 }
 

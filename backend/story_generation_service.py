@@ -15,16 +15,31 @@ from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
 def _text_position_guidance(text_position: str) -> str:
     """Return prompt guidance to leave readable space for overlaid text."""
 
-    normalized = str(text_position or "bottom").strip().lower()
-    if normalized not in {"top", "bottom", "left", "right", "center"}:
-        normalized = "bottom"
-    if normalized == "center":
+    old_map = {
+        "top": "top-center",
+        "bottom": "bottom-center",
+        "left": "middle-left",
+        "right": "middle-right",
+        "center": "middle-center",
+    }
+    normalized = str(text_position or "bottom-center").strip().lower()
+    normalized = old_map.get(normalized, normalized)
+    parts = normalized.split("-", 1)
+    vertical = parts[0] if len(parts) >= 1 else "bottom"
+    horizontal = parts[1] if len(parts) == 2 else "center"
+    if vertical not in {"top", "middle", "bottom"}:
+        vertical = "bottom"
+    if horizontal not in {"left", "center", "right"}:
+        horizontal = "center"
+
+    if vertical == "middle" and horizontal == "center":
         return (
             "Keep the central area visually calm and uncluttered so story text "
             "can be placed there clearly."
         )
+    area = f"{vertical} {horizontal}" if horizontal != "center" else vertical
     return (
-        f"Leave clear, readable visual space in the {normalized} area of the "
+        f"Leave clear, readable visual space in the {area} area of the "
         "composition for overlaid story text."
     )
 

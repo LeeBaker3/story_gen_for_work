@@ -190,10 +190,15 @@
                         </select>
                     </div>
                     <div>
-                        <label for="story-default-text-position">Default Text Placement:</label>
-                        <select id="story-default-text-position" name="default_text_position">
-                            <!-- Options will be populated dynamically -->
-                        </select>
+                            <label>Default Text Placement:</label>
+                            <div style="display:flex; gap:0.5rem; align-items:center;">
+                                <select id="story-default-text-position-v" name="default_text_position_v" aria-label="Vertical text placement">
+                                    <!-- Populated by JS -->
+                                </select>
+                                <select id="story-default-text-position-h" name="default_text_position_h" aria-label="Horizontal text placement">
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
                     </div>
                     <div>
                         <label for="story-default-font-family">Default Font Family:</label>

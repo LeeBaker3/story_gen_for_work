@@ -15,7 +15,19 @@ from .schemas import EDITOR_DEFAULTS
 PAGE_SIZE = letter
 PAGE_WIDTH, PAGE_HEIGHT = PAGE_SIZE
 PAGE_MARGIN = 36
-VALID_TEXT_POSITIONS = {"top", "bottom", "left", "right", "center"}
+_OLD_POSITION_MAP = {
+    "top": "top-center",
+    "bottom": "bottom-center",
+    "left": "middle-left",
+    "right": "middle-right",
+    "center": "middle-center",
+}
+VALID_TEXT_POSITIONS = {
+    "top-left", "top-center", "top-right",
+    "middle-left", "middle-center", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right",
+    "top", "bottom", "left", "right", "center",
+}
 FONT_FAMILY_MAP = {
     "storybook": "Helvetica-Bold",
     "classic": "Times-Roman",
@@ -91,32 +103,49 @@ def _resolve_image_path(image_path: str) -> str:
 
 
 def _text_box_geometry(text_position: str) -> Tuple[float, float, float, float]:
-    """Return x, y, width, height for the page overlay text box."""
+    """Return x, y, width, height for the page overlay text box.
 
-    position = str(text_position or "bottom").strip().lower()
-    if position not in VALID_TEXT_POSITIONS:
-        position = "bottom"
+    Accepts 9-position grid values (v-h format) or legacy 5-value format.
+    Legacy values are mapped: top→top-center, bottom→bottom-center,
+    left→middle-left, right→middle-right, center→middle-center.
+    """
 
-    if position == "top":
-        width = PAGE_WIDTH - (2 * PAGE_MARGIN)
-        height = PAGE_HEIGHT * 0.22
-        return PAGE_MARGIN, PAGE_HEIGHT - PAGE_MARGIN - height, width, height
-    if position == "left":
-        width = PAGE_WIDTH * 0.42
-        height = PAGE_HEIGHT - (2 * PAGE_MARGIN)
-        return PAGE_MARGIN, PAGE_MARGIN, width, height
-    if position == "right":
-        width = PAGE_WIDTH * 0.42
-        height = PAGE_HEIGHT - (2 * PAGE_MARGIN)
-        return PAGE_WIDTH - PAGE_MARGIN - width, PAGE_MARGIN, width, height
-    if position == "center":
-        width = PAGE_WIDTH * 0.62
-        height = PAGE_HEIGHT * 0.34
-        return (PAGE_WIDTH - width) / 2.0, (PAGE_HEIGHT - height) / 2.0, width, height
+    position = str(text_position or "bottom-center").strip().lower()
+    position = _OLD_POSITION_MAP.get(position, position)
 
-    width = PAGE_WIDTH - (2 * PAGE_MARGIN)
-    height = PAGE_HEIGHT * 0.22
-    return PAGE_MARGIN, PAGE_MARGIN, width, height
+    parts = position.split("-", 1)
+    vertical = parts[0] if len(parts) >= 1 else "bottom"
+    horizontal = parts[1] if len(parts) == 2 else "center"
+
+    if vertical not in {"top", "middle", "bottom"}:
+        vertical = "bottom"
+    if horizontal not in {"left", "center", "right"}:
+        horizontal = "center"
+
+    if vertical == "top":
+        box_height = PAGE_HEIGHT * 0.22
+        box_y = PAGE_HEIGHT - PAGE_MARGIN - box_height
+    elif vertical == "middle":
+        box_height = PAGE_HEIGHT * 0.34
+        box_y = (PAGE_HEIGHT - box_height) / 2.0
+    else:
+        box_height = PAGE_HEIGHT * 0.22
+        box_y = PAGE_MARGIN
+
+    if horizontal == "left":
+        box_width = PAGE_WIDTH * 0.48
+        box_x = PAGE_MARGIN
+    elif horizontal == "right":
+        box_width = PAGE_WIDTH * 0.48
+        box_x = PAGE_WIDTH - PAGE_MARGIN - box_width
+    else:
+        if vertical == "middle":
+            box_width = PAGE_WIDTH * 0.65
+        else:
+            box_width = PAGE_WIDTH - (2 * PAGE_MARGIN)
+        box_x = (PAGE_WIDTH - box_width) / 2.0
+
+    return box_x, box_y, box_width, box_height
 
 
 def _draw_full_page_image(pdf: canvas.Canvas, full_image_path: str) -> None:

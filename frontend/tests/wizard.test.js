@@ -45,7 +45,8 @@ function mountWizardDom() {
             <select id="story-image-style"><option value="">Select...</option><option value="Cartoon">Cartoon</option></select>
             <select id="story-word-to-picture-ratio"><option value="">Select...</option><option value="One image per page">One image per page</option></select>
             <select id="story-text-density"><option value="">Select...</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
-            <select id="story-default-text-position"><option value="">Select...</option></select>
+            <select id="story-default-text-position-v"></select>
+            <select id="story-default-text-position-h"></select>
             <select id="story-default-font-family"><option value="">Select...</option></select>
             <input id="story-default-font-size" type="number" value="28" />
             <input id="story-default-font-color" type="color" value="#ffffff" />
@@ -113,14 +114,18 @@ describe('wizard navigation', () => {
     const imgStyleSel = document.getElementById('story-image-style');
     const ratioSel = document.getElementById('story-word-to-picture-ratio');
     const densitySel = document.getElementById('story-text-density');
-    const textPositionSel = document.getElementById('story-default-text-position');
+    const textPositionVSel = document.getElementById('story-default-text-position-v');
+    const textPositionHSel = document.getElementById('story-default-text-position-h');
     const fontFamilySel = document.getElementById('story-default-font-family');
     if (genreSel) genreSel.innerHTML += '<option value="Fantasy">Fantasy</option>';
     if (imgStyleSel) imgStyleSel.innerHTML += '<option value="Cartoon">Cartoon</option>';
     if (ratioSel) ratioSel.innerHTML += '<option value="One image per page">One image per page</option>';
     if (densitySel) densitySel.innerHTML += '<option value="Concise (~30-50 words)">Concise (~30-50 words)</option>';
-    if (textPositionSel && !textPositionSel.querySelector('option[value="top"]')) {
-      textPositionSel.innerHTML += '<option value="top">Top</option><option value="bottom">Bottom</option>';
+    if (textPositionVSel && !textPositionVSel.querySelector('option[value="top"]')) {
+      textPositionVSel.innerHTML += '<option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option>';
+    }
+    if (textPositionHSel && !textPositionHSel.querySelector('option[value="left"]')) {
+      textPositionHSel.innerHTML += '<option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option>';
     }
     if (fontFamilySel && !fontFamilySel.querySelector('option[value="classic"]')) {
       fontFamilySel.innerHTML += '<option value="storybook">Storybook</option><option value="classic">Classic</option>';
@@ -133,12 +138,15 @@ describe('wizard navigation', () => {
     document.getElementById('story-text-density').value = 'Concise (~30-50 words)';
   });
 
-  test('layout dropdowns load from dynamic lists', () => {
-    const textPositionSel = document.getElementById('story-default-text-position');
+  test('layout dropdowns load with split text position defaults', () => {
+    const textPositionVSel = document.getElementById('story-default-text-position-v');
+    const textPositionHSel = document.getElementById('story-default-text-position-h');
     const fontFamilySel = document.getElementById('story-default-font-family');
 
-    expect(textPositionSel.querySelector('option[value="top"]')).not.toBeNull();
-    expect(textPositionSel.value).toBe('bottom');
+    expect(textPositionVSel.querySelector('option[value="top"]')).not.toBeNull();
+    expect(textPositionHSel.querySelector('option[value="center"]')).not.toBeNull();
+    expect(textPositionVSel.value).toBe('bottom');
+    expect(textPositionHSel.value).toBe('center');
     expect(fontFamilySel.querySelector('option[value="classic"]')).not.toBeNull();
     expect(fontFamilySel.value).toBe('storybook');
   });
@@ -213,7 +221,8 @@ describe('wizard navigation', () => {
   });
 
   test('generate request includes wizard editor settings', async () => {
-    document.getElementById('story-default-text-position').value = 'top';
+    document.getElementById('story-default-text-position-v').value = 'top';
+    document.getElementById('story-default-text-position-h').value = 'center';
     document.getElementById('story-default-font-family').value = 'classic';
     document.getElementById('story-default-font-size').value = '34';
     document.getElementById('story-default-font-color').value = '#112233';
@@ -300,7 +309,7 @@ describe('wizard navigation', () => {
     const [, requestOptions] = storyRequest;
     const payload = JSON.parse(requestOptions.body);
     expect(payload.editor_settings).toEqual({
-      text_position: 'top',
+      text_position: 'top-center',
       font_family: 'classic',
       font_size: 34,
       font_color: '#112233',

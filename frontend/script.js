@@ -79,7 +79,7 @@ document.addEventListener("DOMContentLoaded", function () {
         font_family: "storybook",
         font_size: 28,
         font_color: "#ffffff",
-        text_position: "bottom",
+            text_position: "bottom-center",
         text_box_opacity: 0.6,
     };
     const STORY_EDITOR_FONT_OPTIONS = [
@@ -90,7 +90,10 @@ document.addEventListener("DOMContentLoaded", function () {
         { value: "dyslexia-friendly", label: "Dyslexia-friendly" },
         { value: "large print", label: "Large print" },
     ];
-    const STORY_EDITOR_TEXT_POSITIONS = ["top", "bottom", "left", "right", "center"];
+    const STORY_EDITOR_TEXT_POSITIONS_V = ["top", "middle", "bottom"];
+    const STORY_EDITOR_TEXT_POSITIONS_H = ["left", "center", "right"];
+    const STORY_EDITOR_POSITION_LABELS_V = { top: "Top", middle: "Middle", bottom: "Bottom" };
+    const STORY_EDITOR_POSITION_LABELS_H = { left: "Left", center: "Centre", right: "Right" };
 
     // Content Areas
     const storyPreviewContent = document.getElementById("story-preview-content");
@@ -196,12 +199,29 @@ document.addEventListener("DOMContentLoaded", function () {
         populateDropdown("story-image-style", "image_styles");
         populateDropdown("story-word-to-picture-ratio", "word_to_picture_ratio");
         populateDropdown("story-text-density", "text_density");
-        populateDropdown("story-default-text-position", "text_positions").then(() => {
-            const select = document.getElementById("story-default-text-position");
-            if (select && !select.value) {
-                select.value = STORY_EDITOR_DEFAULTS.text_position;
-            }
-        });
+        // Populate wizard text position selects from static constants (V + H)
+        (function populateWizardTextPosition() {
+            const vSelect = document.getElementById("story-default-text-position-v");
+            const hSelect = document.getElementById("story-default-text-position-h");
+            if (!vSelect || !hSelect) return;
+            vSelect.innerHTML = "";
+            hSelect.innerHTML = "";
+            const { v: defaultV, h: defaultH } = parseTextPosition(STORY_EDITOR_DEFAULTS.text_position);
+            STORY_EDITOR_TEXT_POSITIONS_V.forEach((val) => {
+                const opt = document.createElement("option");
+                opt.value = val;
+                opt.textContent = STORY_EDITOR_POSITION_LABELS_V[val];
+                if (val === defaultV) opt.selected = true;
+                vSelect.appendChild(opt);
+            });
+            STORY_EDITOR_TEXT_POSITIONS_H.forEach((val) => {
+                const opt = document.createElement("option");
+                opt.value = val;
+                opt.textContent = STORY_EDITOR_POSITION_LABELS_H[val];
+                if (val === defaultH) opt.selected = true;
+                hSelect.appendChild(opt);
+            });
+        })();
         populateDropdown("story-default-font-family", "font_families").then(() => {
             const select = document.getElementById("story-default-font-family");
             if (select && !select.value) {
@@ -1462,27 +1482,46 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function getTextPositionStyle(position) {
-        switch (String(position || "bottom").toLowerCase()) {
-            case "top":
-                return { justifyContent: "flex-start", alignItems: "stretch" };
-            case "left":
-                return { justifyContent: "center", alignItems: "flex-start", width: "44%" };
-            case "right":
-                return { justifyContent: "center", alignItems: "flex-end", width: "44%", marginLeft: "auto" };
-            case "center":
-                return { justifyContent: "center", alignItems: "center", width: "62%", margin: "0 auto" };
-            default:
-                return { justifyContent: "flex-end", alignItems: "stretch" };
+        const oldMap = {
+            top: "top-center",
+            bottom: "bottom-center",
+            left: "middle-left",
+            right: "middle-right",
+            center: "middle-center",
+        };
+        const normalized = oldMap[String(position || "").toLowerCase()]
+            || String(position || "bottom-center").toLowerCase();
+        const parts = normalized.split("-");
+        const vertical = ["top", "middle", "bottom"].includes(parts[0]) ? parts[0] : "bottom";
+        const horizontal = ["left", "center", "right"].includes(parts[1]) ? parts[1] : "center";
+        const justifyContent = vertical === "top" ? "flex-start" : vertical === "middle" ? "center" : "flex-end";
+
+        let width;
+        let marginLeft;
+        let marginRight;
+        if (horizontal === "left") {
+            width = "55%";
+            marginLeft = "0";
+            marginRight = "auto";
+        } else if (horizontal === "right") {
+            width = "55%";
+            marginLeft = "auto";
+            marginRight = "0";
+        } else {
+            width = vertical === "middle" ? "70%" : "100%";
+            marginLeft = "auto";
+            marginRight = "auto";
         }
+
+        return { justifyContent, alignItems: "stretch", width, marginLeft, marginRight };
     }
 
     function applyEditorPreviewStyles(pageStage, textCard, settings) {
         const positionStyle = getTextPositionStyle(settings.text_position);
-        pageStage.style.justifyContent = positionStyle.justifyContent || "flex-end";
-        pageStage.style.alignItems = positionStyle.alignItems || "stretch";
-        textCard.style.width = positionStyle.width || "100%";
-        textCard.style.margin = positionStyle.margin || "0";
-        textCard.style.marginLeft = positionStyle.marginLeft || "0";
+        pageStage.style.justifyContent = positionStyle.justifyContent;
+        textCard.style.width = positionStyle.width;
+        textCard.style.marginLeft = positionStyle.marginLeft;
+        textCard.style.marginRight = positionStyle.marginRight;
         textCard.style.fontSize = `${Math.max(12, parseInt(settings.font_size, 10) || 28)}px`;
         textCard.style.color = settings.font_color || "#ffffff";
         const opacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
@@ -1626,11 +1665,49 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function createTextPositionOptions(selectedValue) {
-        return STORY_EDITOR_TEXT_POSITIONS.map((value) => {
+        return ["top", "bottom", "left", "right", "center"].map((value) => {
             const selected = value === selectedValue ? "selected" : "";
             const label = value.charAt(0).toUpperCase() + value.slice(1);
             return `<option value="${value}" ${selected}>${label}</option>`;
         }).join("");
+    }
+
+    function parseTextPosition(position) {
+        const oldMap = {
+            top: "top-center",
+            bottom: "bottom-center",
+            left: "middle-left",
+            right: "middle-right",
+            center: "middle-center",
+        };
+        const normalized = oldMap[String(position || "").toLowerCase()]
+            || String(position || "bottom-center").toLowerCase();
+        const parts = normalized.split("-");
+        return {
+            v: ["top", "middle", "bottom"].includes(parts[0]) ? parts[0] : "bottom",
+            h: ["left", "center", "right"].includes(parts[1]) ? parts[1] : "center",
+        };
+    }
+
+    function combineTextPosition(vertical, horizontal) {
+        return `${vertical || "bottom"}-${horizontal || "center"}`;
+    }
+
+    function createTextPositionSelects(currentPosition, idPrefix, pageId) {
+        const { v, h } = parseTextPosition(currentPosition);
+        const pageAttr = pageId != null ? ` data-page-id="${pageId}"` : "";
+        const verticalOptions = STORY_EDITOR_TEXT_POSITIONS_V.map((value) =>
+            `<option value="${value}" ${value === v ? "selected" : ""}>${STORY_EDITOR_POSITION_LABELS_V[value]}</option>`
+        ).join("");
+        const horizontalOptions = STORY_EDITOR_TEXT_POSITIONS_H.map((value) =>
+            `<option value="${value}" ${value === h ? "selected" : ""}>${STORY_EDITOR_POSITION_LABELS_H[value]}</option>`
+        ).join("");
+        return `
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <select id="${idPrefix}-v" class="story-editor-select" style="flex:1" ${pageAttr ? `data-page-field="text_position_v"${pageAttr}` : ""}>${verticalOptions}</select>
+                <select id="${idPrefix}-h" class="story-editor-select" style="flex:1" ${pageAttr ? `data-page-field="text_position_h"${pageAttr}` : ""}>${horizontalOptions}</select>
+            </div>
+        `;
     }
 
     function renderStoryEditor() {
@@ -1667,8 +1744,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     <input id="story-editor-font-size" class="story-editor-range" type="range" min="16" max="56" step="1" value="${Number(story.editor_settings.font_size || 28)}">
                     <label class="story-editor-field-label" for="story-editor-font-color">Font Colour</label>
                     <input id="story-editor-font-color" class="story-editor-color" type="color" value="${story.editor_settings.font_color || "#ffffff"}">
-                    <label class="story-editor-field-label" for="story-editor-text-position">Text Position</label>
-                    <select id="story-editor-text-position" class="story-editor-select">${createTextPositionOptions(story.editor_settings.text_position)}</select>
+                    <label class="story-editor-field-label">Text Position</label>
+                    ${createTextPositionSelects(story.editor_settings.text_position, "story-editor-text-position", null)}
                     <label class="story-editor-field-label" for="story-editor-text-opacity">Text Box Opacity</label>
                     <input id="story-editor-text-opacity" class="story-editor-range" type="range" min="0" max="1" step="0.05" value="${Number(story.editor_settings.text_box_opacity ?? 0.6)}">
                     <p class="story-editor-help">Defaults apply to all pages unless a page override is set.</p>
@@ -1690,12 +1767,23 @@ document.addEventListener("DOMContentLoaded", function () {
             ["#story-editor-font-family", "font_family", (value) => value],
             ["#story-editor-font-size", "font_size", (value) => parseInt(value, 10)],
             ["#story-editor-font-color", "font_color", (value) => value],
-            ["#story-editor-text-position", "text_position", (value) => value],
             ["#story-editor-text-opacity", "text_box_opacity", (value) => Number(value)],
         ].forEach(([selector, key, parser]) => {
             const input = shell.querySelector(selector);
             input.addEventListener("input", (event) => {
                 story.editor_settings[key] = parser(event.target.value);
+                renderStoryEditor();
+                scheduleStoryEditorAutosave();
+            });
+        });
+
+        ["story-editor-text-position-v", "story-editor-text-position-h"].forEach((id) => {
+            const element = shell.querySelector(`#${id}`);
+            if (!element) return;
+            element.addEventListener("input", () => {
+                const vertical = shell.querySelector("#story-editor-text-position-v")?.value || "bottom";
+                const horizontal = shell.querySelector("#story-editor-text-position-h")?.value || "center";
+                story.editor_settings.text_position = combineTextPosition(vertical, horizontal);
                 renderStoryEditor();
                 scheduleStoryEditorAutosave();
             });
@@ -1740,8 +1828,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             <textarea class="story-editor-textarea" data-page-field="text" data-page-id="${page.id}" rows="5">${escapeHTML(page.text || "")}</textarea>
                             <div class="story-editor-inline-grid">
                                 <div>
-                                    <label class="story-editor-field-label">Text Position</label>
-                                    <select class="story-editor-select" data-page-field="text_position" data-page-id="${page.id}">${createTextPositionOptions(page.editor_state.text_position || "")}</select>
+                                    <label class="story-editor-field-label">Text Position Override</label>
+                                    ${createTextPositionSelects(page.editor_state.text_position || pageSettings.text_position, "page-text-pos-" + page.id, page.id)}
                                 </div>
                                 <div>
                                     <label class="story-editor-field-label">Font Size Override</label>
@@ -1772,6 +1860,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (field === "text") {
                     page.text = event.target.value;
                     if (parseInt(page.page_number, 10) === 0) story.title = event.target.value;
+                } else if (field === "text_position_v" || field === "text_position_h") {
+                    const pageCard = event.target.closest(".story-editor-page-card");
+                    const verticalInput = pageCard?.querySelector(`[data-page-field="text_position_v"][data-page-id="${pageId}"]`);
+                    const horizontalInput = pageCard?.querySelector(`[data-page-field="text_position_h"][data-page-id="${pageId}"]`);
+                    const vertical = verticalInput?.value || "bottom";
+                    const horizontal = horizontalInput?.value || "center";
+                    page.editor_state.text_position = combineTextPosition(vertical, horizontal);
                 } else if (field === "font_size") {
                     page.editor_state[field] = event.target.value ? parseInt(event.target.value, 10) : null;
                 } else {
@@ -2489,7 +2584,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const ratioVal = document.getElementById("story-word-to-picture-ratio").value;
         const densityVal = document.getElementById("story-text-density").value;
         const imageStyleVal = document.getElementById("story-image-style").value;
-        const textPositionVal = document.getElementById("story-default-text-position")?.value || STORY_EDITOR_DEFAULTS.text_position;
+        const tpV = document.getElementById("story-default-text-position-v")?.value || "bottom";
+        const tpH = document.getElementById("story-default-text-position-h")?.value || "center";
+        const textPositionVal = combineTextPosition(tpV, tpH);
         const fontFamilyVal = document.getElementById("story-default-font-family")?.value || STORY_EDITOR_DEFAULTS.font_family;
         const fontSizeRaw = document.getElementById("story-default-font-size")?.value;
         const fontColorVal = document.getElementById("story-default-font-color")?.value || STORY_EDITOR_DEFAULTS.font_color;
@@ -2995,8 +3092,13 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("story-image-style").value =
             storyData.image_style || "Default";
         const editorSettings = storyData.editor_settings || STORY_EDITOR_DEFAULTS;
-        document.getElementById("story-default-text-position").value =
-            editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position;
+        const prefillPos = parseTextPosition(
+            editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position,
+        );
+        const prefillVEl = document.getElementById("story-default-text-position-v");
+        const prefillHEl = document.getElementById("story-default-text-position-h");
+        if (prefillVEl) prefillVEl.value = prefillPos.v;
+        if (prefillHEl) prefillHEl.value = prefillPos.h;
         document.getElementById("story-default-font-family").value =
             editorSettings.font_family || STORY_EDITOR_DEFAULTS.font_family;
         document.getElementById("story-default-font-size").value =

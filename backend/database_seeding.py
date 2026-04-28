@@ -98,9 +98,19 @@ def _seed_defaults_programmatically(db: Session):
         for i, d in enumerate(densities, start=1):
             ensure_item("text_density", d, d, i)
 
-        text_positions = ["top", "bottom", "left", "right", "center"]
-        for i, p in enumerate(text_positions, start=1):
-            ensure_item("text_positions", p, p.title(), i)
+        text_positions = [
+            ("top-left", "Top Left"),
+            ("top-center", "Top Centre"),
+            ("top-right", "Top Right"),
+            ("middle-left", "Middle Left"),
+            ("middle-center", "Middle Centre"),
+            ("middle-right", "Middle Right"),
+            ("bottom-left", "Bottom Left"),
+            ("bottom-center", "Bottom Centre"),
+            ("bottom-right", "Bottom Right"),
+        ]
+        for i, (value, label) in enumerate(text_positions, start=1):
+            ensure_item("text_positions", value, label, i)
 
         font_families = [
             ("storybook", "Storybook"),
