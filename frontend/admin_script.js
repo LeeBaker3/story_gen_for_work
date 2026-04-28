@@ -407,8 +407,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('moderation-table-container');
         container.innerHTML = '<p>Loading stories...</p>';
         try {
-            const items = await apiRequest(`/api/v1/admin/moderation/stories?${params.toString()}`, 'GET');
-            renderModerationTable(items);
+            const data = await apiRequest(`/api/v1/admin/moderation/stories?${params.toString()}`, 'GET');
+            renderModerationTable(data.items ?? []);
         } catch (err) {
             console.error('Failed to load stories:', err);
             container.innerHTML = '<p class="error-message">Failed to load stories.</p>';
