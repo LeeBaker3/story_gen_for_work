@@ -73,7 +73,7 @@ def test_seed_database_on_empty_db(db_session: Session):
 
 
 def test_seed_database_on_non_empty_db(db_session: Session):
-    """Test that seed_database does not run if the database is not empty."""
+    """Test that seed_database preserves existing rows and backfills defaults."""
     # Pre-populate the database
     db_session.add(DynamicList(list_name="existing_list",
                    list_label="Existing List"))
@@ -82,8 +82,13 @@ def test_seed_database_on_non_empty_db(db_session: Session):
     initial_count = db_session.query(DynamicList).count()
     assert initial_count == 1
 
-    # Run the seeder, which should do nothing
+    # Run the seeder, which should preserve existing rows and add defaults.
     seed_database(db=db_session)
 
-    # Verify no new data was added
-    assert db_session.query(DynamicList).count() == initial_count
+    # Verify the pre-existing list remains and default lists are backfilled.
+    assert db_session.query(DynamicList).count() > initial_count
+    assert db_session.query(DynamicList).filter_by(
+        list_name="existing_list"
+    ).count() == 1
+    assert db_session.query(DynamicList).filter_by(list_name="genres").count() == 1
+    assert db_session.query(DynamicListItem).filter_by(list_name="genres").count() > 0

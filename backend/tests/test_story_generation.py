@@ -145,6 +145,7 @@ def test_create_story_with_existing_title_fails(client, db_session_mock, story_c
 def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock, monkeypatch):
     """Ensure that when character_ids are provided, existing character data is merged with new main_characters without duplication and reference image paths are preserved."""
     mock_story_id = 42
+    mock_task_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
     existing_character_obj = MagicMock()
@@ -192,8 +193,23 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
             self.pages = []
 
     mock_story_db = FakeStory()
-    monkeypatch.setattr(crud, "create_story_db_entry",
-                        MagicMock(return_value=mock_story_db))
+    create_story_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "create_story_db_entry", create_story_entry)
+
+    monkeypatch.setattr(
+        crud,
+        "create_story_generation_task",
+        MagicMock(
+            return_value=schemas.StoryGenerationTask(
+                id=mock_task_id,
+                story_id=mock_story_id,
+                user_id=current_user_mock.id,
+                status=schemas.GenerationTaskStatus.PENDING,
+                created_at=now,
+                updated_at=now,
+            )
+        ),
+    )
 
     def _update_story_title(db, story_id, new_title):
         mock_story_db.title = new_title
@@ -207,22 +223,28 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
     filter_mock.all.return_value = [existing_character_obj]
     db_session_mock.query.return_value = filter_mock
 
-    # NOTE: The synchronous story creation with character merge logic lives at root /stories/ (not /api/v1) in main.py.
-    with patch("backend.ai_services.generate_story_from_chatgpt", return_value={"Title": "Merged Story Final", "Pages": []}):
+    with patch("backend.public_router.generate_story_as_background_task"):
         response = client.post(
-            "/stories/",
-            json={"story_input": incoming_payload},
+            "/api/v1/stories/",
+            json=incoming_payload,
             headers={"X-Token": "testtoken"}
         )
-    assert response.status_code in (200, 201), response.text
-    data = response.json()
-    assert data["title"] == "Merged Story Final"
-    returned_names = {c["name"] for c in data.get("main_characters", [])}
+
+    assert response.status_code == 202, response.text
+    assert response.json()["story_id"] == mock_story_id
+
+    story_input_arg = create_story_entry.call_args.args[1]
+    returned_names = {c.name for c in story_input_arg.main_characters}
     assert {"ExistingHero", "NewCompanion"}.issubset(returned_names)
-    existing_entry = next((c for c in data.get(
-        "main_characters", []) if c["name"] == "ExistingHero"), {})
-    assert existing_entry.get(
-        "reference_image_path") == "images/user_1/characters/7/img.png"
+    existing_entry = next(
+        character
+        for character in story_input_arg.main_characters
+        if character.name == "ExistingHero"
+    )
+    assert (
+        existing_entry.reference_image_path
+        == "images/user_1/characters/7/img.png"
+    )
 
 
 def test_public_story_creation_merges_selected_character_reference_paths(

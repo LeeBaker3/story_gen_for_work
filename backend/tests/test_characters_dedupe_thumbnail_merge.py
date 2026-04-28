@@ -1,6 +1,10 @@
 import os
+import uuid
+from datetime import UTC, datetime
 
 from backend.settings import get_settings
+from backend import schemas
+from backend.database import Story
 from fastapi.testclient import TestClient
 
 
@@ -56,7 +60,12 @@ def test_listing_includes_thumbnail_path_when_current_image_exists(client: TestC
     assert os.path.exists(os.path.join(data_dir, thumb_item["thumbnail_path"]))
 
 
-def test_story_creation_merge_avoids_duplicate_names(client: TestClient, regular_user_auth_headers: dict, monkeypatch):
+def test_story_creation_merge_avoids_duplicate_names(
+    client: TestClient,
+    db_session,
+    regular_user_auth_headers: dict,
+    monkeypatch,
+):
     # Create a saved character
     res_char = client.post(
         "/api/v1/characters/",
@@ -83,17 +92,34 @@ def test_story_creation_merge_avoids_duplicate_names(client: TestClient, regular
         "text_density": "Concise (~30-50 words)"
     }
 
-    # Mock story generation function to avoid OpenAI
+    task_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+
     monkeypatch.setattr(
-        "backend.ai_services.generate_story_from_chatgpt",
-        lambda story_input: {"Title": "Merge Test Final", "Pages": []}
+        "backend.crud.create_story_generation_task",
+        lambda db, story_id, user_id: schemas.StoryGenerationTask(
+            id=task_id,
+            story_id=story_id,
+            user_id=user_id,
+            status=schemas.GenerationTaskStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.public_router.generate_story_as_background_task",
+        lambda *args, **kwargs: None,
     )
 
     res_story = client.post(
-        "/stories/", json={"story_input": story_in}, headers=regular_user_auth_headers)
-    assert res_story.status_code in (200, 201), res_story.text
-    data = res_story.json()
-    names = [c["name"] for c in data.get("main_characters", [])]
-    # Should contain MergeStar only once and include NewChar
+        "/api/v1/stories/",
+        json=story_in,
+        headers=regular_user_auth_headers,
+    )
+    assert res_story.status_code == 202, res_story.text
+
+    story_id = res_story.json()["story_id"]
+    db_story = db_session.query(Story).filter(Story.id == story_id).one()
+    names = [c["name"] for c in db_story.main_characters]
     assert names.count("MergeStar") == 1
     assert "NewChar" in names
