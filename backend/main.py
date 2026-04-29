@@ -222,34 +222,6 @@ async def admin_placeholder_endpoint(
     )
 
 
-@app.post("/stories/backfill-characters", status_code=status.HTTP_200_OK)
-async def backfill_characters_for_user(
-    include_drafts: bool = True,
-    db: Session = Depends(get_db),
-    current_user: database.User = Depends(auth.get_current_active_user),
-):
-    """Backfill a user's character library from their existing stories."""
-
-    try:
-        count = crud.upsert_characters_from_user_stories(
-            db,
-            current_user.id,
-            include_drafts=include_drafts,
-        )
-        return {"upserted": count}
-    except Exception as exc:
-        error_logger.error(
-            "Failed to backfill characters for user %s: %s",
-            current_user.id,
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred.",
-        ) from exc
-
-
 @app.post("/stories/drafts/", response_model=schemas.Story)
 async def create_story_draft_endpoint(
     story_input: schemas.StoryCreate,

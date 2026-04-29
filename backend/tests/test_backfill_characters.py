@@ -22,7 +22,7 @@ def test_backfill_characters_populates_library(client: TestClient, regular_user_
     assert res_story.status_code == 200
 
     # Call backfill endpoint
-    res = client.post("/stories/backfill-characters",
+    res = client.post("/api/v1/stories/backfill-characters",
                       json={"include_drafts": True},
                       headers=regular_user_auth_headers)
     assert res.status_code == 200
