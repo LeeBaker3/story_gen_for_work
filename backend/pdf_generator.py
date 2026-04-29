@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict, List, Tuple
 
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
@@ -220,9 +220,7 @@ def _draw_text_overlay(
             text or "", font_name, font_size, max_text_width)
 
     pdf.saveState()
-    if hasattr(pdf, "setFillAlpha"):
-        pdf.setFillAlpha(opacity)
-    pdf.setFillColor(HexColor("#000000"))
+    pdf.setFillColor(Color(0, 0, 0, alpha=opacity))
     pdf.roundRect(box_x, box_y, box_width, box_height, 10, stroke=0, fill=1)
     pdf.restoreState()
 
