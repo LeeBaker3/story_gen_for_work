@@ -57,17 +57,12 @@ header::after {
     }
 }
 
-/* This rule targets the h1 specifically in admin.html if it's inside the header */
-header h1 {
+header .header-brand {
     margin: 0;
     font-size: 2rem;
-    /* Match main app header h1 */
     font-weight: 700;
-    /* Match main app header h1 */
     color: #FFFFFF;
-    /* Ensure title is white */
     text-align: center;
-    /* Explicitly center the Admin Panel title */
 }
 
 

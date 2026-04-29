@@ -22,7 +22,27 @@ afterEach(() => {
   jest.resetAllMocks();
 });
 
-function installApiMock() {
+function installApiMock(options = {}) {
+  const initialLists = options.lists || [
+    { list_name: 'genres', list_label: 'Genres', description: 'Story genres' }
+  ];
+  const initialItemsByList = options.itemsByList || {
+    genres: [
+      {
+        id: 5,
+        list_name: 'genres',
+        item_value: '<img src=x data-admin-dynamic-xss="value">',
+        item_label: '" autofocus onfocus="window.__adminDynamicXssTriggered=1',
+        is_active: true,
+        sort_order: 1,
+        additional_config: null
+      }
+    ]
+  };
+  const initialUsageByItemId = options.usageByItemId || {
+    5: { is_in_use: false, details: [] }
+  };
+
   global.Response = function (body, init = {}) {
     return {
       ok: (init.status || 200) >= 200 && (init.status || 200) < 300,
@@ -41,48 +61,77 @@ function installApiMock() {
     };
   };
 
-  window.fetch = jest.fn(async (url) => {
+  let currentLists = initialLists.map((list) => ({ ...list }));
+  let currentItemsByList = Object.fromEntries(
+    Object.entries(initialItemsByList).map(([listName, items]) => [
+      listName,
+      items.map((item) => ({ ...item }))
+    ])
+  );
+  const usageByItemId = { ...initialUsageByItemId };
+
+  window.fetch = jest.fn(async (url, options = {}) => {
     if (url.endsWith('/api/v1/users/me/')) {
       return new Response(JSON.stringify({ id: 1, username: 'admin', role: 'admin' }), { status: 200 });
     }
     if (url.endsWith('/api/v1/admin/dynamic-lists/')) {
-      return new Response(JSON.stringify([
-        { list_name: 'genres', list_label: 'Genres', description: 'Story genres' }
-      ]), { status: 200 });
+      return new Response(JSON.stringify(currentLists), { status: 200 });
     }
-    if (url.endsWith('/api/v1/admin/dynamic-lists/genres/items')) {
-      return new Response(JSON.stringify([
-        {
-          id: 5,
-          list_name: 'genres',
-          item_value: '<img src=x data-admin-dynamic-xss="value">',
-          item_label: 'Label',
-          is_active: true,
-          sort_order: 1,
-          additional_config: null
-        }
-      ]), { status: 200 });
+    const listDetailMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/([^/]+)$/);
+    if (listDetailMatch && (!options.method || options.method === 'GET')) {
+      const listName = decodeURIComponent(listDetailMatch[1]);
+      const list = currentLists.find((entry) => entry.list_name === listName);
+      if (list) {
+        return new Response(JSON.stringify(list), { status: 200 });
+      }
     }
-    if (url.endsWith('/api/v1/admin/dynamic-lists/items/5')) {
-      return new Response(JSON.stringify({
-        id: 5,
-        list_name: 'genres',
-        item_value: '<img src=x data-admin-dynamic-xss="value">',
-        item_label: '" autofocus onfocus="window.__adminDynamicXssTriggered=1',
-        is_active: true,
-        sort_order: 1,
-        additional_config: null
-      }), { status: 200 });
+    if (listDetailMatch && options.method === 'DELETE') {
+      const listName = decodeURIComponent(listDetailMatch[1]);
+      currentLists = currentLists.filter((entry) => entry.list_name !== listName);
+      delete currentItemsByList[listName];
+      return new Response('', { status: 204 });
     }
-    if (url.endsWith('/api/v1/admin/dynamic-lists/items/5/in-use')) {
-      return new Response(JSON.stringify({ is_in_use: false, details: [] }), { status: 200 });
+    const listItemsMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/([^/]+)\/items$/);
+    if (listItemsMatch) {
+      const listName = decodeURIComponent(listItemsMatch[1]);
+      return new Response(
+        JSON.stringify(currentItemsByList[listName] || []),
+        { status: 200 }
+      );
+    }
+    const itemDetailMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/items\/(\d+)$/);
+    if (itemDetailMatch && (!options.method || options.method === 'GET')) {
+      const itemId = Number(itemDetailMatch[1]);
+      const item = Object.values(currentItemsByList)
+        .flat()
+        .find((entry) => entry.id === itemId);
+      if (item) {
+        return new Response(JSON.stringify(item), { status: 200 });
+      }
+    }
+    if (itemDetailMatch && options.method === 'DELETE') {
+      const itemId = Number(itemDetailMatch[1]);
+      currentItemsByList = Object.fromEntries(
+        Object.entries(currentItemsByList).map(([listName, items]) => [
+          listName,
+          items.filter((entry) => entry.id !== itemId)
+        ])
+      );
+      return new Response('', { status: 204 });
+    }
+    const itemUsageMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/items\/(\d+)\/in-use$/);
+    if (itemUsageMatch) {
+      const itemId = Number(itemUsageMatch[1]);
+      return new Response(
+        JSON.stringify(usageByItemId[itemId] || { is_in_use: false, details: [] }),
+        { status: 200 }
+      );
     }
     return new Response(JSON.stringify({ detail: 'not found' }), { status: 404 });
   });
 }
 
 async function loadAdminScript() {
-  jest.resetModules();
   await import('../admin_script.js');
   document.dispatchEvent(new Event('DOMContentLoaded'));
 }
@@ -136,11 +185,11 @@ test('dynamic list modal exposes dialog semantics and restores focus after escap
   fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
 
   await waitFor(() => {
-    expect(document.getElementById('add-new-list-btn')).toBeTruthy();
+    expect(document.querySelector('.edit-dynamic-list-btn')).toBeTruthy();
   });
 
   const triggerButton = document.getElementById('add-new-list-btn');
-  fireEvent.click(triggerButton);
+  window.adminScript.editDynamicList('genres', triggerButton);
 
   await waitFor(() => {
     expect(document.getElementById('dynamicListModal')).toBeTruthy();
@@ -148,12 +197,12 @@ test('dynamic list modal exposes dialog semantics and restores focus after escap
 
   const dialog = document.getElementById('dynamicListModal');
   const title = dialog.querySelector('h2');
-  const listNameInput = document.getElementById('dl_list_name');
+  const listLabelInput = document.getElementById('dl_list_label');
 
   expect(dialog.getAttribute('role')).toBe('dialog');
   expect(dialog.getAttribute('aria-modal')).toBe('true');
   expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
-  expect(document.activeElement).toBe(listNameInput);
+  expect(document.activeElement).toBe(listLabelInput);
 
   fireEvent.keyDown(dialog, { key: 'Escape' });
 
@@ -161,4 +210,118 @@ test('dynamic list modal exposes dialog semantics and restores focus after escap
     expect(document.getElementById('dynamicListModal')).toBeNull();
   });
   expect(document.activeElement).toBe(triggerButton);
+});
+
+test('dynamic list delete uses admin confirmation modal before removing the list', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
+  installApiMock();
+
+  await loadAdminScript();
+  fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
+
+  await waitFor(() => {
+    expect(document.querySelector('.edit-dynamic-list-btn')).toBeTruthy();
+  });
+
+  fireEvent.click(document.querySelector('.edit-dynamic-list-btn'));
+
+  await waitFor(() => {
+    expect(document.getElementById('deleteDynamicListButton')).toBeTruthy();
+  });
+
+  fireEvent.click(document.getElementById('deleteDynamicListButton'));
+
+  await waitFor(() => {
+    expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
+  });
+
+  const dialog = document.querySelector('[id^="adminActionDialog-"]');
+  expect(dialog.textContent).toContain("Delete list 'genres'?");
+  fireEvent.click(dialog.querySelector('.admin-button-danger'));
+
+  await waitFor(() => {
+    expect(document.querySelector('.edit-dynamic-list-btn')).toBeNull();
+  });
+
+  expect(confirmSpy).not.toHaveBeenCalled();
+});
+
+test('dynamic list item edit modal proactively shows usage details and disables delete when in use', async () => {
+  installApiMock({
+    usageByItemId: {
+      5: { is_in_use: true, details: ['story template', 'featured prompt'] }
+    }
+  });
+
+  await loadAdminScript();
+  fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
+
+  await waitFor(() => {
+    expect(typeof window.adminScript.showAddEditDynamicListItemModal)
+      .toBe('function');
+  });
+
+  await window.adminScript.showAddEditDynamicListItemModal(
+    5,
+    null,
+    document.getElementById('add-new-item-btn')
+  );
+
+  await waitFor(() => {
+    expect(document.getElementById('deleteDynamicListItemButton')).toBeTruthy();
+  });
+
+  const usageStatus = document.getElementById('dynamicListItemModal-usage-status');
+  const deleteButton = document.getElementById('deleteDynamicListItemButton');
+
+  expect(usageStatus).toBeTruthy();
+  expect(usageStatus.textContent).toContain('This item is currently in use and cannot be deleted.');
+  expect(usageStatus.textContent).toContain('Referenced by:');
+  expect(usageStatus.textContent).toContain('story template');
+  expect(usageStatus.textContent).toContain('featured prompt');
+  expect(deleteButton.disabled).toBe(true);
+  expect(deleteButton.getAttribute('aria-describedby')).toBe('dynamicListItemModal-usage-status');
+});
+
+test('dynamic list item delete uses admin confirmation modal before removing the item', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
+  installApiMock();
+
+  await loadAdminScript();
+  fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
+
+  await waitFor(() => {
+    expect(typeof window.adminScript.showAddEditDynamicListItemModal)
+      .toBe('function');
+  });
+
+  await window.adminScript.showAddEditDynamicListItemModal(
+    5,
+    null,
+    document.getElementById('add-new-item-btn')
+  );
+
+  await waitFor(() => {
+    expect(document.getElementById('deleteDynamicListItemButton')).toBeTruthy();
+  });
+
+  expect(document.getElementById('dynamicListItemModal-usage-status').textContent)
+    .toContain('This item is not currently referenced and can be deleted.');
+  expect(document.getElementById('deleteDynamicListItemButton').disabled).toBe(false);
+
+  fireEvent.click(document.getElementById('deleteDynamicListItemButton'));
+
+  await waitFor(() => {
+    expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
+  });
+
+  const dialog = document.querySelector('[id^="adminActionDialog-"]');
+  expect(dialog.textContent).toContain('Delete item 5?');
+  fireEvent.click(dialog.querySelector('.admin-button-danger'));
+
+  await waitFor(() => {
+    expect(document.querySelector('.edit-dynamic-list-item-btn')).toBeNull();
+  });
+
+  expect(confirmSpy).not.toHaveBeenCalled();
 });

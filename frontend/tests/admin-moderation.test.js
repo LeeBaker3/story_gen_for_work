@@ -3,7 +3,7 @@
  * Covers:
  *  - Initial fetch & render of moderation stories table
  *  - Hide/unhide toggle PATCH call and UI rollback on failure
- *  - Delete story flow (confirm + DELETE + refetch)
+ *  - Delete story flow (admin modal confirmation + DELETE + refetch)
  *  - Filter parameter construction
  */
 import { fireEvent, waitFor } from '@testing-library/dom';
@@ -152,7 +152,7 @@ test('hide toggle updates on success and rolls back on failure', async () => {
 });
 
 test('delete story removes row after confirmation', async () => {
-  window.confirm = jest.fn(() => true); // auto-confirm
+  const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
   installApiMock({ stories: [ { id: 11, title: 'ToDelete' }, { id: 12, title: 'Stay' } ] });
   await loadAdminScript();
   clickModerationNav();
@@ -162,12 +162,22 @@ test('delete story removes row after confirmation', async () => {
   fireEvent.click(deleteBtn);
 
   await waitFor(() => {
+    expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
+  });
+
+  const dialog = document.querySelector('[id^="adminActionDialog-"]');
+  expect(dialog.textContent).toContain('Delete story 11?');
+  fireEvent.click(dialog.querySelector('.admin-button-danger'));
+
+  await waitFor(() => {
     const rows = Array.from(document.querySelectorAll('#moderation-table-container tbody tr'));
     // Story 11 row gone (table re-rendered after refetch)
     const ids = rows.map(r => parseInt(r.dataset.storyId));
     expect(ids).not.toContain(11);
     expect(ids).toContain(12);
   });
+
+  expect(confirmSpy).not.toHaveBeenCalled();
 });
 
 test('filter params are appended correctly for user, status, hidden, deleted', async () => {

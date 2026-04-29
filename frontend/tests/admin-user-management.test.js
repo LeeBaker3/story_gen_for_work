@@ -46,7 +46,9 @@ function installApiMock({ users, userRole = 'admin' }) {
     };
   };
 
-  window.fetch = jest.fn(async (url) => {
+  let currentUsers = users.map((user) => ({ ...user }));
+
+  window.fetch = jest.fn(async (url, options = {}) => {
     if (url.endsWith('/api/v1/users/me/')) {
       return new Response(
         JSON.stringify({ id: 999, username: 'admin', role: userRole }),
@@ -55,13 +57,18 @@ function installApiMock({ users, userRole = 'admin' }) {
     }
 
     if (url.endsWith('/api/v1/admin/management/users/')) {
-      return new Response(JSON.stringify(users), { status: 200 });
+      return new Response(JSON.stringify(currentUsers), { status: 200 });
     }
 
     const singleUserMatch = url.match(/\/api\/v1\/admin\/management\/users\/(\d+)$/);
     if (singleUserMatch) {
       const userId = Number(singleUserMatch[1]);
-      const user = users.find((entry) => entry.id === userId);
+      if (options.method === 'DELETE') {
+        currentUsers = currentUsers.filter((entry) => entry.id !== userId);
+        return new Response('', { status: 204 });
+      }
+
+      const user = currentUsers.find((entry) => entry.id === userId);
       if (user) {
         return new Response(JSON.stringify(user), { status: 200 });
       }
@@ -185,6 +192,7 @@ test('edit user modal exposes dialog semantics, traps focus, and restores focus 
   expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
   expect(document.activeElement).toBe(usernameInput);
 
+  closeButton.focus();
   fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
   expect(document.activeElement).toBe(cancelButton);
 
@@ -197,4 +205,50 @@ test('edit user modal exposes dialog semantics, traps focus, and restores focus 
     expect(document.getElementById('editUserDetailsModal')).toBeNull();
   });
   expect(document.activeElement).toBe(triggerButton);
+});
+
+test('delete user uses admin confirmation modal before soft delete', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
+  installApiMock({
+    users: [
+      {
+        id: 20,
+        username: 'Delete Me',
+        email: 'delete@example.com',
+        role: 'user',
+        is_active: true,
+      },
+      {
+        id: 21,
+        username: 'Keep Me',
+        email: 'keep@example.com',
+        role: 'user',
+        is_active: true,
+      }
+    ]
+  });
+
+  await loadAdminScript();
+  clickUserManagementNav();
+
+  await waitFor(() => {
+    expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeTruthy();
+  });
+
+  fireEvent.click(document.querySelector('.user-delete-btn[data-user-id="20"]'));
+
+  await waitFor(() => {
+    expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
+  });
+
+  const dialog = document.querySelector('[id^="adminActionDialog-"]');
+  expect(dialog.textContent).toContain('Delete user 20?');
+  fireEvent.click(dialog.querySelector('.admin-button-danger'));
+
+  await waitFor(() => {
+    expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeNull();
+    expect(document.querySelector('.user-delete-btn[data-user-id="21"]')).toBeTruthy();
+  });
+
+  expect(confirmSpy).not.toHaveBeenCalled();
 });
