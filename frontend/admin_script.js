@@ -1,13 +1,23 @@
 // Admin Panel Client-Side Logic - admin_script.js
 console.log("admin_script.js loaded");
 
-// Determine API_BASE_URL (same as main script.js)
-let API_BASE_URL;
-if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    API_BASE_URL = "http://127.0.0.1:8000"; // Local development
-} else {
-    API_BASE_URL = "https://story-gen-for-work.onrender.com"; // Deployed environment
+function resolveApiBaseUrl() {
+    if (typeof window.resolveStoryGeneratorApiBaseUrl === "function") {
+        return window.resolveStoryGeneratorApiBaseUrl();
+    }
+
+    if (
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+    ) {
+        return "http://127.0.0.1:8000";
+    }
+
+    return window.location.origin.replace(/\/$/, "");
 }
+
+// Determine API_BASE_URL (same as main script.js)
+let API_BASE_URL = resolveApiBaseUrl();
 
 document.addEventListener("DOMContentLoaded", function () {
     const navLogout = document.getElementById("nav-logout");

@@ -653,7 +653,7 @@ button.action-button-danger:hover,
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    padding: 1rem;
+    padding: 0;
     background: linear-gradient(180deg, #253047, #1b2333);
 }
 
