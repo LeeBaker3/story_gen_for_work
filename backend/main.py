@@ -256,6 +256,8 @@ async def create_story_draft_endpoint(
             current_user.username,
         )
         return db_story_draft
+    except HTTPException:
+        raise
     except Exception as exc:
         error_logger.error(
             "Error creating story draft for user %s: %s",

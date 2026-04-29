@@ -142,7 +142,7 @@ class Page(PageBase):
 
 class StoryBase(BaseModel):
     title: str = Field(..., max_length=200)
-    genre: StoryGenre
+    genre: str
     story_outline: str = Field(..., max_length=5000)
     # User's initial outline
     main_characters: List[CharacterDetail]
@@ -150,11 +150,11 @@ class StoryBase(BaseModel):
     tone: Optional[str] = Field(None, max_length=200)
     setting: Optional[str] = Field(None, max_length=500)
     # FR14: Added image_style
-    image_style: Optional[ImageStyle] = ImageStyle.DEFAULT
+    image_style: Optional[str] = ImageStyle.DEFAULT.value
     # FR13: Added word_to_picture_ratio
-    word_to_picture_ratio: Optional[WordToPictureRatio] = WordToPictureRatio.PER_PAGE
+    word_to_picture_ratio: Optional[str] = WordToPictureRatio.PER_PAGE.value
     # New Req: Added text_density
-    text_density: Optional[TextDensity] = TextDensity.CONCISE
+    text_density: Optional[str] = TextDensity.CONCISE.value
     editor_settings: Optional[StoryEditorSettings] = None
     # Add other metadata fields from PRD if necessary
     is_draft: Optional[bool] = True  # For FR24

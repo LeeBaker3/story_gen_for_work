@@ -5,6 +5,7 @@ from backend.logging_config import error_logger
 from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
 from passlib.context import CryptContext
 from typing import Any, Dict, List, Optional
+from fastapi import HTTPException, status
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
 # Ensure datetime and timezone are imported
 from datetime import datetime, timezone
@@ -13,11 +14,79 @@ import uuid  # Import uuid for generating task IDs
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-_FIELD_ENUM_MAP: Dict[str, type] = {
-    "image_style": schemas.ImageStyle,
-    "word_to_picture_ratio": schemas.WordToPictureRatio,
-    "text_density": schemas.TextDensity,
+_STORY_DYNAMIC_LIST_NAMES: Dict[str, str] = {
+    "genre": "genres",
+    "image_style": "image_styles",
+    "word_to_picture_ratio": "word_to_picture_ratio",
+    "text_density": "text_density",
 }
+
+_STORY_FIELD_DEFAULTS: Dict[str, str] = {
+    "image_style": schemas.ImageStyle.DEFAULT.value,
+    "word_to_picture_ratio": schemas.WordToPictureRatio.PER_PAGE.value,
+    "text_density": schemas.TextDensity.CONCISE.value,
+}
+
+
+def _coerce_story_field_value(value: Any, default: Optional[str] = None) -> Optional[str]:
+    """Normalize incoming story field values to persisted strings."""
+
+    if value in (None, ""):
+        return default
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
+
+def validate_story_dynamic_list_values(
+    db: Session,
+    story_data: schemas.StoryBase,
+) -> Dict[str, str]:
+    """Validate story metadata fields against active dynamic-list items.
+
+    If a list has not been seeded yet, validation for that specific field is
+    skipped so existing direct CRUD callers keep working in sparse test setups.
+    """
+
+    resolved_values = {
+        "genre": _coerce_story_field_value(story_data.genre),
+        "image_style": _coerce_story_field_value(
+            story_data.image_style,
+            _STORY_FIELD_DEFAULTS["image_style"],
+        ),
+        "word_to_picture_ratio": _coerce_story_field_value(
+            story_data.word_to_picture_ratio,
+            _STORY_FIELD_DEFAULTS["word_to_picture_ratio"],
+        ),
+        "text_density": _coerce_story_field_value(
+            story_data.text_density,
+            _STORY_FIELD_DEFAULTS["text_density"],
+        ),
+    }
+
+    for field_name, list_name in _STORY_DYNAMIC_LIST_NAMES.items():
+        field_value = resolved_values[field_name]
+        active_items = get_active_dynamic_list_items(db, list_name=list_name)
+        if not active_items:
+            continue
+
+        active_values = {item.item_value for item in active_items}
+        if field_value not in active_values:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=[
+                    {
+                        "loc": ["body", field_name],
+                        "msg": (
+                            f"Value '{field_value}' is not an active item in "
+                            f"dynamic list '{list_name}'."
+                        ),
+                        "type": "value_error.dynamic_list.inactive_or_unknown",
+                    }
+                ],
+            )
+
+    return resolved_values
 
 def get_story_editor_settings(story: Story) -> Dict[str, Any]:
     """Return normalized document editor settings for a story."""
@@ -145,16 +214,10 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
     If it's a draft, the title might be None.
     The main story content (pages) will be added separately after AI generation for non-drafts.
     """
-    # Determine the string value for word_to_picture_ratio
-    word_to_picture_ratio_value = story_data.word_to_picture_ratio.value \
-        if story_data.word_to_picture_ratio else schemas.WordToPictureRatio.PER_PAGE.value
-
-    # Determine the string value for text_density (New Req)
-    text_density_value = story_data.text_density.value \
-        if story_data.text_density else schemas.TextDensity.CONCISE.value
-
-    image_style_value = story_data.image_style.value \
-        if story_data.image_style else schemas.ImageStyle.DEFAULT.value
+    resolved_values = validate_story_dynamic_list_values(db, story_data)
+    word_to_picture_ratio_value = resolved_values["word_to_picture_ratio"]
+    text_density_value = resolved_values["text_density"]
+    image_style_value = resolved_values["image_style"]
     editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
     if getattr(story_data, "editor_settings", None):
         editor_settings_value.update(
@@ -166,7 +229,7 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
 
     db_story = Story(
         title=final_title,  # Title can be None for drafts
-        genre=story_data.genre.value,
+        genre=resolved_values["genre"],
         # Changed from outline to story_outline
         story_outline=story_data.story_outline,
         # Encode list of Pydantic models to JSON
@@ -195,10 +258,10 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
     """
     Creates a story draft. Title can be None initially.
     """
-    # Extract enums or use defaults
-    word_to_picture_ratio_value = story_data.word_to_picture_ratio.value if story_data.word_to_picture_ratio else schemas.WordToPictureRatio.PER_PAGE.value
-    text_density_value = story_data.text_density.value if story_data.text_density else schemas.TextDensity.CONCISE.value
-    image_style_value = story_data.image_style.value if story_data.image_style else schemas.ImageStyle.DEFAULT.value
+    resolved_values = validate_story_dynamic_list_values(db, story_data)
+    word_to_picture_ratio_value = resolved_values["word_to_picture_ratio"]
+    text_density_value = resolved_values["text_density"]
+    image_style_value = resolved_values["image_style"]
     editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
     if getattr(story_data, "editor_settings", None):
         editor_settings_value.update(
@@ -207,7 +270,7 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
 
     db_story_draft = Story(
         title=story_data.title,  # Can be None or a preliminary title
-        genre=story_data.genre.value,
+        genre=resolved_values["genre"],
         story_outline=story_data.story_outline,
         main_characters=jsonable_encoder(story_data.main_characters),
         num_pages=story_data.num_pages,
@@ -236,20 +299,16 @@ def update_story_draft(db: Session, story_id: int, story_update_data: schemas.St
     if not db_story_draft:
         return None
 
+    resolved_values = validate_story_dynamic_list_values(db, story_update_data)
     update_data = story_update_data.model_dump(exclude_unset=True)
 
     for key, value in update_data.items():
         if key == "main_characters":
             setattr(db_story_draft, key, jsonable_encoder(value))
+        elif key in resolved_values:
+            setattr(db_story_draft, key, resolved_values[key])
         else:
-            enum_cls = _FIELD_ENUM_MAP.get(key)
-            if enum_cls and isinstance(value, str):
-                # Store the .value for enums
-                setattr(db_story_draft, key, enum_cls(value).value)
-            elif enum_cls and isinstance(value, enum_cls):
-                setattr(db_story_draft, key, value.value)
-            else:
-                setattr(db_story_draft, key, value)
+            setattr(db_story_draft, key, value)
 
     db.commit()
     db.refresh(db_story_draft)
