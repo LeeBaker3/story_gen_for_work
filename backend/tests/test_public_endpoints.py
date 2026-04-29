@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from backend import settings as settings_mod, storage_paths
-from backend.database import DynamicList, DynamicListItem, Story, User
+from backend.database import DynamicList, DynamicListItem, Page, Story, User
 from unittest.mock import AsyncMock, patch
 
 
@@ -150,6 +150,72 @@ def test_delete_story_via_api_prefix(
 
     assert response.status_code == 204
     assert db_session.query(Story).filter(Story.id == story.id).first() is None
+
+
+def test_story_list_omits_pages_but_detail_includes_them(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Contract Check",
+        story_outline="A story used to verify list and detail payloads.",
+        genre="fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    page = Page(
+        story_id=story.id,
+        page_number=1,
+        text="Once upon a payload.",
+        image_description="A contract verification scene.",
+        image_path="images/user_1/story_1/page1.png",
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    list_response = client.get(
+        "/api/v1/stories/",
+        headers=regular_user_auth_headers,
+    )
+
+    assert list_response.status_code == 200
+    list_item = next(
+        item for item in list_response.json() if item["id"] == story.id
+    )
+    assert "pages" not in list_item
+
+    detail_response = client.get(
+        f"/api/v1/stories/{story.id}",
+        headers=regular_user_auth_headers,
+    )
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert "pages" in detail_payload
+    assert len(detail_payload["pages"]) == 1
+    assert detail_payload["pages"][0]["id"] == page.id
+    assert detail_payload["pages"][0]["story_id"] == story.id
+    assert detail_payload["pages"][0]["page_number"] == 1
+    assert detail_payload["pages"][0]["text"] == "Once upon a payload."
+    assert detail_payload["pages"][0]["image_description"] == (
+        "A contract verification scene."
+    )
+    assert detail_payload["pages"][0]["image_path"] == (
+        "images/user_1/story_1/page1.png"
+    )
 
 
 def test_delete_story_via_api_prefix_removes_story_images(

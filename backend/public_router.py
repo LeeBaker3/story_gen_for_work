@@ -247,7 +247,7 @@ async def get_generation_status(
     return task
 
 
-@public_router.get("/stories/", response_model=List[schemas.Story])
+@public_router.get("/stories/", response_model=List[schemas.StoryListItem])
 async def read_user_stories(
     db: Session = Depends(get_db),
     current_user: database.User = Depends(auth.get_current_active_user),

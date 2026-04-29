@@ -171,6 +171,19 @@ class StoryTitleUpdate(BaseModel):  # New Schema for updating title
     title: str
 
 
+class StoryListItem(StoryBase):
+    id: int
+    owner_id: int
+    editor_settings: Optional[dict] = None
+    generated_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    is_hidden: bool = False
+    is_deleted: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class Story(StoryBase):  # This schema is for representing a story, including AI generated title
     id: int
     owner_id: int
