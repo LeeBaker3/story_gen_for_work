@@ -357,4 +357,104 @@ describe('story editor MVP', () => {
         expect(textCard.style.top).toBe('');
         expect(textCard.style.bottom).toBe('4.545%');
     });
+
+    test('applies and saves a per-page text box opacity override', async () => {
+        const story = {
+            id: 321,
+            title: 'Original Title',
+            genre: 'Fantasy',
+            story_outline: 'Outline',
+            main_characters: [],
+            num_pages: 2,
+            tone: null,
+            setting: null,
+            image_style: 'Default',
+            word_to_picture_ratio: 'One image per page',
+            text_density: 'Concise (~30-50 words)',
+            editor_settings: {
+                font_family: 'storybook',
+                font_size: 28,
+                font_color: '#ffffff',
+                text_position: 'bottom',
+                text_box_opacity: 0.6,
+            },
+            pages: [
+                {
+                    id: 11,
+                    story_id: 321,
+                    page_number: 0,
+                    text: 'Original Title',
+                    image_description: 'Cover art',
+                    image_path: 'images/user_1/story_321/cover.png',
+                    editor_state: {
+                        original_text: 'Original Title',
+                        original_image_path: 'images/user_1/story_321/cover.png',
+                    },
+                    created_at: '2026-04-27T12:00:00Z',
+                    updated_at: '2026-04-27T12:00:00Z',
+                },
+                {
+                    id: 12,
+                    story_id: 321,
+                    page_number: 1,
+                    text: 'Page one text',
+                    image_description: 'Dragon scene',
+                    image_path: 'images/user_1/story_321/page1.png',
+                    editor_state: {
+                        original_text: 'Page one text',
+                        original_image_path: 'images/user_1/story_321/page1.png',
+                    },
+                    created_at: '2026-04-27T12:00:00Z',
+                    updated_at: '2026-04-27T12:00:00Z',
+                },
+            ],
+            created_at: '2026-04-27T12:00:00Z',
+            updated_at: '2026-04-27T12:00:00Z',
+            owner_id: 1,
+            is_draft: false,
+            generated_at: '2026-04-27T12:00:00Z',
+            is_hidden: false,
+            is_deleted: false,
+        };
+
+        window.__TEST_API__.displayStory(story);
+
+        const pagePreview = document.querySelector('.story-editor-page-preview[data-page-id="12"]');
+        const textCard = pagePreview.querySelector('.story-editor-text-card');
+        const opacityInput = document.querySelector('[data-page-field="text_box_opacity"][data-page-id="12"]');
+        const opacityValue = document.querySelector('[data-page-opacity-value="12"]');
+
+        expect(opacityInput).not.toBeNull();
+        expect(opacityValue.textContent).toBe('60%');
+        expect(textCard.style.backgroundColor).toBe('rgba(0, 0, 0, 0.6)');
+
+        fireEvent.input(opacityInput, { target: { value: '0.3' } });
+
+        expect(opacityValue.textContent).toBe('30%');
+        expect(textCard.style.backgroundColor).toBe('rgba(0, 0, 0, 0.3)');
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls.length).toBeGreaterThan(0);
+        });
+
+        const latestSaveCall = [...global.fetch.mock.calls]
+            .reverse()
+            .find(([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT');
+        const payload = JSON.parse(latestSaveCall[1].body);
+        expect(payload.pages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 12,
+                    editor_state: expect.objectContaining({
+                        text_box_opacity: 0.3,
+                    }),
+                }),
+            ])
+        );
+    });
 });

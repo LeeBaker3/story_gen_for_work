@@ -107,16 +107,15 @@ The editor should be designed for basic users who want storybook layout control,
 - Use full-page images by default, with a generated image filling the page.
 - Choose a document-wide default text placement: top, bottom, left, right, or center.
 - Override text placement on an individual page.
-- Set document-wide font family, font size, text colour, text alignment, and text-box background opacity.
+- Set document-wide font family, font size, text colour, and text-box background opacity.
 - Override font size, text colour, and text-box background opacity on an individual page.
 - Provide curated, readable font choices rather than unrestricted font entry.
-- Provide simple colour swatches plus an accessible colour picker.
-- Warn when text contrast is likely too low over an image.
-- Warn when text does not fit within the selected text area.
 - Regenerate a single page image, using the page text placement as prompt context.
 - Restore original page text or original page image.
 - Save editor changes automatically and provide a visible manual Save action.
 - Export the edited story to PDF with layout matching the editor preview as closely as practical.
+
+The following editor controls remain future work on this branch and should not be treated as already implemented MVP behavior: text alignment control, readability treatment selection, curated colour swatches beyond the base picker, contrast warnings, and text-fit warnings.
 
 #### Wizard Responsibilities Before Generation
 
@@ -138,8 +137,7 @@ The editor should handle choices that users naturally make after seeing the gene
 
 - Edit page text and title.
 - Select or change text placement per page.
-- Adjust font size, colour, alignment, text-box opacity, and readability treatment.
-- Adjust font size, colour, alignment, and text-box opacity.
+- Adjust font size, colour, and text-box opacity.
 - Change document defaults and apply them to all pages.
 - Clear page-specific overrides and return a page to document defaults.
 - Regenerate one page image while preserving the rest of the story.

@@ -1694,7 +1694,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function getPageEffectiveSettings(story, page) {
         const settings = normalizeStoryEditorSettings(story?.editor_settings);
         const editorState = normalizePageEditorState(page);
-        ["text_position", "font_size", "font_color"].forEach((key) => {
+        ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
             if (editorState[key] !== undefined && editorState[key] !== null && editorState[key] !== "") {
                 settings[key] = editorState[key];
             }
@@ -1816,7 +1816,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const state = page.editor_state || {};
             const payloadState = {};
 
-            ["text_position", "font_size", "font_color"].forEach((key) => {
+            ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
                 if (state[key] !== undefined && state[key] !== original.editor_state?.[key]) {
                     payloadState[key] = state[key];
                 }
@@ -2305,6 +2305,23 @@ document.addEventListener("DOMContentLoaded", function () {
                                     <input class="story-editor-color" data-page-field="font_color" data-page-id="${page.id}" type="color" value="${page.editor_state.font_color || pageSettings.font_color || "#ffffff"}">
                                 </div>
                             </div>
+                            <div>
+                                <div style="display:flex;align-items:center;gap:0.5rem;">
+                                    <label class="story-editor-field-label" for="story-editor-page-opacity-${page.id}" style="margin:0;">Text Box Opacity Override</label>
+                                    <span data-page-opacity-value="${page.id}" style="font-size:0.85rem;color:#a8b3c7;min-width:2.5rem;text-align:right;">${Math.round(Number(page.editor_state.text_box_opacity ?? pageSettings.text_box_opacity ?? 0.6) * 100)}%</span>
+                                </div>
+                                <input
+                                    id="story-editor-page-opacity-${page.id}"
+                                    class="story-editor-range"
+                                    data-page-field="text_box_opacity"
+                                    data-page-id="${page.id}"
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value="${Number(page.editor_state.text_box_opacity ?? pageSettings.text_box_opacity ?? 0.6)}"
+                                >
+                            </div>
                             <button type="button" class="action-button-secondary story-editor-clear-override" data-action="clear-overrides" data-page-id="${page.id}">Use Document Defaults</button>
                         </div>
                     </div>
@@ -2333,6 +2350,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     const vertical = verticalInput?.value || "bottom";
                     const horizontal = horizontalInput?.value || "center";
                     page.editor_state.text_position = combineTextPosition(vertical, horizontal);
+                } else if (field === "text_box_opacity") {
+                    page.editor_state[field] = event.target.value === "" ? null : Number(event.target.value);
+                    const valueEl = event.target
+                        .closest(".story-editor-page-controls")
+                        ?.querySelector(`[data-page-opacity-value="${pageId}"]`);
+                    if (valueEl) {
+                        valueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+                    }
                 } else if (field === "font_size") {
                     page.editor_state[field] = event.target.value ? parseInt(event.target.value, 10) : null;
                 } else {
@@ -2353,6 +2378,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     page.editor_state.text_position = null;
                     page.editor_state.font_size = null;
                     page.editor_state.font_color = null;
+                    page.editor_state.text_box_opacity = null;
                     renderStoryEditor();
                     scheduleStoryEditorAutosave();
                     return;
