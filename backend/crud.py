@@ -192,10 +192,6 @@ def admin_update_user(db: Session, user_id: int, user_update: schemas.AdminUserU
     update_data = user_update.model_dump(exclude_unset=True)
 
     for key, value in update_data.items():
-        # Basic validation for role, can be enhanced with Enums or more specific checks
-        if key == "role" and value not in ["user", "admin"]:
-            # Skip invalid role update or raise an error
-            continue
         setattr(db_user, key, value)
 
     db.commit()
