@@ -14,8 +14,8 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - Story Creation Wizard
     - Step 1 — Basics: Title (optional; AI if blank), Genre, Outline.
     - Step 2 — Characters: Pick from saved Characters or create new; view/update description; generate/regenerate reference image; select 1+ to include.
-    - Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Writing Style.
-    - Step 3 should also collect generation-relevant layout defaults: page format, default text placement, whether images should fill the full page, and optional readable text-box style. These inputs should be available to image prompt generation so images can leave suitable visual space for text.
+    - Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Page Format, and default text placement/font defaults.
+    - On this branch, Step 3 collects the currently wired generation/editor defaults only. It does not yet expose separate wizard inputs for writing style, image fill behavior, cover/title placement preference, or readability treatment.
     - Step 4 — Review: Summary and confirm.
     - Polish: sticky glass header, animated progress bar (reduced-motion fallback), toasts, and inline modal status feedback (no hidden snackbars).
     - Characters page: search, pagination, selection, modal-based image regenerate with disabled buttons and inline status while busy.
@@ -90,7 +90,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - FR-STORY-10: Save draft and resume.
 - FR-STORY-11: Reusable Characters (implemented).
 - FR-STORY-12: Wizard reliability (step sync, init, template fix).
-- FR-STORY-13: Pre-generation layout preferences. The wizard must collect layout choices that affect image generation, including page format, image fill behavior, default text placement, and optional text readability treatment. These values should be passed into story/image generation prompts so generated artwork leaves appropriate room for text.
+- FR-STORY-13: Pre-generation layout preferences. The wizard must collect the currently supported pre-generation layout choices that are wired through this branch, including page format and default text placement, and pass them into story/editor settings consistently.
 - FR-STORY-14: Post-generation story editor. Users must be able to edit the generated title and page text after story creation without regenerating the whole story.
 - FR-STORY-15: Basic desktop publishing controls. Users must be able to apply document-wide typography and layout defaults, then override key settings page by page.
 - FR-STORY-16: Edited PDF export. PDF export must use the edited text, selected image placement, typography settings, and page-level overrides rather than only the original generated content.
@@ -123,13 +123,12 @@ The editor should be designed for basic users who want storybook layout control,
 The wizard should collect only choices that materially influence story/image generation or establish sensible document defaults:
 
 - Page format: square storybook, portrait, landscape, A4, or US Letter.
-- Image layout preference: full-page image fill as the MVP default, with future support for fit/contain.
 - Default text placement: top, bottom, left, right, or center.
-- Optional cover/title placement preference.
-- Default text readability style: no panel, subtle translucent panel, strong panel, or text shadow.
 - Default font category: storybook, classic, modern, handwritten, dyslexia-friendly, or large print.
 - Default text density and word-to-picture ratio, already present, should remain generation inputs.
 - Review step should summarize these layout choices before generation.
+
+The following wizard controls remain future work on this branch and should not be treated as already implemented inputs: writing style, image fill/contain behavior, cover/title placement preference, and explicit readability treatment selection.
 
 These wizard settings should be included in image prompt construction. For example, if the user selects bottom text placement, page image prompts should request important visual detail away from the lower text-safe area where possible.
 
@@ -140,6 +139,7 @@ The editor should handle choices that users naturally make after seeing the gene
 - Edit page text and title.
 - Select or change text placement per page.
 - Adjust font size, colour, alignment, text-box opacity, and readability treatment.
+- Adjust font size, colour, alignment, and text-box opacity.
 - Change document defaults and apply them to all pages.
 - Clear page-specific overrides and return a page to document defaults.
 - Regenerate one page image while preserving the rest of the story.

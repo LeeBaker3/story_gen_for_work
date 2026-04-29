@@ -88,8 +88,9 @@ document.addEventListener("DOMContentLoaded", function () {
         font_family: "storybook",
         font_size: 28,
         font_color: "#ffffff",
-            text_position: "bottom-center",
+        text_position: "bottom-center",
         text_box_opacity: 0.6,
+        page_format: "letter",
     };
     const STORY_EDITOR_FONT_OPTIONS = [
         { value: "storybook", label: "Storybook" },
@@ -1337,6 +1338,16 @@ document.addEventListener("DOMContentLoaded", function () {
         s.className = 'review-summary';
         const characters = data.main_characters?.map(c => c.name).filter(Boolean) || [];
         const reusedCount = Array.isArray(data.character_ids) ? data.character_ids.length : 0;
+        const pageFormatLabels = {
+            letter: 'US Letter',
+            a4: 'A4',
+            portrait: 'Portrait',
+            landscape: 'Landscape',
+            'square-storybook': 'Square Storybook',
+        };
+        const pageFormat = String(
+            editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format,
+        ).toLowerCase();
         s.innerHTML = `
             <p><strong>Title:</strong> ${escapeHTML(data.title || '(AI will generate)')}</p>
             <p><strong>Genre:</strong> ${escapeHTML(data.genre || '(not set)')}</p>
@@ -1345,6 +1356,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <p><strong>Reused characters:</strong> ${reusedCount}</p>
             <p><strong>Pages:</strong> ${escapeHTML(data.num_pages || '(not set)')} | <strong>Style:</strong> ${escapeHTML(data.image_style || '(not set)')}</p>
             <p><strong>Ratio:</strong> ${escapeHTML(data.word_to_picture_ratio || '(not set)')} | <strong>Density:</strong> ${escapeHTML(data.text_density || '(not set)')}</p>
+            <p><strong>Page format:</strong> ${escapeHTML(pageFormatLabels[pageFormat] || pageFormat)}</p>
             <p><strong>Layout:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')} text | <strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
         `;
         review.appendChild(s);
@@ -3039,6 +3051,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const ratioVal = document.getElementById("story-word-to-picture-ratio").value;
         const densityVal = document.getElementById("story-text-density").value;
         const imageStyleVal = document.getElementById("story-image-style").value;
+        const pageFormatVal =
+            document.getElementById("story-page-format")?.value
+            || STORY_EDITOR_DEFAULTS.page_format;
         const tpV = document.getElementById("story-default-text-position-v")?.value || "bottom";
         const tpH = document.getElementById("story-default-text-position-h")?.value || "center";
         const textPositionVal = combineTextPosition(tpV, tpH);
@@ -3060,6 +3075,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Phase 3: add selected existing characters by id
             character_ids: Array.from(characterLibraryState.selectedIds),
             editor_settings: {
+                page_format: pageFormatVal,
                 text_position: textPositionVal,
                 font_family: fontFamilyVal,
                 font_size: Number.isFinite(fontSizeVal)
@@ -3547,6 +3563,11 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("story-image-style").value =
             storyData.image_style || "Default";
         const editorSettings = storyData.editor_settings || STORY_EDITOR_DEFAULTS;
+        const pageFormatEl = document.getElementById("story-page-format");
+        if (pageFormatEl) {
+            pageFormatEl.value =
+                editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format;
+        }
         const prefillPos = parseTextPosition(
             editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position,
         );

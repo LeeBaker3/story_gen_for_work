@@ -45,6 +45,13 @@ function mountWizardDom() {
             <select id="story-image-style"><option value="">Select...</option><option value="Cartoon">Cartoon</option></select>
             <select id="story-word-to-picture-ratio"><option value="">Select...</option><option value="One image per page">One image per page</option></select>
             <select id="story-text-density"><option value="">Select...</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
+            <select id="story-page-format">
+              <option value="letter">US Letter</option>
+              <option value="a4">A4</option>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+              <option value="square-storybook">Square Storybook</option>
+            </select>
             <select id="story-default-text-position-v"></select>
             <select id="story-default-text-position-h"></select>
             <select id="story-default-font-family"><option value="">Select...</option></select>
@@ -139,10 +146,13 @@ describe('wizard navigation', () => {
   });
 
   test('layout dropdowns load with split text position defaults', () => {
+    const pageFormatSel = document.getElementById('story-page-format');
     const textPositionVSel = document.getElementById('story-default-text-position-v');
     const textPositionHSel = document.getElementById('story-default-text-position-h');
     const fontFamilySel = document.getElementById('story-default-font-family');
 
+    expect(pageFormatSel.querySelector('option[value="square-storybook"]')).not.toBeNull();
+    expect(pageFormatSel.value).toBe('letter');
     expect(textPositionVSel.querySelector('option[value="top"]')).not.toBeNull();
     expect(textPositionHSel.querySelector('option[value="center"]')).not.toBeNull();
     expect(textPositionVSel.value).toBe('bottom');
@@ -230,6 +240,7 @@ describe('wizard navigation', () => {
   });
 
   test('generate request includes wizard editor settings', async () => {
+    document.getElementById('story-page-format').value = 'square-storybook';
     document.getElementById('story-default-text-position-v').value = 'top';
     document.getElementById('story-default-text-position-h').value = 'center';
     document.getElementById('story-default-font-family').value = 'classic';
@@ -283,30 +294,6 @@ describe('wizard navigation', () => {
         };
       }
       return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
-
-    test('review step escapes user-controlled values before using innerHTML', async () => {
-      document.getElementById('story-title').value = '<img src=x data-review-xss="title">';
-      document.getElementById('story-outline').value = '<svg data-review-xss="outline"></svg>';
-      document.querySelector('.char-name').value = '<b data-review-xss="character">Alice</b>';
-      document.getElementById('story-default-text-position').value = 'top"><img data-review-xss="position">';
-
-      const next = document.getElementById('wizard-next');
-      fireEvent.click(next);
-      fireEvent.click(next);
-      const textPositionSelect = document.getElementById('story-default-text-position');
-      textPositionSelect.innerHTML += '<option value="top\"><img data-review-xss=&quot;position&quot;>">Injected</option>';
-      textPositionSelect.value = 'top"><img data-review-xss="position">';
-      fireEvent.click(next);
-
-      const review = document.getElementById('review-container');
-      expect(review.querySelector('[data-review-xss="title"]')).toBeNull();
-      expect(review.querySelector('[data-review-xss="outline"]')).toBeNull();
-      expect(review.querySelector('[data-review-xss="character"]')).toBeNull();
-      expect(review.querySelector('[data-review-xss="position"]')).toBeNull();
-      expect(review.textContent).toContain('<img src=x data-review-xss="title">');
-      expect(review.textContent).toContain('<svg data-review-xss="outline"></svg>');
-      expect(review.textContent).toContain('<b data-review-xss="character">Alice</b>');
-    });
     });
 
     fireEvent.click(document.getElementById('generate-story-button'));
@@ -318,11 +305,24 @@ describe('wizard navigation', () => {
     const [, requestOptions] = storyRequest;
     const payload = JSON.parse(requestOptions.body);
     expect(payload.editor_settings).toEqual({
+      page_format: 'square-storybook',
       text_position: 'top-center',
       font_family: 'classic',
       font_size: 34,
       font_color: '#112233',
       text_box_opacity: 0.4,
     });
+  });
+
+  test('review step summarizes selected page format', () => {
+    document.getElementById('story-page-format').value = 'landscape';
+
+    const next = document.getElementById('wizard-next');
+    fireEvent.click(next);
+    fireEvent.click(next);
+    fireEvent.click(next);
+
+    const review = document.getElementById('review-container');
+    expect(review.textContent).toContain('Page format: Landscape');
   });
 });
