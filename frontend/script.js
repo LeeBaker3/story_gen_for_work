@@ -81,6 +81,11 @@ document.addEventListener("DOMContentLoaded", function () {
         autosaveTimer: null,
         isSaving: false,
         saveRequested: false,
+        saveStatus: {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        },
         pageImageObjectUrls: new Map(),
         pageImageFetches: new Map(),
     };
@@ -2023,6 +2028,26 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    function setStoryEditorSaveStatus(state, message, { showRetry = false } = {}) {
+        storyEditorState.saveStatus = {
+            state,
+            message,
+            showRetry,
+        };
+
+        const statusEl = document.getElementById("story-editor-save-status");
+        if (statusEl) {
+            statusEl.dataset.state = state;
+            statusEl.textContent = message;
+        }
+
+        const retryButton = document.getElementById("story-editor-retry-save-button");
+        if (retryButton) {
+            retryButton.style.display = showRetry ? "inline-flex" : "none";
+            retryButton.disabled = storyEditorState.isSaving;
+        }
+    }
+
     async function persistStoryEditor({ immediate = false, toast = false } = {}) {
         const story = storyEditorState.story;
         if (!story || !story.id || storyEditorState.isSaving) {
@@ -2033,8 +2058,10 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!payload) return;
 
         storyEditorState.isSaving = true;
-        const statusEl = document.getElementById("story-editor-save-status");
-        if (statusEl) statusEl.textContent = immediate ? "Saving..." : "Auto-saving...";
+        setStoryEditorSaveStatus(
+            "saving",
+            immediate ? "Saving..." : "Auto-saving...",
+        );
         try {
             const updatedStory = await apiRequest(
                 `/api/v1/stories/${story.id}/editor`,
@@ -2047,13 +2074,27 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             currentStoryId = updatedStory.id;
             renderStoryEditor();
-            if (statusEl) statusEl.textContent = `Saved ${new Date().toLocaleTimeString()}`;
+            setStoryEditorSaveStatus(
+                "saved",
+                `Saved ${new Date().toLocaleTimeString()}`,
+            );
             if (toast) displayMessage("Story changes saved.", "success");
         } catch (error) {
             console.error("[persistStoryEditor] Error saving editor state:", error);
-            if (statusEl) statusEl.textContent = "Save failed";
+            setStoryEditorSaveStatus(
+                "failed",
+                "Save failed. Retry to keep editing.",
+                { showRetry: true },
+            );
         } finally {
             storyEditorState.isSaving = false;
+            if (storyEditorState.saveStatus.showRetry) {
+                setStoryEditorSaveStatus(
+                    storyEditorState.saveStatus.state,
+                    storyEditorState.saveStatus.message,
+                    { showRetry: true },
+                );
+            }
             if (storyEditorState.saveRequested) {
                 storyEditorState.saveRequested = false;
                 persistStoryEditor({ immediate: true });
@@ -2066,8 +2107,7 @@ document.addEventListener("DOMContentLoaded", function () {
         storyEditorState.autosaveTimer = setTimeout(() => {
             persistStoryEditor();
         }, 800);
-        const statusEl = document.getElementById("story-editor-save-status");
-        if (statusEl) statusEl.textContent = "Unsaved changes";
+        setStoryEditorSaveStatus("unsaved", "Unsaved changes");
     }
 
     async function restoreStoryPageText(pageId) {
@@ -2358,6 +2398,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const shell = document.createElement("div");
         shell.className = "story-editor-shell";
+        const saveStatus = storyEditorState.saveStatus || {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        };
         shell.innerHTML = `
             <div class="story-editor-toolbar">
                 <div class="story-editor-title-group">
@@ -2365,7 +2410,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     <input id="story-editor-title" class="story-editor-title-input" type="text" value="${escapeHTML(story.title || "Untitled Story")}">
                 </div>
                 <div class="story-editor-toolbar-actions">
-                    <span id="story-editor-save-status" class="story-editor-save-status">Saved</span>
+                    <span id="story-editor-save-status" class="story-editor-save-status" role="status" aria-live="polite" aria-atomic="true" data-state="${saveStatus.state}">${escapeHTML(saveStatus.message)}</span>
+                    <button type="button" id="story-editor-retry-save-button" class="action-button-secondary" style="display:${saveStatus.showRetry ? "inline-flex" : "none"};">Retry save</button>
                     <button type="button" id="story-editor-save-button" class="action-button-primary">Save</button>
                 </div>
             </div>
@@ -2435,6 +2481,11 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         shell.querySelector("#story-editor-save-button").addEventListener("click", async () => {
+            await persistStoryEditor({ immediate: true, toast: true });
+            renderStoryEditor();
+        });
+
+        shell.querySelector("#story-editor-retry-save-button").addEventListener("click", async () => {
             await persistStoryEditor({ immediate: true, toast: true });
             renderStoryEditor();
         });
@@ -2596,6 +2647,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         console.log("[displayStory] Story object received:", JSON.parse(JSON.stringify(story)));
         storyEditorState.story = cloneStoryForEditor(story);
+        storyEditorState.saveStatus = {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        };
         storyEditorState.story.pages.forEach((page) => {
             page.__original = JSON.parse(JSON.stringify(page));
         });

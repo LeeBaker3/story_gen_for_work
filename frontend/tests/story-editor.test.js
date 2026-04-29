@@ -1,6 +1,132 @@
 import { fireEvent, waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
+let saveEditorResponse;
+
+function createSavedStory(body) {
+    return {
+        id: 321,
+        title: body.title,
+        genre: 'Fantasy',
+        story_outline: 'Outline',
+        main_characters: [],
+        num_pages: 2,
+        tone: null,
+        setting: null,
+        image_style: 'Default',
+        word_to_picture_ratio: 'One image per page',
+        text_density: 'Concise (~30-50 words)',
+        editor_settings: body.editor_settings,
+        pages: [
+            {
+                id: 11,
+                story_id: 321,
+                page_number: 0,
+                text: body.title,
+                image_description: 'Cover art',
+                image_path: 'images/user_1/story_321/cover.png',
+                editor_state: {
+                    original_text: 'Original Title',
+                    original_image_path: 'images/user_1/story_321/cover.png',
+                },
+                created_at: '2026-04-27T12:00:00Z',
+                updated_at: '2026-04-27T12:00:00Z',
+            },
+            {
+                id: 12,
+                story_id: 321,
+                page_number: 1,
+                text: body.pages?.find((page) => page.id === 12)?.text || 'Page one text',
+                image_description: 'Dragon scene',
+                image_path: 'images/user_1/story_321/page1.png',
+                editor_state: {
+                    original_text: 'Page one text',
+                    original_image_path: 'images/user_1/story_321/page1.png',
+                    ...(body.pages?.find((page) => page.id === 12)?.editor_state || {}),
+                },
+                created_at: '2026-04-27T12:00:00Z',
+                updated_at: '2026-04-27T12:00:00Z',
+            },
+        ],
+        created_at: '2026-04-27T12:00:00Z',
+        updated_at: '2026-04-27T12:00:00Z',
+        owner_id: 1,
+        is_draft: false,
+        generated_at: '2026-04-27T12:00:00Z',
+        is_hidden: false,
+        is_deleted: false,
+    };
+}
+
+function createEditorPutResponse(body) {
+    return {
+        ok: true,
+        status: 200,
+        json: async () => createSavedStory(body),
+        headers: { get: () => 'application/json' },
+    };
+}
+
+function createStoryFixture() {
+    return {
+        id: 321,
+        title: 'Original Title',
+        genre: 'Fantasy',
+        story_outline: 'Outline',
+        main_characters: [],
+        num_pages: 2,
+        tone: null,
+        setting: null,
+        image_style: 'Default',
+        word_to_picture_ratio: 'One image per page',
+        text_density: 'Concise (~30-50 words)',
+        editor_settings: {
+            font_family: 'storybook',
+            font_size: 28,
+            font_color: '#ffffff',
+            text_position: 'bottom',
+            text_box_opacity: 0.6,
+        },
+        pages: [
+            {
+                id: 11,
+                story_id: 321,
+                page_number: 0,
+                text: 'Original Title',
+                image_description: 'Cover art',
+                image_path: 'images/user_1/story_321/cover.png',
+                editor_state: {
+                    original_text: 'Original Title',
+                    original_image_path: 'images/user_1/story_321/cover.png',
+                },
+                created_at: '2026-04-27T12:00:00Z',
+                updated_at: '2026-04-27T12:00:00Z',
+            },
+            {
+                id: 12,
+                story_id: 321,
+                page_number: 1,
+                text: 'Page one text',
+                image_description: 'Dragon scene',
+                image_path: 'images/user_1/story_321/page1.png',
+                editor_state: {
+                    original_text: 'Page one text',
+                    original_image_path: 'images/user_1/story_321/page1.png',
+                },
+                created_at: '2026-04-27T12:00:00Z',
+                updated_at: '2026-04-27T12:00:00Z',
+            },
+        ],
+        created_at: '2026-04-27T12:00:00Z',
+        updated_at: '2026-04-27T12:00:00Z',
+        owner_id: 1,
+        is_draft: false,
+        generated_at: '2026-04-27T12:00:00Z',
+        is_hidden: false,
+        is_deleted: false,
+    };
+}
+
 function mountEditorDom() {
     document.body.innerHTML = `
     <header>
@@ -59,6 +185,7 @@ describe('story editor MVP', () => {
         jest.useFakeTimers();
         window.localStorage.setItem('authToken', 'test-token');
         mountEditorDom();
+        saveEditorResponse = (body) => createEditorPutResponse(body);
 
         if (!window.URL.createObjectURL) {
             window.URL.createObjectURL = jest.fn();
@@ -84,63 +211,7 @@ describe('story editor MVP', () => {
 
             if (value.includes('/api/v1/stories/321/editor') && method === 'PUT') {
                 const body = JSON.parse(options.body);
-                return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({
-                        id: 321,
-                        title: body.title,
-                        genre: 'Fantasy',
-                        story_outline: 'Outline',
-                        main_characters: [],
-                        num_pages: 2,
-                        tone: null,
-                        setting: null,
-                        image_style: 'Default',
-                        word_to_picture_ratio: 'One image per page',
-                        text_density: 'Concise (~30-50 words)',
-                        editor_settings: body.editor_settings,
-                        pages: [
-                            {
-                                id: 11,
-                                story_id: 321,
-                                page_number: 0,
-                                text: body.title,
-                                image_description: 'Cover art',
-                                image_path: 'images/user_1/story_321/cover.png',
-                                editor_state: {
-                                    original_text: 'Original Title',
-                                    original_image_path: 'images/user_1/story_321/cover.png',
-                                },
-                                created_at: '2026-04-27T12:00:00Z',
-                                updated_at: '2026-04-27T12:00:00Z',
-                            },
-                            {
-                                id: 12,
-                                story_id: 321,
-                                page_number: 1,
-                                text: body.pages?.find((page) => page.id === 12)?.text || 'Page one text',
-                                image_description: 'Dragon scene',
-                                image_path: 'images/user_1/story_321/page1.png',
-                                editor_state: {
-                                    original_text: 'Page one text',
-                                    original_image_path: 'images/user_1/story_321/page1.png',
-                                    ...(body.pages?.find((page) => page.id === 12)?.editor_state || {}),
-                                },
-                                created_at: '2026-04-27T12:00:00Z',
-                                updated_at: '2026-04-27T12:00:00Z',
-                            },
-                        ],
-                        created_at: '2026-04-27T12:00:00Z',
-                        updated_at: '2026-04-27T12:00:00Z',
-                        owner_id: 1,
-                        is_draft: false,
-                        generated_at: '2026-04-27T12:00:00Z',
-                        is_hidden: false,
-                        is_deleted: false,
-                    }),
-                    headers: { get: () => 'application/json' },
-                };
+                return saveEditorResponse(body);
             }
 
             if (value.includes('/api/v1/stories/321/pages/11/image') || value.includes('/api/v1/stories/321/pages/12/image')) {
@@ -170,63 +241,7 @@ describe('story editor MVP', () => {
     });
 
     test('renders story editor and saves title/page changes', async () => {
-        const story = {
-            id: 321,
-            title: 'Original Title',
-            genre: 'Fantasy',
-            story_outline: 'Outline',
-            main_characters: [],
-            num_pages: 2,
-            tone: null,
-            setting: null,
-            image_style: 'Default',
-            word_to_picture_ratio: 'One image per page',
-            text_density: 'Concise (~30-50 words)',
-            editor_settings: {
-                font_family: 'storybook',
-                font_size: 28,
-                font_color: '#ffffff',
-                text_position: 'bottom',
-                text_box_opacity: 0.6,
-            },
-            pages: [
-                {
-                    id: 11,
-                    story_id: 321,
-                    page_number: 0,
-                    text: 'Original Title',
-                    image_description: 'Cover art',
-                    image_path: 'images/user_1/story_321/cover.png',
-                    editor_state: {
-                        original_text: 'Original Title',
-                        original_image_path: 'images/user_1/story_321/cover.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-                {
-                    id: 12,
-                    story_id: 321,
-                    page_number: 1,
-                    text: 'Page one text',
-                    image_description: 'Dragon scene',
-                    image_path: 'images/user_1/story_321/page1.png',
-                    editor_state: {
-                        original_text: 'Page one text',
-                        original_image_path: 'images/user_1/story_321/page1.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-            ],
-            created_at: '2026-04-27T12:00:00Z',
-            updated_at: '2026-04-27T12:00:00Z',
-            owner_id: 1,
-            is_draft: false,
-            generated_at: '2026-04-27T12:00:00Z',
-            is_hidden: false,
-            is_deleted: false,
-        };
+        const story = createStoryFixture();
 
         window.__TEST_API__.displayStory(story);
 
@@ -276,64 +291,71 @@ describe('story editor MVP', () => {
         expect(document.getElementById('export-pdf-button').style.display).toBe('inline-block');
     });
 
-    test('updates content page preview geometry when switching between top-left and bottom-left', async () => {
-        const story = {
-            id: 321,
-            title: 'Original Title',
-            genre: 'Fantasy',
-            story_outline: 'Outline',
-            main_characters: [],
-            num_pages: 2,
-            tone: null,
-            setting: null,
-            image_style: 'Default',
-            word_to_picture_ratio: 'One image per page',
-            text_density: 'Concise (~30-50 words)',
-            editor_settings: {
-                font_family: 'storybook',
-                font_size: 28,
-                font_color: '#ffffff',
-                text_position: 'middle-center',
-                text_box_opacity: 0.6,
-            },
-            pages: [
-                {
-                    id: 11,
-                    story_id: 321,
-                    page_number: 0,
-                    text: 'Original Title',
-                    image_description: 'Cover art',
-                    image_path: 'images/user_1/story_321/cover.png',
-                    editor_state: {
-                        original_text: 'Original Title',
-                        original_image_path: 'images/user_1/story_321/cover.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-                {
-                    id: 12,
-                    story_id: 321,
-                    page_number: 1,
-                    text: 'Page one text',
-                    image_description: 'Dragon scene',
-                    image_path: 'images/user_1/story_321/page1.png',
-                    editor_state: {
-                        original_text: 'Page one text',
-                        original_image_path: 'images/user_1/story_321/page1.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-            ],
-            created_at: '2026-04-27T12:00:00Z',
-            updated_at: '2026-04-27T12:00:00Z',
-            owner_id: 1,
-            is_draft: false,
-            generated_at: '2026-04-27T12:00:00Z',
-            is_hidden: false,
-            is_deleted: false,
+    test('announces save state through a live region and keeps unsaved status visible', async () => {
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const saveStatus = document.getElementById('story-editor-save-status');
+        expect(saveStatus.getAttribute('role')).toBe('status');
+        expect(saveStatus.getAttribute('aria-live')).toBe('polite');
+        expect(saveStatus.getAttribute('aria-atomic')).toBe('true');
+
+        const titleInput = document.getElementById('story-editor-title');
+        fireEvent.input(titleInput, { target: { value: 'Edited Title' } });
+
+        expect(saveStatus.textContent).toBe('Unsaved changes');
+        expect(saveStatus.dataset.state).toBe('unsaved');
+        expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('none');
+    });
+
+    test('keeps failed save state visible and offers retry affordance', async () => {
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        let saveAttempts = 0;
+        saveEditorResponse = (body) => {
+            saveAttempts += 1;
+            if (saveAttempts === 1) {
+                return {
+                    ok: false,
+                    status: 500,
+                    json: async () => ({ detail: 'Save exploded' }),
+                    headers: { get: () => 'application/json' },
+                    text: async () => 'Save exploded',
+                };
+            }
+
+            return createEditorPutResponse(body);
         };
+
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const titleInput = document.getElementById('story-editor-title');
+        fireEvent.input(titleInput, { target: { value: 'Needs retry' } });
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveStatus = document.getElementById('story-editor-save-status');
+            expect(saveStatus.textContent).toBe('Save failed. Retry to keep editing.');
+            expect(saveStatus.dataset.state).toBe('failed');
+        });
+
+        const retryButton = document.getElementById('story-editor-retry-save-button');
+        expect(retryButton.style.display).toBe('inline-flex');
+
+        fireEvent.click(retryButton);
+
+        await waitFor(() => {
+            const saveStatus = document.getElementById('story-editor-save-status');
+            expect(saveStatus.textContent).toMatch(/^Saved /);
+        });
+
+        expect(saveAttempts).toBe(2);
+        expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('none');
+        expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    test('updates content page preview geometry when switching between top-left and bottom-left', async () => {
+        const story = createStoryFixture();
+        story.editor_settings.text_position = 'middle-center';
 
         window.__TEST_API__.displayStory(story);
 
@@ -359,63 +381,7 @@ describe('story editor MVP', () => {
     });
 
     test('applies and saves a per-page text box opacity override', async () => {
-        const story = {
-            id: 321,
-            title: 'Original Title',
-            genre: 'Fantasy',
-            story_outline: 'Outline',
-            main_characters: [],
-            num_pages: 2,
-            tone: null,
-            setting: null,
-            image_style: 'Default',
-            word_to_picture_ratio: 'One image per page',
-            text_density: 'Concise (~30-50 words)',
-            editor_settings: {
-                font_family: 'storybook',
-                font_size: 28,
-                font_color: '#ffffff',
-                text_position: 'bottom',
-                text_box_opacity: 0.6,
-            },
-            pages: [
-                {
-                    id: 11,
-                    story_id: 321,
-                    page_number: 0,
-                    text: 'Original Title',
-                    image_description: 'Cover art',
-                    image_path: 'images/user_1/story_321/cover.png',
-                    editor_state: {
-                        original_text: 'Original Title',
-                        original_image_path: 'images/user_1/story_321/cover.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-                {
-                    id: 12,
-                    story_id: 321,
-                    page_number: 1,
-                    text: 'Page one text',
-                    image_description: 'Dragon scene',
-                    image_path: 'images/user_1/story_321/page1.png',
-                    editor_state: {
-                        original_text: 'Page one text',
-                        original_image_path: 'images/user_1/story_321/page1.png',
-                    },
-                    created_at: '2026-04-27T12:00:00Z',
-                    updated_at: '2026-04-27T12:00:00Z',
-                },
-            ],
-            created_at: '2026-04-27T12:00:00Z',
-            updated_at: '2026-04-27T12:00:00Z',
-            owner_id: 1,
-            is_draft: false,
-            generated_at: '2026-04-27T12:00:00Z',
-            is_hidden: false,
-            is_deleted: false,
-        };
+        const story = createStoryFixture();
 
         window.__TEST_API__.displayStory(story);
 
