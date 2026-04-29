@@ -221,6 +221,7 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
                     text="Edited page text",
                     editor_state=schemas.PageEditorState(
                         text_position="left",
+                        font_family="handwritten",
                         font_size=22,
                         font_color="#112233",
                         text_box_opacity=0.35,
@@ -236,9 +237,12 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
     db_session.refresh(page)
     assert page.text == "Edited page text"
     assert page.editor_state["text_position"] == "left"
+    assert page.editor_state["font_family"] == "handwritten"
     assert page.editor_state["font_color"] == "#112233"
     assert page.editor_state["text_box_opacity"] == 0.35
     assert page.editor_state["original_text"] == "Original page text"
+    effective_settings = crud.get_effective_page_editor_settings(updated_story, page)
+    assert effective_settings["font_family"] == "handwritten"
 
 
 def test_restore_page_text_uses_original_generated_text(

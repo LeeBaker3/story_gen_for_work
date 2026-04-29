@@ -118,6 +118,7 @@ class PageEditorState(BaseModel):
     original_text: Optional[str] = None
     original_image_path: Optional[str] = None
     text_position: Optional[str] = None
+    font_family: Optional[str] = None
     font_size: Optional[int] = None
     font_color: Optional[str] = None
     text_box_opacity: Optional[float] = Field(None, ge=0.0, le=1.0)

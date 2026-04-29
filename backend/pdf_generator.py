@@ -67,7 +67,7 @@ def _effective_page_settings(story_data: StoryModel, page: Any) -> Dict[str, Any
 
     settings = _resolve_story_editor_settings(story_data)
     state = _resolve_page_editor_state(page)
-    for key in ("text_position", "font_size", "font_color"):
+    for key in ("text_position", "font_family", "font_size", "font_color"):
         value = state.get(key)
         if value not in (None, ""):
             settings[key] = value

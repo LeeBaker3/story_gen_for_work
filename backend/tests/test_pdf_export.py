@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend import database
-from backend.pdf_generator import create_story_pdf
+from backend.pdf_generator import _effective_page_settings, create_story_pdf
 from backend.schemas import EDITOR_DEFAULTS
 from datetime import datetime, UTC
 from unittest.mock import patch
@@ -256,3 +256,23 @@ def test_create_story_pdf_honors_font_family_override(tmp_path) -> None:
     pdf_bytes = create_story_pdf(story)
 
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "font-family-story.pdf")
+
+
+def test_effective_page_settings_prefers_page_font_family_override() -> None:
+    story = MockPdfStory(
+        id=106,
+        title="Per Page Font Story",
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "font_family": "classic",
+        },
+    )
+    page = MockPdfPage(
+        page_number=1,
+        text="Per-page font override.",
+        editor_state={"font_family": "handwritten"},
+    )
+
+    settings = _effective_page_settings(story, page)
+
+    assert settings["font_family"] == "handwritten"

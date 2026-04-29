@@ -116,7 +116,7 @@ def get_effective_page_editor_settings(story: Story, page: Page) -> Dict[str, An
 
     settings = get_story_editor_settings(story)
     page_state = get_page_editor_state(page)
-    for key in ("text_position", "font_size", "font_color"):
+    for key in ("text_position", "font_family", "font_size", "font_color"):
         value = page_state.get(key)
         if value not in (None, ""):
             settings[key] = value
