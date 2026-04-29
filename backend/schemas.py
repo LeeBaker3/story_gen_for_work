@@ -99,6 +99,7 @@ EDITOR_DEFAULTS: Dict[str, Any] = {
     "font_color": "#ffffff",
     "text_position": "bottom-center",
     "text_box_opacity": 0.6,
+    "page_format": "letter",
 }
 
 
@@ -112,6 +113,7 @@ class StoryEditorSettings(BaseModel):
         ge=0.0,
         le=1.0,
     )
+    page_format: str = Field(default=EDITOR_DEFAULTS["page_format"])
 
 
 class PageEditorState(BaseModel):

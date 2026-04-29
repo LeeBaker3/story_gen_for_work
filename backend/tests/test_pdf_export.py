@@ -1,8 +1,15 @@
+import pytest
 from dataclasses import dataclass, field
+import re
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend import database
-from backend.pdf_generator import _effective_page_settings, create_story_pdf
+from backend.pdf_generator import (
+    PAGE_SIZE_MAP,
+    _effective_page_settings,
+    _resolve_page_size,
+    create_story_pdf,
+)
 from backend.schemas import EDITOR_DEFAULTS
 from datetime import datetime, UTC
 from unittest.mock import patch
@@ -36,6 +43,17 @@ def _assert_valid_pdf_bytes(pdf_bytes: bytes, tmp_path, filename: str) -> None:
     output_path = tmp_path / filename
     output_path.write_bytes(pdf_bytes)
     assert output_path.stat().st_size == len(pdf_bytes)
+
+
+def _extract_media_box(pdf_bytes: bytes) -> tuple[float, float]:
+    """Return the first page width and height from the rendered PDF bytes."""
+
+    match = re.search(
+        rb"/MediaBox\s*\[\s*0\s+0\s+([0-9.]+)\s+([0-9.]+)\s*\]",
+        pdf_bytes,
+    )
+    assert match is not None
+    return float(match.group(1)), float(match.group(2))
 
 
 def test_export_pdf_success(client: TestClient, db_session, regular_user_auth_headers):
@@ -256,6 +274,41 @@ def test_create_story_pdf_honors_font_family_override(tmp_path) -> None:
     pdf_bytes = create_story_pdf(story)
 
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "font-family-story.pdf")
+
+
+def test_create_story_pdf_uses_configured_a4_page_size(tmp_path) -> None:
+    story = MockPdfStory(
+        id=106,
+        title="A4 Story",
+        pages=[MockPdfPage(page_number=1, text="A4 page size test.")],
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "page_format": "a4",
+        },
+    )
+
+    pdf_bytes = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "a4-story.pdf")
+    width, height = _extract_media_box(pdf_bytes)
+    expected_width, expected_height = PAGE_SIZE_MAP["a4"]
+    assert width == pytest.approx(expected_width, abs=0.2)
+    assert height == pytest.approx(expected_height, abs=0.2)
+
+
+def test_resolve_page_size_defaults_to_letter_and_supports_square_storybook() -> None:
+    default_story = MockPdfStory(id=107, title="Default Format")
+    square_story = MockPdfStory(
+        id=108,
+        title="Square Format",
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "page_format": "square-storybook",
+        },
+    )
+
+    assert _resolve_page_size(default_story) == PAGE_SIZE_MAP["letter"]
+    assert _resolve_page_size(square_story) == PAGE_SIZE_MAP["square-storybook"]
 
 
 def test_effective_page_settings_prefers_page_font_family_override() -> None:
