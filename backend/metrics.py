@@ -50,6 +50,11 @@ PAGE_IMAGE_RETRIES_TOTAL = Counter(
     "Total retry attempts for page image generation.",
 )
 
+PAGE_IMAGE_FAILURES_TOTAL = Counter(
+    "app_story_page_image_failures_total",
+    "Total page image generation failures after retries are exhausted.",
+)
+
 
 OPENAI_TEXT_REQUESTS_TOTAL = Counter(
     "app_openai_text_requests_total",

@@ -37,13 +37,16 @@ Logging
 
 OpenAI models and retries
 - OPENAI_API_KEY: API key for OpenAI
-- TEXT_MODEL: LLM for story text (default: gpt-5-mini)
-- IMAGE_MODEL: image model (default: gpt-image-1.5)
+- TEXT_MODEL: LLM for story text (default: gpt-5.4-mini)
+- IMAGE_MODEL: image model (default: gpt-image-2)
 - USE_OPENAI_RESPONSES_API: "1"/"true" to use the Responses API for story text generation (default: false)
 - OPENAI_TEXT_ENABLE_FALLBACK: "1"/"true" to fall back to the other text path if the primary fails (default: false)
 - RETRY_MAX_ATTEMPTS: API retry attempts (default: 3)
 - RETRY_BACKOFF_BASE: exponential backoff base seconds (default: 1.5)
 - ENABLE_IMAGE_STYLE_MAPPING: "1"/"true" to map friendly style names to richer prompts (default: false)
+
+Authentication
+- LOGIN_RATE_LIMIT: rate limit applied to login attempts (default: 10/minute)
 
 OpenAI smoke testing (manual)
 - SMOKE_EDIT_IMAGE_PATH: local path to a real PNG/JPG/WebP file used by scripts/smoke_test_openai.py to test Images Edits.

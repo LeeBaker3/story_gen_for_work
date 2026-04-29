@@ -9,7 +9,11 @@ from . import crud, schemas, database, ai_services
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
-from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
+from .metrics import (
+    PAGE_IMAGE_FAILURES_TOTAL,
+    PAGE_IMAGE_RETRIES_TOTAL,
+    observe_story_generation,
+)
 
 
 def _text_position_guidance(text_position: str) -> str:
@@ -57,6 +61,7 @@ def _format_task_error_message(error: Exception) -> str:
 async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
     db: Session = next(database.get_db())
     _settings = get_settings()
+    telemetry_enabled = bool(getattr(_settings, 'enable_telemetry', False))
     start_time = time.perf_counter()
     try:
         app_logger.info(
@@ -151,6 +156,8 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         # Ensure base dir exists (already ensured above) for per-page images
 
         failed_pages = 0
+        retry_counts_by_page: dict[str, int] = {}
+        total_retries = 0
         if 'Pages' in story_content:
             for i, page in enumerate(story_content['Pages']):
                 progress = 60 + int((i + 1) / len(story_content['Pages']) * 35)
@@ -195,7 +202,19 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 page_image_url = None
                 for attempt in range(attempts):
                     if attempt > 0:
-                        PAGE_IMAGE_RETRIES_TOTAL.inc()
+                        if telemetry_enabled:
+                            PAGE_IMAGE_RETRIES_TOTAL.inc()
+                            retry_counts_by_page[str(page_num_int)] = (
+                                retry_counts_by_page.get(str(page_num_int), 0) + 1
+                            )
+                            total_retries += 1
+                            crud.update_story_generation_task(
+                                db,
+                                task_id,
+                                retry_counts_by_page=retry_counts_by_page,
+                                total_retries=total_retries,
+                                failed_pages_count=failed_pages,
+                            )
                     page_image_url = await ai_services.generate_image_for_page(
                         page_content=f"{image_description}. {text_position_guidance}",
                         style_reference=image_style,
@@ -223,6 +242,15 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 page['image_url'] = page_image_url
                 if not page_image_url:
                     failed_pages += 1
+                    if telemetry_enabled:
+                        PAGE_IMAGE_FAILURES_TOTAL.inc()
+                        crud.update_story_generation_task(
+                            db,
+                            task_id,
+                            retry_counts_by_page=retry_counts_by_page,
+                            total_retries=total_retries,
+                            failed_pages_count=failed_pages,
+                        )
 
         app_logger.info(
             f"Completed page image generation for task_id: {task_id}")
@@ -263,11 +291,20 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 f"Failed bulk upsert of characters for story {story_id}: {e}")
 
         # Final Step: Update task status to COMPLETED (even if some images failed; text is generated)
+        completion_update_kwargs = {
+            'status': schemas.GenerationTaskStatus.COMPLETED,
+            'current_step': schemas.GenerationTaskStep.FINALIZING,
+        }
+        if telemetry_enabled:
+            completion_update_kwargs.update(
+                retry_counts_by_page=retry_counts_by_page,
+                total_retries=total_retries,
+                failed_pages_count=failed_pages,
+            )
         crud.update_story_generation_task(
             db,
             task_id,
-            status=schemas.GenerationTaskStatus.COMPLETED,
-            current_step=schemas.GenerationTaskStep.FINALIZING,
+            **completion_update_kwargs,
         )
         crud.update_story_generation_task_progress(
             db, task_id, 100, schemas.GenerationTaskStep.FINALIZING)

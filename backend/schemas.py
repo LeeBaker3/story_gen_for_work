@@ -195,9 +195,13 @@ class UserBase(BaseModel):
     role: Optional[str] = 'user'  # Default to 'user'
 
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
+    is_active: Optional[bool] = True
     password: str
-    # email is inherited from UserBase
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class User(UserBase):
@@ -327,6 +331,9 @@ class StoryGenerationTaskBase(BaseModel):
     current_step: GenerationTaskStep = GenerationTaskStep.INITIALIZING
     attempts: int = 0
     last_error: Optional[str] = None
+    retry_counts_by_page: Optional[Dict[str, int]] = None
+    total_retries: Optional[int] = None
+    failed_pages_count: Optional[int] = None
 
 
 class StoryGenerationTaskCreate(StoryGenerationTaskBase):

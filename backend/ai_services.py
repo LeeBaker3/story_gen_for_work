@@ -19,7 +19,7 @@ from .logging_config import api_logger, error_logger, app_logger, warning_logger
 from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
-from .image_style_mapping import get_openai_image_style, map_style
+from .image_style_mapping import get_openai_image_style, resolve_image_style
 from .metrics import observe_openai_text_call
 
 load_dotenv()
@@ -695,10 +695,16 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     image_style = story_input.image_style
     if hasattr(image_style, 'value'):
         image_style = image_style.value
-    else:
+    elif image_style is not None:
         image_style = str(image_style)
 
-    business_style = image_style
+    resolved_style = resolve_image_style(
+        db=db,
+        business_style=image_style,
+        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+    )
+    business_style = resolved_style.business_style or image_style
+    prompt_style = resolved_style.prompt_style or business_style
     openai_style = "vivid"
     try:
         openai_style = get_openai_image_style(
@@ -707,19 +713,9 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
         # Never block generation due to optional mapping.
         openai_style = "vivid"
 
-    # Optionally map business style to a more descriptive OpenAI style phrase
-    try:
-        if getattr(_settings, "enable_image_style_mapping", False):
-            mapped = map_style(image_style)
-            if mapped:
-                image_style = mapped
-    except Exception:
-        # Mapping issues should not break generation; fallback to original
-        pass
-
     # Construct a detailed prompt with style at the forefront
     prompt_parts = [
-        f"A {image_style} style full-body character sheet for {character.name}"]
+        f"A {prompt_style} style full-body character sheet for {character.name}"]
     if character.physical_appearance:
         prompt_parts.append(character.physical_appearance)
     if character.clothing_style:
@@ -781,7 +777,13 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
             "Database session is not available in generate_image_for_page")
         return None
 
-    business_style = style_reference
+    resolved_style = resolve_image_style(
+        db=db,
+        business_style=style_reference,
+        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+    )
+    business_style = resolved_style.business_style or style_reference
+    prompt_style = resolved_style.prompt_style or business_style
 
     openai_style = "vivid"
     try:
@@ -790,16 +792,7 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
     except Exception:
         openai_style = "vivid"
 
-    # Optionally map the style reference to a richer prompt modifier
-    try:
-        if getattr(_settings, "enable_image_style_mapping", False):
-            mapped = map_style(style_reference)
-            if mapped:
-                style_reference = mapped
-    except Exception:
-        pass
-
-    prompt_parts = [f"A {style_reference} style image of {page_content}"]
+    prompt_parts = [f"A {prompt_style} style image of {page_content}"]
     if characters_in_scene:
         prompt_parts.append(
             f"The scene features the following characters: {', '.join(characters_in_scene)}.")

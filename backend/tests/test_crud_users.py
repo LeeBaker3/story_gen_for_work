@@ -132,6 +132,20 @@ def test_create_user_ignores_supplied_admin_role(db_session: Session):
     assert db_user.role == "user"
 
 
+def test_user_create_excludes_role_from_schema_and_dump():
+    schema = schemas.UserCreate.model_json_schema()
+    assert "role" not in schema["properties"]
+
+    user_in = schemas.UserCreate(
+        username="schema_shape_user",
+        password="password",
+        email="schema_shape@example.com",
+        role="admin",
+    )
+
+    assert "role" not in user_in.model_dump()
+
+
 def test_create_user_is_active_is_none(db_session: Session):
     # Explicitly set is_active to None, should default to True
     user_in = schemas.UserCreate(

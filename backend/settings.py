@@ -104,6 +104,9 @@ class BaseSettings:
         self.enable_image_style_mapping: bool = os.getenv(
             "ENABLE_IMAGE_STYLE_MAPPING", "").lower() in ("1", "true", "yes")
 
+        self.enable_telemetry: bool = os.getenv(
+            "ENABLE_TELEMETRY", "").lower() in ("1", "true", "yes")
+
         # Authentication rate limiting
         self.login_rate_limit: str = os.getenv(
             "LOGIN_RATE_LIMIT",

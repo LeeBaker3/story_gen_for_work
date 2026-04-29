@@ -901,7 +901,10 @@ def update_story_generation_task(
     status: Optional[schemas.GenerationTaskStatus] = None,
     progress: Optional[int] = None,
     current_step: Optional[object] = None,
-    error_message: Optional[str] = None
+    error_message: Optional[str] = None,
+    retry_counts_by_page: Optional[Dict[str, int]] = None,
+    total_retries: Optional[int] = None,
+    failed_pages_count: Optional[int] = None,
 ) -> Optional[StoryGenerationTask]:
     task = get_story_generation_task(db, task_id)
     if not task:
@@ -940,6 +943,12 @@ def update_story_generation_task(
         task.error_message = error_message
         # Update last_error for persistent tracking (do not clear automatically)
         task.last_error = error_message
+    if retry_counts_by_page is not None:
+        task.retry_counts_by_page = retry_counts_by_page
+    if total_retries is not None:
+        task.total_retries = total_retries
+    if failed_pages_count is not None:
+        task.failed_pages_count = failed_pages_count
 
     # Increment attempts if we re-enter in_progress after a failure or while already in progress (retry scenario)
     if status is not None:

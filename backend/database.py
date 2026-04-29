@@ -170,6 +170,9 @@ class StoryGenerationTask(Base):
     duration_ms = Column(Integer, nullable=True)
     # Persist last encountered error across retries
     last_error = Column(Text, nullable=True)
+    retry_counts_by_page = Column(JSON, nullable=True)
+    total_retries = Column(Integer, nullable=True)
+    failed_pages_count = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         onupdate=func.now(), server_default=func.now())
@@ -269,6 +272,9 @@ def _ensure_story_generation_task_new_columns():
         "completed_at": "TIMESTAMP NULL",
         "duration_ms": "INTEGER NULL",
         "last_error": "TEXT NULL",
+        "retry_counts_by_page": "JSON NULL",
+        "total_retries": "INTEGER NULL",
+        "failed_pages_count": "INTEGER NULL",
     }
     with engine.connect() as conn:
         try:

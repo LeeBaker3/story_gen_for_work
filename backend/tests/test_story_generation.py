@@ -7,6 +7,7 @@ from backend.main import app
 from backend import schemas, crud, auth, database
 import uuid
 from datetime import datetime, UTC
+from types import SimpleNamespace
 
 
 @pytest.fixture(scope="module")
@@ -359,6 +360,40 @@ def test_get_story_status(client, db_session_mock, monkeypatch):
     assert response_data["progress"] == 50
     assert response_data["current_step"] == "generating_page_images"
     assert response_data["attempts"] == 0
+
+
+def test_get_story_status_includes_telemetry_fields_when_enabled(client, db_session_mock, monkeypatch):
+    """Telemetry fields should be serialized on the generation status payload when present."""
+
+    mock_task_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    mock_task = schemas.StoryGenerationTask(
+        id=mock_task_id,
+        story_id=1,
+        user_id=1,
+        status=schemas.GenerationTaskStatus.IN_PROGRESS,
+        progress=50,
+        current_step=schemas.GenerationTaskStep.GENERATING_PAGE_IMAGES,
+        retry_counts_by_page={"1": 2, "3": 1},
+        total_retries=3,
+        failed_pages_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+
+    monkeypatch.setattr(
+        crud,
+        "get_story_generation_task",
+        MagicMock(return_value=mock_task),
+    )
+
+    response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
+
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["retry_counts_by_page"] == {"1": 2, "3": 1}
+    assert response_data["total_retries"] == 3
+    assert response_data["failed_pages_count"] == 1
 
 
 def test_get_story_status_not_found(client, db_session_mock, monkeypatch):
@@ -731,6 +766,153 @@ async def test_generate_story_as_background_task_tolerates_missing_page_images()
                     task_id,
                     error_message="Completed with 1 page image(s) missing due to generation failures.",
                 )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_collects_telemetry_when_enabled():
+    """Telemetry-enabled generation should persist retry/failure counts and increment counters."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-telemetry-on"
+    story_id = 12
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Telemetry Story",
+        genre="Fantasy",
+        story_outline="A story with retried image generation.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.get_settings', return_value=SimpleNamespace(enable_telemetry=True, retry_max_attempts=2, retry_backoff_base=0.0)):
+            with patch('backend.story_generation_service.asyncio.sleep', new=AsyncMock()) as mock_sleep:
+                with patch('backend.story_generation_service.PAGE_IMAGE_RETRIES_TOTAL') as mock_retry_counter:
+                    with patch('backend.story_generation_service.PAGE_IMAGE_FAILURES_TOTAL') as mock_failure_counter:
+                        with patch('backend.story_generation_service.crud') as mock_crud:
+                            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                                mock_ai_services.generate_character_reference_image = AsyncMock(
+                                    return_value={"name": "Mina", "reference_image_path": None}
+                                )
+                                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                                    "Title": "Telemetry Story",
+                                    "Pages": [
+                                        {
+                                            "Page_number": 1,
+                                            "Text": "Mina walks through the forest.",
+                                            "Image_description": "Mina walking through the forest.",
+                                            "Characters_in_scene": ["Mina"],
+                                        }
+                                    ],
+                                })
+                                mock_ai_services.generate_image_for_page = AsyncMock(
+                                    side_effect=[None, None]
+                                )
+
+                                from backend.story_generation_service import generate_story_as_background_task
+
+                                await generate_story_as_background_task(
+                                    task_id, story_id, user_id, story_input)
+
+                                mock_sleep.assert_awaited_once()
+                                mock_retry_counter.inc.assert_called_once_with()
+                                mock_failure_counter.inc.assert_called_once_with()
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=0,
+                                )
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=1,
+                                )
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    status=schemas.GenerationTaskStatus.COMPLETED,
+                                    current_step=schemas.GenerationTaskStep.FINALIZING,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=1,
+                                )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_skips_telemetry_updates_when_disabled():
+    """Telemetry-disabled generation should not emit retry/failure telemetry updates."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-telemetry-off"
+    story_id = 13
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="No Telemetry Story",
+        genre="Fantasy",
+        story_outline="A story without telemetry tracking.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.get_settings', return_value=SimpleNamespace(enable_telemetry=False, retry_max_attempts=2, retry_backoff_base=0.0)):
+            with patch('backend.story_generation_service.asyncio.sleep', new=AsyncMock()):
+                with patch('backend.story_generation_service.PAGE_IMAGE_RETRIES_TOTAL') as mock_retry_counter:
+                    with patch('backend.story_generation_service.PAGE_IMAGE_FAILURES_TOTAL') as mock_failure_counter:
+                        with patch('backend.story_generation_service.crud') as mock_crud:
+                            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                                mock_ai_services.generate_character_reference_image = AsyncMock(
+                                    return_value={"name": "Mina", "reference_image_path": None}
+                                )
+                                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                                    "Title": "No Telemetry Story",
+                                    "Pages": [
+                                        {
+                                            "Page_number": 1,
+                                            "Text": "Mina walks through the forest.",
+                                            "Image_description": "Mina walking through the forest.",
+                                            "Characters_in_scene": ["Mina"],
+                                        }
+                                    ],
+                                })
+                                mock_ai_services.generate_image_for_page = AsyncMock(
+                                    side_effect=[None, None]
+                                )
+
+                                from backend.story_generation_service import generate_story_as_background_task
+
+                                await generate_story_as_background_task(
+                                    task_id, story_id, user_id, story_input)
+
+                                mock_retry_counter.inc.assert_not_called()
+                                mock_failure_counter.inc.assert_not_called()
+                                telemetry_calls = [
+                                    call
+                                    for call in mock_crud.update_story_generation_task.call_args_list
+                                    if any(
+                                        key in call.kwargs
+                                        for key in (
+                                            "retry_counts_by_page",
+                                            "total_retries",
+                                            "failed_pages_count",
+                                        )
+                                    )
+                                ]
+                                assert telemetry_calls == []
 
 
 @pytest.mark.asyncio
