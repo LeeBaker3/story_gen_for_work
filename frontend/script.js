@@ -1966,6 +1966,7 @@ document.addEventListener("DOMContentLoaded", function () {
             page.__original = JSON.parse(JSON.stringify(page));
         });
         renderStoryEditor();
+        storyPreviewContent?.scrollIntoView?.({ behavior: "instant", block: "start" });
     }
 
     function showSection(sectionToShow) {
