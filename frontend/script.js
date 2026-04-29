@@ -146,6 +146,17 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    function syncCharacterDetailsDisclosure(toggleButton, detailsDiv) {
+        if (!(toggleButton instanceof HTMLElement) || !(detailsDiv instanceof HTMLElement)) {
+            return;
+        }
+
+        toggleButton.setAttribute("aria-controls", detailsDiv.id);
+        const isExpanded = window.getComputedStyle(detailsDiv).display !== "none";
+        toggleButton.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+        toggleButton.textContent = isExpanded ? "Hide Details" : "Show Details";
+    }
+
     // Simple HTML escape to prevent accidental HTML injection in names
     function escapeHTML(str) {
         if (str == null) return '';
@@ -1508,7 +1519,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 const detailsDiv = document.getElementById("char-details-1");
                 const toggleButton = document.getElementById("char-details-toggle-1");
                 if (detailsDiv) detailsDiv.style.display = "none";
-                if (toggleButton) toggleButton.textContent = "Show Details";
+                if (toggleButton && detailsDiv) {
+                    syncCharacterDetailsDisclosure(toggleButton, detailsDiv);
+                }
                 console.log(
                     "[resetFormAndState] Reset fields and state for first character entry.",
                 );
@@ -1573,7 +1586,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="character-entry-header">
                 <h4 class="character-entry-title">Character ${characterCount}</h4>
                 <div class="character-entry-actions">
-                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}">Show Details</button>
+                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
                     <button type="button" class="remove-character-button action-button-danger" aria-label="Delete character ${characterCount} from this story">Delete from Story</button>
                 </div>
             </div>
@@ -1605,6 +1618,11 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>
         `;
         fieldset.appendChild(newCharacterEntry);
+        const detailsToggle = newCharacterEntry.querySelector('.character-details-toggle');
+        const detailsPanel = newCharacterEntry.querySelector('.character-details-fields');
+        if (detailsToggle && detailsPanel) {
+            syncCharacterDetailsDisclosure(detailsToggle, detailsPanel);
+        }
         attachWizardValidationClearHandler(newCharacterEntry.querySelector('.char-name'));
         // Populate gender dropdown for the newly added character entry
         try { populateDropdown(`char-gender-${characterCount}`, 'genders'); } catch (e) { /* ignore */ }
@@ -3652,9 +3670,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     `char-details-toggle-${characterCount}`,
                 ); // Changed from querySelector to getElementById
                 if (detailsDiv) detailsDiv.style.display = "none";
-                if (toggleButton) {
-                    toggleButton.textContent = "Show Details";
-                    // REMOVED: initializeCharacterDetailsToggle(toggleButton);
+                if (toggleButton && detailsDiv) {
+                    syncCharacterDetailsDisclosure(toggleButton, detailsDiv);
                 }
             });
         } else {
@@ -3662,9 +3679,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const firstCharToggle = document.getElementById("char-details-toggle-1"); // Changed from querySelector to getElementById
             const firstCharDetails = document.getElementById("char-details-1");
             if (firstCharDetails) firstCharDetails.style.display = "none";
-            if (firstCharToggle) {
-                firstCharToggle.textContent = "Show Details";
-                // REMOVED: initializeCharacterDetailsToggle(firstCharToggle);
+            if (firstCharToggle && firstCharDetails) {
+                syncCharacterDetailsDisclosure(firstCharToggle, firstCharDetails);
             }
         }
 
@@ -3999,7 +4015,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         `[Toggle Click] Details div (${targetId}) isHidden (computed): ${isHidden}, current style.display: '${detailsDiv.style.display}'`,
                     );
                     detailsDiv.style.display = isHidden ? "block" : "none";
-                    target.textContent = isHidden ? "Hide Details" : "Show Details";
+                    syncCharacterDetailsDisclosure(target, detailsDiv);
                     console.log(
                         `[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${target.textContent}'`,
                     );

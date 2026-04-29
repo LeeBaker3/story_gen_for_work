@@ -35,7 +35,9 @@ function mountWizardDom() {
           </div>
           <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
             <fieldset id="main-characters-fieldset">
-              <input class="char-name" value="Alice" />
+              <input id="char-name-1" class="char-name" value="Alice" />
+              <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+              <div id="char-details-1" class="character-details-fields" style="display:none;"></div>
               <select id="char-gender-1"><option value="">Select…</option><option value="female">Female</option></select>
             </fieldset>
             <button type="button" id="add-character-button">Add Another Character</button>
@@ -237,6 +239,29 @@ describe('wizard navigation', () => {
 
     expect(document.getElementById('char-name-2')).toBeNull();
     expect(document.querySelector('.remove-character-button')).toBeNull();
+  });
+
+  test('character detail disclosure exposes and updates aria state', () => {
+    fireEvent.click(document.getElementById('wizard-next'));
+
+    const toggle = document.getElementById('char-details-toggle-1');
+    const details = document.getElementById('char-details-1');
+
+    expect(toggle.getAttribute('aria-controls')).toBe('char-details-1');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(details.style.display).toBe('none');
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(details.style.display).toBe('block');
+    expect(toggle.textContent).toBe('Hide Details');
+
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(details.style.display).toBe('none');
+    expect(toggle.textContent).toBe('Show Details');
   });
 
   test('generate request includes wizard editor settings', async () => {
