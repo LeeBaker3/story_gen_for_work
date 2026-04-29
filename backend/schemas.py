@@ -120,6 +120,7 @@ class PageEditorState(BaseModel):
     text_position: Optional[str] = None
     font_size: Optional[int] = None
     font_color: Optional[str] = None
+    text_box_opacity: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class PageCreate(PageBase):

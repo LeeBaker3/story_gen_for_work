@@ -196,6 +196,7 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
                         text_position="left",
                         font_size=22,
                         font_color="#112233",
+                        text_box_opacity=0.35,
                     ),
                 )
             ],
@@ -209,6 +210,7 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
     assert page.text == "Edited page text"
     assert page.editor_state["text_position"] == "left"
     assert page.editor_state["font_color"] == "#112233"
+    assert page.editor_state["text_box_opacity"] == 0.35
     assert page.editor_state["original_text"] == "Original page text"
 
 
