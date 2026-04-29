@@ -137,7 +137,12 @@ def test_moderation_list_returns_empty_paginated_envelope(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"total": 0, "items": []}
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+    }
 
 
 def test_moderation_list_returns_total_and_paginated_items(
@@ -162,6 +167,8 @@ def test_moderation_list_returns_total_and_paginated_items(
     assert response.status_code == 200
     payload = response.json()
     assert payload["total"] == 2
+    assert payload["page"] == 1
+    assert payload["page_size"] == 20
     assert len(payload["items"]) == 2
     assert {item["id"] for item in payload["items"]} == {
         first_story.id,
@@ -176,4 +183,6 @@ def test_moderation_list_returns_total_and_paginated_items(
     assert paginated_response.status_code == 200
     paginated_payload = paginated_response.json()
     assert paginated_payload["total"] == 2
+    assert paginated_payload["page"] == 1
+    assert paginated_payload["page_size"] == 1
     assert len(paginated_payload["items"]) == 1

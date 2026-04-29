@@ -184,6 +184,13 @@ class StoryListItem(StoryBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PaginatedStories(BaseModel):
+    items: List[StoryListItem]
+    total: int
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=100)
+
+
 class Story(StoryBase):  # This schema is for representing a story, including AI generated title
     id: int
     owner_id: int

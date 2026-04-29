@@ -443,7 +443,10 @@ def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db),
 
 # --- Admin Content Moderation ---
 
-@admin_router.get("/moderation/stories", response_model=None)
+@admin_router.get(
+    "/moderation/stories",
+    response_model=schemas.PaginatedStories,
+)
 def admin_list_stories(
     page: int = 1,
     page_size: int = 20,
@@ -480,7 +483,12 @@ def admin_list_stories(
         except Exception:
             # Non-fatal: leave value as-is
             pass
-    return {"total": total, "items": items}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema
