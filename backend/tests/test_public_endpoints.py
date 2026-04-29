@@ -259,12 +259,11 @@ def test_save_story_editor_via_api_prefix(
                         "text_position": "left",
                         "font_size": 24,
                         "font_color": "#123456",
-                    },
+                    }
                 }
-            ],
-        },
+            ]
+        }
     )
-
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["title"] == "Edited Through API"
@@ -272,6 +271,107 @@ def test_save_story_editor_via_api_prefix(
         item for item in data["pages"] if item["id"] == page.id)
     assert updated_page["text"] == "Edited through API"
     assert updated_page["editor_state"]["text_position"] == "left"
+
+
+def test_story_page_image_endpoint_requires_auth(
+    client: TestClient,
+    db_session: Session,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Private Image",
+        story_outline="Only owners should see this.",
+        genre="Fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    image_rel = f"images/user_{owner.id}/story_{story.id}/page_1.png"
+    image_abs = storage_paths.resolve_data_path(image_rel)
+    os.makedirs(os.path.dirname(image_abs), exist_ok=True)
+    with open(image_abs, "wb") as image_file:
+        image_file.write(b"private-image")
+
+    page = __import__("backend.database", fromlist=["Page"]).Page(
+        story_id=story.id,
+        page_number=1,
+        text="Page text",
+        image_description="Scene",
+        image_path=image_rel,
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    response = client.get(f"/api/v1/stories/{story.id}/pages/{page.id}/image")
+
+    assert response.status_code == 401
+
+
+def test_story_page_image_endpoint_enforces_story_ownership(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+    admin_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Private Image",
+        story_outline="Only owners should see this.",
+        genre="Fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    image_rel = f"images/user_{owner.id}/story_{story.id}/page_1.png"
+    image_abs = storage_paths.resolve_data_path(image_rel)
+    os.makedirs(os.path.dirname(image_abs), exist_ok=True)
+    with open(image_abs, "wb") as image_file:
+        image_file.write(b"private-image")
+
+    page = __import__("backend.database", fromlist=["Page"]).Page(
+        story_id=story.id,
+        page_number=1,
+        text="Page text",
+        image_description="Scene",
+        image_path=image_rel,
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    owner_response = client.get(
+        f"/api/v1/stories/{story.id}/pages/{page.id}/image",
+        headers=regular_user_auth_headers,
+    )
+    other_user_response = client.get(
+        f"/api/v1/stories/{story.id}/pages/{page.id}/image",
+        headers=admin_auth_headers,
+    )
+    legacy_public_response = client.get(f"/static_content/{image_rel}")
+
+    assert owner_response.status_code == 200
+    assert owner_response.content == b"private-image"
+    assert other_user_response.status_code == 403
+    assert legacy_public_response.status_code == 404
 
 
 def test_regenerate_story_page_image_uses_text_position_guidance(

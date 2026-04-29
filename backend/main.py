@@ -10,8 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend import auth, crud, database, schemas
+from backend import auth, crud, database, schemas, storage_paths
 from backend.admin_router import admin_router
 from backend.characters_router import router as characters_router
 from backend.database import SessionLocal, get_db
@@ -31,6 +32,21 @@ from backend.settings import get_settings
 database.create_db_and_tables()
 
 settings = get_settings()
+
+
+class PublicStaticContentFiles(StaticFiles):
+    """Serve public data assets while withholding private story image paths."""
+
+    async def get_response(self, path, scope):
+        try:
+            normalized_path = storage_paths.normalize_data_relative_path(path)
+        except ValueError as exc:
+            raise StarletteHTTPException(status_code=404) from exc
+
+        if storage_paths.is_private_story_asset_path(normalized_path):
+            raise StarletteHTTPException(status_code=404)
+
+        return await super().get_response(normalized_path, scope)
 
 
 def _recover_stuck_generation_tasks(db: Session) -> int:
@@ -169,7 +185,7 @@ if settings.mount_data_static:
     else:
         app.mount(
             "/static_content",
-            StaticFiles(directory=data_dir),
+            PublicStaticContentFiles(directory=data_dir),
             name="static_content",
         )
         app_logger.info("Mounted static content from directory: %s", data_dir)

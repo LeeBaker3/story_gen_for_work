@@ -60,6 +60,15 @@ describe('story editor MVP', () => {
         window.localStorage.setItem('authToken', 'test-token');
         mountEditorDom();
 
+        if (!window.URL.createObjectURL) {
+            window.URL.createObjectURL = jest.fn();
+        }
+        if (!window.URL.revokeObjectURL) {
+            window.URL.revokeObjectURL = jest.fn();
+        }
+        jest.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:story-page-image');
+        jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
+
         global.fetch = jest.fn(async (url, options = {}) => {
             const value = String(url);
             const method = String(options.method || 'GET').toUpperCase();
@@ -134,6 +143,15 @@ describe('story editor MVP', () => {
                 };
             }
 
+            if (value.includes('/api/v1/stories/321/pages/11/image') || value.includes('/api/v1/stories/321/pages/12/image')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    blob: async () => new Blob(['image-bytes'], { type: 'image/png' }),
+                    headers: { get: (name) => name === 'content-type' ? 'image/png' : null },
+                };
+            }
+
             return {
                 ok: true,
                 status: 200,
@@ -148,6 +166,7 @@ describe('story editor MVP', () => {
 
     afterEach(() => {
         jest.useRealTimers();
+        jest.restoreAllMocks();
     });
 
     test('renders story editor and saves title/page changes', async () => {
@@ -210,6 +229,22 @@ describe('story editor MVP', () => {
         };
 
         window.__TEST_API__.displayStory(story);
+
+        await waitFor(() => {
+            const renderedImages = document.querySelectorAll('.story-editor-page-image');
+            expect(renderedImages.length).toBe(2);
+            renderedImages.forEach((image) => {
+                expect(image.getAttribute('src')).toBe('blob:story-page-image');
+            });
+        });
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/api/v1/stories/321/pages/11/image'),
+            expect.objectContaining({
+                method: 'GET',
+                headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+            }),
+        );
 
         const titleInput = document.getElementById('story-editor-title');
         expect(titleInput).not.toBeNull();

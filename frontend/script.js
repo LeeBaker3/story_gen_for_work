@@ -81,6 +81,8 @@ document.addEventListener("DOMContentLoaded", function () {
         autosaveTimer: null,
         isSaving: false,
         saveRequested: false,
+        pageImageObjectUrls: new Map(),
+        pageImageFetches: new Map(),
     };
     const STORY_EDITOR_DEFAULTS = {
         font_family: "storybook",
@@ -1758,6 +1760,179 @@ document.addEventListener("DOMContentLoaded", function () {
         return `${vertical || "bottom"}-${horizontal || "center"}`;
     }
 
+    function isPrivateStoryAssetPath(path) {
+        const normalized = String(path || "")
+            .trim()
+            .replace(/^\/+/, "")
+            .replace(/\\/g, "/");
+        return /^images\/user_\d+\/story_\d+(?:\/|$)/.test(normalized);
+    }
+
+    function revokeStoryEditorImageUrl(entry) {
+        if (!entry?.objectUrl || !window.URL?.revokeObjectURL) return;
+        window.URL.revokeObjectURL(entry.objectUrl);
+    }
+
+    function syncStoryEditorImageCache(story) {
+        const pages = Array.isArray(story?.pages) ? story.pages : [];
+        const validImagePaths = new Map(
+            pages
+                .filter((page) => page?.image_path && isPrivateStoryAssetPath(page.image_path))
+                .map((page) => [page.id, page.image_path]),
+        );
+
+        for (const [pageId, entry] of storyEditorState.pageImageObjectUrls.entries()) {
+            if (entry.storyId !== story?.id || validImagePaths.get(pageId) !== entry.imagePath) {
+                revokeStoryEditorImageUrl(entry);
+                storyEditorState.pageImageObjectUrls.delete(pageId);
+            }
+        }
+
+        for (const [pageId, entry] of storyEditorState.pageImageFetches.entries()) {
+            if (entry.storyId !== story?.id || validImagePaths.get(pageId) !== entry.imagePath) {
+                storyEditorState.pageImageFetches.delete(pageId);
+            }
+        }
+    }
+
+    function createStoryPageImageElement(src) {
+        const imageEl = document.createElement("img");
+        imageEl.className = "story-editor-page-image";
+        imageEl.src = src;
+        imageEl.alt = "Story page image";
+        return imageEl;
+    }
+
+    function setStoryPageImageSlotContent(slot, content) {
+        if (!slot) return;
+        slot.innerHTML = "";
+        if (typeof content === "string") {
+            slot.innerHTML = content;
+            return;
+        }
+        slot.appendChild(content);
+    }
+
+    async function fetchPrivateStoryPageImageObjectUrl(storyId, pageId) {
+        const token = localStorage.getItem("authToken");
+        const response = await fetch(
+            `${API_BASE_URL}/api/v1/stories/${storyId}/pages/${pageId}/image`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`Could not load story image (${response.status}).`);
+        }
+
+        const blob = await response.blob();
+        return window.URL.createObjectURL(blob);
+    }
+
+    async function hydrateStoryPageImage(story, page) {
+        const slot = document.querySelector(
+            `.story-editor-page-image-slot[data-page-id="${page.id}"]`,
+        );
+        if (!slot) return;
+
+        if (!page.image_path) {
+            setStoryPageImageSlotContent(
+                slot,
+                '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>',
+            );
+            return;
+        }
+
+        if (!isPrivateStoryAssetPath(page.image_path)) {
+            setStoryPageImageSlotContent(
+                slot,
+                createStoryPageImageElement(staticContentUrl(page.image_path)),
+            );
+            return;
+        }
+
+        const cachedImage = storyEditorState.pageImageObjectUrls.get(page.id);
+        if (
+            cachedImage
+            && cachedImage.storyId === story.id
+            && cachedImage.imagePath === page.image_path
+        ) {
+            setStoryPageImageSlotContent(
+                slot,
+                createStoryPageImageElement(cachedImage.objectUrl),
+            );
+            return;
+        }
+
+        setStoryPageImageSlotContent(
+            slot,
+            '<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>',
+        );
+
+        let pendingImage = storyEditorState.pageImageFetches.get(page.id);
+        if (
+            !pendingImage
+            || pendingImage.storyId !== story.id
+            || pendingImage.imagePath !== page.image_path
+        ) {
+            pendingImage = {
+                storyId: story.id,
+                imagePath: page.image_path,
+                promise: fetchPrivateStoryPageImageObjectUrl(story.id, page.id),
+            };
+            storyEditorState.pageImageFetches.set(page.id, pendingImage);
+        }
+
+        try {
+            const objectUrl = await pendingImage.promise;
+            const latestStory = storyEditorState.story;
+            const latestPage = latestStory?.pages?.find((item) => item.id === page.id);
+
+            if (!latestStory || latestStory.id !== story.id || latestPage?.image_path !== page.image_path) {
+                revokeStoryEditorImageUrl({ objectUrl });
+                return;
+            }
+
+            const previousImage = storyEditorState.pageImageObjectUrls.get(page.id);
+            if (previousImage && previousImage.objectUrl !== objectUrl) {
+                revokeStoryEditorImageUrl(previousImage);
+            }
+
+            storyEditorState.pageImageObjectUrls.set(page.id, {
+                storyId: story.id,
+                imagePath: page.image_path,
+                objectUrl,
+            });
+
+            const latestSlot = document.querySelector(
+                `.story-editor-page-image-slot[data-page-id="${page.id}"]`,
+            );
+            setStoryPageImageSlotContent(
+                latestSlot,
+                createStoryPageImageElement(objectUrl),
+            );
+        } catch (error) {
+            console.error("[story editor image] Error loading image:", error);
+            setStoryPageImageSlotContent(
+                slot,
+                '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>',
+            );
+        } finally {
+            const activeFetch = storyEditorState.pageImageFetches.get(page.id);
+            if (
+                activeFetch
+                && activeFetch.storyId === pendingImage.storyId
+                && activeFetch.imagePath === pendingImage.imagePath
+            ) {
+                storyEditorState.pageImageFetches.delete(page.id);
+            }
+        }
+    }
+
     function createTextPositionSelects(currentPosition, idPrefix, pageId) {
         const { v, h } = parseTextPosition(currentPosition);
         const pageAttr = pageId != null ? ` data-page-id="${pageId}"` : "";
@@ -1783,6 +1958,8 @@ document.addEventListener("DOMContentLoaded", function () {
             if (exportPdfButton) exportPdfButton.style.display = "none";
             return;
         }
+
+        syncStoryEditorImageCache(story);
 
         currentStoryId = story.id;
         storyPreviewContent.innerHTML = "";
@@ -1893,7 +2070,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <div class="story-editor-page-layout">
                         <div class="story-editor-page-preview" data-page-id="${page.id}">
                             <div class="story-editor-page-stage">
-                                ${page.image_path ? `<img class="story-editor-page-image" src="${escapeHTML(staticContentUrl(page.image_path))}" alt="Story page image">` : `<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>`}
+                                <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? `<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>` : `<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>`}</div>
                                 <div class="story-editor-text-card">
                                     <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
                                 </div>
@@ -1924,6 +2101,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const textCard = pageCard.querySelector(".story-editor-text-card");
                 applyEditorPreviewStyles(pageStage, textCard, pageSettings);
                 pagesContainer.appendChild(pageCard);
+                void hydrateStoryPageImage(story, page);
             });
         }
 

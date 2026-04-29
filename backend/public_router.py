@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -284,6 +284,45 @@ async def read_story(
     app_logger.info(
         f"Story {story_id} ({db_story.title}) retrieved for user {current_user.username}.")
     return db_story
+
+
+@public_router.get("/stories/{story_id}/pages/{page_id}/image")
+async def read_story_page_image_api(
+    story_id: int,
+    page_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+):
+    """Return one generated story page image for the story owner only."""
+
+    db_story = db.query(database.Story).filter(
+        database.Story.id == story_id
+    ).first()
+    if db_story is None:
+        raise HTTPException(status_code=404, detail="Story not found")
+    if db_story.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this story",
+        )
+
+    db_page = _get_story_page_or_404(db_story, page_id)
+
+    if not db_page.image_path:
+        raise HTTPException(status_code=404, detail="Page image not found")
+
+    try:
+        is_private_story_image = storage_paths.is_private_story_asset_path(
+            db_page.image_path
+        )
+        image_path = storage_paths.resolve_data_path(db_page.image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Page image not found") from exc
+
+    if not is_private_story_image or not os.path.isfile(image_path):
+        raise HTTPException(status_code=404, detail="Page image not found")
+
+    return FileResponse(image_path)
 
 
 @public_router.put("/stories/{story_id}/title", response_model=schemas.Story)

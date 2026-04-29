@@ -5,12 +5,45 @@ from typing import Tuple
 from .settings import get_settings
 
 
+_PRIVATE_STORY_ASSET_RE = re.compile(r"^images/user_\d+/story_\d+(?:/|$)")
+
+
 def _data_dir() -> str:
     return get_settings().data_dir
 
 
 def _private_dir() -> str:
     return get_settings().private_data_dir
+
+
+def normalize_data_relative_path(path: str) -> str:
+    """Return a safe normalized path relative to the data directory."""
+
+    normalized = os.path.normpath(str(path or "").replace("\\", "/").lstrip("/"))
+    if normalized in ("", "."):
+        raise ValueError("Data-relative path is required")
+    if normalized.startswith(".."):
+        raise ValueError("Data-relative path escapes the data directory")
+    return normalized
+
+
+def resolve_data_path(path: str) -> str:
+    """Resolve a data-relative path to an absolute path within DATA_DIR."""
+
+    normalized = normalize_data_relative_path(path)
+    data_dir = os.path.realpath(_data_dir())
+    resolved = os.path.realpath(os.path.join(data_dir, normalized))
+    if resolved != data_dir and not resolved.startswith(data_dir + os.sep):
+        raise ValueError("Resolved path escapes the data directory")
+    return resolved
+
+
+def is_private_story_asset_path(path: str) -> bool:
+    """Return whether a data-relative path points into a story asset folder."""
+
+    normalized = normalize_data_relative_path(path)
+    unix_style = normalized.replace(os.sep, "/")
+    return bool(_PRIVATE_STORY_ASSET_RE.match(unix_style))
 
 
 def images_base_rel(user_id: int) -> str:
