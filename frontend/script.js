@@ -1768,12 +1768,15 @@ document.addEventListener("DOMContentLoaded", function () {
                     <label class="story-editor-field-label" for="story-editor-font-family">Font</label>
                     <select id="story-editor-font-family" class="story-editor-select">${createFontOptions(story.editor_settings.font_family)}</select>
                     <label class="story-editor-field-label" for="story-editor-font-size">Font Size</label>
-                    <input id="story-editor-font-size" class="story-editor-range" type="range" min="16" max="56" step="1" value="${Number(story.editor_settings.font_size || 28)}">
+                        <input id="story-editor-font-size" class="story-editor-number" type="number" min="16" max="56" step="1" value="${Number(story.editor_settings.font_size || 28)}">
                     <label class="story-editor-field-label" for="story-editor-font-color">Font Colour</label>
                     <input id="story-editor-font-color" class="story-editor-color" type="color" value="${story.editor_settings.font_color || "#ffffff"}">
                     <label class="story-editor-field-label">Text Position</label>
                     ${createTextPositionSelects(story.editor_settings.text_position, "story-editor-text-position", null)}
-                    <label class="story-editor-field-label" for="story-editor-text-opacity">Text Box Opacity</label>
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            <label class="story-editor-field-label" for="story-editor-text-opacity" style="margin:0;">Text Box Opacity</label>
+                            <span id="story-editor-text-opacity-value" style="font-size:0.85rem;color:#a8b3c7;min-width:2.5rem;text-align:right;">${Math.round((story.editor_settings.text_box_opacity ?? 0.6) * 100)}%</span>
+                        </div>
                     <input id="story-editor-text-opacity" class="story-editor-range" type="range" min="0" max="1" step="0.05" value="${Number(story.editor_settings.text_box_opacity ?? 0.6)}">
                     <p class="story-editor-help">Defaults apply to all pages unless a page override is set.</p>
                 </aside>
@@ -1803,6 +1806,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 scheduleStoryEditorAutosave();
             });
         });
+
+        const opacityInput = shell.querySelector("#story-editor-text-opacity");
+        const opacityValueEl = shell.querySelector("#story-editor-text-opacity-value");
+        if (opacityInput && opacityValueEl) {
+            opacityInput.addEventListener("input", (event) => {
+                opacityValueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+            });
+        }
 
         ["story-editor-text-position-v", "story-editor-text-position-h"].forEach((id) => {
             const element = shell.querySelector(`#${id}`);
