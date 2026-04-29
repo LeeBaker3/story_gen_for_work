@@ -172,12 +172,162 @@ document.addEventListener("DOMContentLoaded", function () {
     const spinner = document.getElementById("spinner");
 
     // --- DYNAMIC DROPDOWN POPULATION ---
-    async function populateDropdown(selectElementId, listName) {
+    const DROPDOWN_RECOVERY_CONFIG = {
+        "story-genre": {
+            listName: "genres",
+            label: "genres",
+            statusId: "story-genre-recovery",
+            retryId: "story-genre-retry",
+        },
+        "story-image-style": {
+            listName: "image_styles",
+            label: "image styles",
+            statusId: "story-image-style-recovery",
+            retryId: "story-image-style-retry",
+        },
+    };
+
+    function syncDropdownRecoveryDescribedBy(
+        selectElement,
+        statusElement,
+        isVisible,
+    ) {
+        if (!selectElement || !statusElement || !statusElement.id) {
+            return;
+        }
+
+        if (selectElement.dataset.baseDescribedby === undefined) {
+            selectElement.dataset.baseDescribedby =
+                selectElement.getAttribute("aria-describedby") || "";
+        }
+
+        const describedByIds = selectElement.dataset.baseDescribedby
+            .split(/\s+/)
+            .filter(Boolean)
+            .filter((id) => id !== statusElement.id);
+
+        if (isVisible) {
+            describedByIds.push(statusElement.id);
+        }
+
+        if (describedByIds.length > 0) {
+            selectElement.setAttribute(
+                "aria-describedby",
+                describedByIds.join(" "),
+            );
+            return;
+        }
+
+        selectElement.removeAttribute("aria-describedby");
+    }
+
+    function getDropdownRecoveryElements(selectElementId) {
         const selectElement = document.getElementById(selectElementId);
+        const config = DROPDOWN_RECOVERY_CONFIG[selectElementId] || {};
+
+        if (!selectElement) {
+            return { config, selectElement: null, statusElement: null, retryButton: null };
+        }
+
+        let statusElement = config.statusId
+            ? document.getElementById(config.statusId)
+            : null;
+
+        if (!statusElement) {
+            const generatedStatusId = `${selectElementId}-load-status`;
+            statusElement = document.getElementById(generatedStatusId);
+            if (!statusElement) {
+                statusElement = document.createElement("div");
+                statusElement.id = generatedStatusId;
+                statusElement.className =
+                    "inline-status inline-status--error dropdown-recovery-status";
+                statusElement.setAttribute("role", "status");
+                statusElement.setAttribute("aria-live", "polite");
+                statusElement.setAttribute("aria-atomic", "true");
+                statusElement.style.display = "none";
+                selectElement.insertAdjacentElement("afterend", statusElement);
+            }
+        }
+
+        const retryButton = config.retryId
+            ? document.getElementById(config.retryId)
+            : null;
+
+        return { config, selectElement, statusElement, retryButton };
+    }
+
+    function setDropdownRecoveryState(
+        selectElementId,
+        { message = "", showRetry = false, isLoading = false } = {},
+    ) {
+        const { selectElement, statusElement, retryButton } =
+            getDropdownRecoveryElements(selectElementId);
+
+        if (!selectElement) {
+            return;
+        }
+
+        if (isLoading) {
+            selectElement.setAttribute("aria-busy", "true");
+        } else {
+            selectElement.removeAttribute("aria-busy");
+        }
+
+        if (statusElement) {
+            const hasMessage = Boolean(message);
+            statusElement.textContent = message;
+            statusElement.style.display = hasMessage ? "block" : "none";
+            syncDropdownRecoveryDescribedBy(
+                selectElement,
+                statusElement,
+                hasMessage,
+            );
+        }
+
+        if (retryButton) {
+            retryButton.style.display = showRetry ? "inline-flex" : "none";
+            retryButton.disabled = isLoading;
+        }
+    }
+
+    function buildDropdownRecoveryMessage(listName) {
+        const config = Object.values(DROPDOWN_RECOVERY_CONFIG).find(
+            (item) => item.listName === listName,
+        );
+        const label = config?.label || listName.replace(/_/g, " ");
+        return `We couldn't load ${label} right now. Try again.`;
+    }
+
+    function initializeDropdownRetryButtons() {
+        Object.entries(DROPDOWN_RECOVERY_CONFIG).forEach(
+            ([selectElementId, config]) => {
+                const retryButton = config.retryId
+                    ? document.getElementById(config.retryId)
+                    : null;
+                if (!retryButton || retryButton.dataset.dropdownRetryBound === "true") {
+                    return;
+                }
+
+                retryButton.addEventListener("click", async () => {
+                    await populateDropdown(selectElementId, config.listName);
+                });
+                retryButton.dataset.dropdownRetryBound = "true";
+            },
+        );
+    }
+
+    async function populateDropdown(selectElementId, listName) {
+        const { config, selectElement } = getDropdownRecoveryElements(
+            selectElementId,
+        );
         if (!selectElement) {
             console.error(`[populateDropdown] Select element with ID '${selectElementId}' not found.`);
             return;
         }
+
+        selectElement.disabled = true;
+        selectElement.innerHTML = '<option value="">Loading...</option>';
+        setDropdownRecoveryState(selectElementId, { isLoading: true });
 
         try {
             // Use the public endpoint for fetching active items
@@ -202,14 +352,25 @@ document.addEventListener("DOMContentLoaded", function () {
                     option.textContent = item.item_label;
                     selectElement.appendChild(option);
                 });
+                selectElement.disabled = false;
+                setDropdownRecoveryState(selectElementId);
             } else {
                 console.warn(`[populateDropdown] No active items found for list: ${listName}`);
                 selectElement.innerHTML = '<option value="">No options available</option>';
+                selectElement.disabled = true;
+                setDropdownRecoveryState(selectElementId, {
+                    message: buildDropdownRecoveryMessage(listName),
+                    showRetry: Boolean(config.retryId),
+                });
             }
         } catch (error) {
             console.error(`[populateDropdown] Error populating ${listName}:`, error);
-            // Optionally, display an error message to the user in the dropdown
             selectElement.innerHTML = '<option value="">Error loading options</option>';
+            selectElement.disabled = true;
+            setDropdownRecoveryState(selectElementId, {
+                message: buildDropdownRecoveryMessage(listName),
+                showRetry: Boolean(config.retryId),
+            });
         }
     }
 
@@ -1414,6 +1575,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // --- INITIALIZATION ---
     // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
+    initializeDropdownRetryButtons();
     updateNav(!!authToken);
     if (!!authToken) {
         if (window.location.hash === "#browse") {

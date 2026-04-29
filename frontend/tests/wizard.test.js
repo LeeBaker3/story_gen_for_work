@@ -32,6 +32,10 @@ function mountWizardDom() {
           <div id="step-0-basics" class="wizard-step-panel">
             <input type="text" id="story-title" />
             <select id="story-genre"><option value="">Select...</option><option value="Fantasy">Fantasy</option></select>
+            <div class="dropdown-recovery">
+              <div id="story-genre-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+              <button type="button" id="story-genre-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-genre" style="display:none;">Retry loading genres</button>
+            </div>
             <input type="text" id="story-tone" />
             <input type="text" id="story-setting" />
             <textarea id="story-outline"></textarea>
@@ -48,6 +52,10 @@ function mountWizardDom() {
           <div id="step-2-options" class="wizard-step-panel" style="display:none;">
             <input id="story-num-pages" type="number" value="3" />
             <select id="story-image-style"><option value="">Select...</option><option value="Cartoon">Cartoon</option></select>
+            <div class="dropdown-recovery">
+              <div id="story-image-style-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+              <button type="button" id="story-image-style-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-image-style" style="display:none;">Retry loading image styles</button>
+            </div>
             <select id="story-word-to-picture-ratio"><option value="">Select...</option><option value="One image per page">One image per page</option></select>
             <select id="story-text-density"><option value="">Select...</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
             <select id="story-page-format">
@@ -182,10 +190,104 @@ describe('wizard navigation', () => {
     expect(document.querySelector('label[for="story-outline"] .required-badge')?.textContent).toBe('Required');
     expect(document.querySelector('label[for="char-name-1"] .required-badge')?.textContent).toBe('Required');
     expect(document.querySelector('label[for="story-text-density"] .required-badge')?.textContent).toBe('Required');
+    expect(document.getElementById('story-genre-recovery')).not.toBeNull();
+    expect(document.getElementById('story-genre-retry')?.textContent).toMatch(/retry loading genres/i);
+    expect(document.getElementById('story-image-style-recovery')).not.toBeNull();
+    expect(document.getElementById('story-image-style-retry')?.textContent).toMatch(/retry loading image styles/i);
 
     expect(document.querySelector('label[for="story-title"]').textContent).toBe('Story Title');
     expect(document.querySelector('label[for="story-tone"]').textContent).toBe('Tone');
     expect(document.querySelector('label[for="char-age-1"]').textContent).toBe('Age');
+  });
+
+  test('failed critical dropdowns disable, show inline recovery, and retry successfully', async () => {
+    const fetchMock = global.fetch;
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      fetchMock.mockImplementation(async (url) => {
+        const u = String(url);
+        if (u.includes('/api/v1/dynamic-lists/genres')) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({ detail: 'genres unavailable' }),
+            headers: { get: () => 'application/json' },
+            text: async () => 'genres unavailable',
+          };
+        }
+        if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({ detail: 'image styles unavailable' }),
+            headers: { get: () => 'application/json' },
+            text: async () => 'image styles unavailable',
+          };
+        }
+        if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_density')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/font_families')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genders')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+        }
+        return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+      });
+
+      fireEvent.click(document.getElementById('nav-create-story'));
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(document.getElementById('story-genre')).toBeDisabled();
+      expect(document.getElementById('story-image-style')).toBeDisabled();
+      expect(document.getElementById('story-genre-recovery').textContent).toMatch(/couldn't load genres/i);
+      expect(document.getElementById('story-image-style-recovery').textContent).toMatch(/couldn't load image styles/i);
+      expect(document.getElementById('story-genre-retry').style.display).toBe('inline-flex');
+      expect(document.getElementById('story-image-style-retry').style.display).toBe('inline-flex');
+
+      fetchMock.mockImplementation(async (url) => {
+        const u = String(url);
+        if (u.includes('/api/v1/dynamic-lists/genres')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_density')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/font_families')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genders')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+        }
+        return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+      });
+
+      fireEvent.click(document.getElementById('story-genre-retry'));
+      fireEvent.click(document.getElementById('story-image-style-retry'));
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(document.getElementById('story-genre')).not.toBeDisabled();
+      expect(document.getElementById('story-image-style')).not.toBeDisabled();
+      expect(document.getElementById('story-genre-recovery').style.display).toBe('none');
+      expect(document.getElementById('story-image-style-recovery').style.display).toBe('none');
+      expect(document.getElementById('story-genre-retry').style.display).toBe('none');
+      expect(document.getElementById('story-image-style-retry').style.display).toBe('none');
+      expect(document.getElementById('story-genre').querySelector('option[value="Fantasy"]')).not.toBeNull();
+      expect(document.getElementById('story-image-style').querySelector('option[value="Cartoon"]')).not.toBeNull();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   test('Next advances through steps and shows Generate on Review', () => {

@@ -1814,6 +1814,23 @@ button.wizard-step {
     border-color: rgba(239, 68, 68, 0.45);
 }
 
+.dropdown-recovery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.dropdown-recovery-status {
+    flex: 1 1 260px;
+    margin: 0;
+}
+
+.dropdown-recovery-retry {
+    flex: 0 0 auto;
+}
+
 /* Tiny spinner for inline status busy state */
 .inline-status .spinner {
     display: inline-block;

@@ -92,6 +92,10 @@
                         <select id="story-genre" name="genre" required aria-describedby="story-genre-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div class="dropdown-recovery">
+                            <div id="story-genre-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+                            <button type="button" id="story-genre-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-genre" style="display:none;">Retry loading genres</button>
+                        </div>
                         <div id="story-genre-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
@@ -192,6 +196,10 @@
                         <select id="story-image-style" name="image_style" required aria-describedby="story-image-style-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div class="dropdown-recovery">
+                            <div id="story-image-style-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+                            <button type="button" id="story-image-style-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-image-style" style="display:none;">Retry loading image styles</button>
+                        </div>
                         <div id="story-image-style-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
