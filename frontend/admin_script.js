@@ -20,6 +20,15 @@ function resolveApiBaseUrl() {
 let API_BASE_URL = resolveApiBaseUrl();
 
 document.addEventListener("DOMContentLoaded", function () {
+    const DIALOG_FOCUSABLE_SELECTOR = [
+        'button:not([disabled])',
+        '[href]',
+        'input:not([type="hidden"]):not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])'
+    ].join(', ');
+
     const navLogout = document.getElementById("nav-logout");
     if (navLogout) {
         navLogout.addEventListener("click", () => {
@@ -52,6 +61,115 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     let currentAdminUser = null;
+
+    function getDialogFocusableElements(dialog) {
+        return Array.from(dialog.querySelectorAll(DIALOG_FOCUSABLE_SELECTOR)).filter(
+            (element) => !element.disabled && element.getAttribute('aria-hidden') !== 'true'
+        );
+    }
+
+    function closeAdminDialog(target, options = {}) {
+        const { restoreFocus = true } = options;
+        const dialog = typeof target === 'string'
+            ? document.getElementById(target)
+            : target;
+
+        if (!dialog) {
+            return;
+        }
+
+        const dialogState = dialog.__adminDialogState || {};
+        if (dialogState.onKeydown) {
+            dialog.removeEventListener('keydown', dialogState.onKeydown);
+        }
+
+        dialog.remove();
+
+        if (
+            restoreFocus
+            && dialogState.triggerElement
+            && typeof dialogState.triggerElement.focus === 'function'
+            && document.contains(dialogState.triggerElement)
+        ) {
+            dialogState.triggerElement.focus();
+        }
+    }
+
+    function initializeAdminDialog(modalId, options = {}) {
+        const { triggerElement = null, initialFocusSelector = null } = options;
+        const dialog = document.getElementById(modalId);
+
+        if (!dialog) {
+            return { close: () => {} };
+        }
+
+        const titleElement = dialog.querySelector('h2');
+        if (titleElement && !titleElement.id) {
+            titleElement.id = `${modalId}-title`;
+        }
+
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        if (titleElement?.id) {
+            dialog.setAttribute('aria-labelledby', titleElement.id);
+        }
+        dialog.tabIndex = -1;
+
+        const onKeydown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeAdminDialog(dialog);
+                return;
+            }
+
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const focusableElements = getDialogFocusableElements(dialog);
+            if (focusableElements.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+            }
+
+            const firstElement = focusableElements[0];
+            const lastElement = focusableElements[focusableElements.length - 1];
+            const activeElement = document.activeElement;
+
+            if (event.shiftKey && (activeElement === firstElement || activeElement === dialog)) {
+                event.preventDefault();
+                lastElement.focus();
+                return;
+            }
+
+            if (!event.shiftKey && activeElement === lastElement) {
+                event.preventDefault();
+                firstElement.focus();
+            }
+        };
+
+        dialog.addEventListener('keydown', onKeydown);
+        dialog.__adminDialogState = {
+            onKeydown,
+            triggerElement,
+        };
+
+        dialog.querySelectorAll('[data-dialog-close="true"]').forEach((button) => {
+            button.addEventListener('click', () => closeAdminDialog(dialog));
+        });
+
+        const initialFocusElement = initialFocusSelector
+            ? dialog.querySelector(initialFocusSelector)
+            : null;
+        const fallbackFocusElement = getDialogFocusableElements(dialog)[0];
+        (initialFocusElement || fallbackFocusElement || dialog).focus();
+
+        return {
+            close: (closeOptions = {}) => closeAdminDialog(dialog, closeOptions),
+        };
+    }
+
     async function checkAdminRole() {
         try {
             const user = await apiRequest("/api/v1/users/me/");
@@ -168,8 +286,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         container.querySelectorAll('.user-edit-details-btn').forEach(button => {
             button.addEventListener('click', (event) => {
-                const userId = parseInt(event.target.dataset.userId);
-                showEditUserDetailsModal(userId);
+                const triggerButton = event.currentTarget;
+                const userId = parseInt(triggerButton.dataset.userId, 10);
+                showEditUserDetailsModal(userId, triggerButton);
             });
         });
 
@@ -197,11 +316,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- MODAL for User Details Edit ---
-    async function showEditUserDetailsModal(userId) {
+    async function showEditUserDetailsModal(userId, triggerElement = null) {
         const modalId = 'editUserDetailsModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         let currentUserData;
@@ -235,8 +354,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id=\"${modalId}\" class=\"modal\" style=\"display:block;\">
                 <div class=\"modal-content\">
-                    <span class=\"close-button\" onclick=\"document.getElementById(\'${modalId}\').remove();\">&times;</span>
-                    <h2>Edit User Details: ${escapeHTML(username)} (ID: ${userId})</h2>
+                    <button type=\"button\" class=\"close-button\" data-dialog-close=\"true\" aria-label=\"Close dialog\">&times;</button>
+                    <h2 id=\"${modalId}-title\">Edit User Details: ${escapeHTML(username)} (ID: ${userId})</h2>
                     <form id=\"editUserDetailsForm\" class=\"admin-form\">
                         <input type=\"hidden\" name=\"user_id\" value=\"${userId}\">
                         <div class=\"form-group\">
@@ -260,7 +379,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         </div>
                         <div class=\"modal-actions\">
                             <button type=\"submit\" class=\"admin-button-success\">Save Changes</button>
-                            <button type=\"button\" class=\"admin-button-secondary\" onclick=\"document.getElementById('${modalId}').remove();\">Cancel</button>
+                            <button type=\"button\" class=\"admin-button-secondary\" data-dialog-close=\"true\">Cancel</button>
                         </div>
                     </form>
                 </div>
@@ -268,6 +387,10 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#edit_username',
+        });
         const form = document.getElementById('editUserDetailsForm');
         form.onsubmit = async (e) => {
             e.preventDefault();
@@ -285,7 +408,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (Object.keys(payload).length === 0) {
                 displayAdminMessage("No changes detected.", "info");
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 return;
             }
 
@@ -320,16 +443,17 @@ document.addEventListener("DOMContentLoaded", function () {
         setupDynamicContentTabs();
         await populateListsForManagement();
         await populateListSelectorForItems();
-        // Indicate the section is ready
         displayAdminMessage("Dynamic content loaded.", "success");
 
-        document.getElementById('add-new-list-btn').addEventListener('click', () => showAddEditDynamicListModal());
+        document.getElementById('add-new-list-btn').addEventListener('click', (event) => {
+            showAddEditDynamicListModal(null, event.currentTarget);
+        });
 
         const addNewItemBtn = document.getElementById('add-new-item-btn');
         addNewItemBtn.addEventListener('click', () => {
             const selectedList = document.getElementById('select-list-for-items').value;
             if (selectedList) {
-                showAddEditDynamicListItemModal(null, selectedList);
+                showAddEditDynamicListItemModal(null, selectedList, addNewItemBtn);
             } else {
                 displayAdminMessage('Please select a list first.', 'warning');
             }
@@ -358,7 +482,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const targetTab = link.dataset.tab;
                 tabContents.forEach(content => {
-                    // Corrected ID matching: e.g., targetTab 'manage-lists' -> content.id 'dynamic-content-lists-view'
                     if (content.id === `dynamic-content-${targetTab.replace('manage-', '')}-view`) {
                         content.classList.add('active');
                     } else {
@@ -966,9 +1089,9 @@ document.addEventListener("DOMContentLoaded", function () {
             // Add event listeners for the new "Edit" buttons
             container.querySelectorAll('.edit-dynamic-list-item-btn').forEach(button => {
                 button.addEventListener('click', (e) => {
-                    const itemId = parseInt(e.target.dataset.itemId);
-                    // This function now handles edit, delete, and active status within the modal
-                    window.adminScript.showAddEditDynamicListItemModal(itemId);
+                    const triggerButton = e.currentTarget;
+                    const itemId = parseInt(triggerButton.dataset.itemId, 10);
+                    window.adminScript.showAddEditDynamicListItemModal(itemId, null, triggerButton);
                 });
             });
 
@@ -980,7 +1103,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // MODAL for Dynamic List (Add/Edit/Delete)
-    function showAddEditDynamicListModal(listName = null) {
+    function showAddEditDynamicListModal(listName = null, triggerElement = null) {
         const isEdit = listName !== null;
         let currentDescription = '';
         let currentListLabel = ''; // Added for list_label
@@ -988,7 +1111,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const modalId = 'dynamicListModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         // Modal message area
@@ -997,8 +1120,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
-                    <span class="close-button" onclick="document.getElementById('${modalId}').remove();">&times;</span>
-                    <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List</h2>
+                    <button type="button" class="close-button" data-dialog-close="true" aria-label="Close dialog">&times;</button>
+                    <h2 id="${modalId}-title">${isEdit ? 'Edit' : 'Add'} Dynamic List</h2>
                     <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListForm" class="admin-form">
                         <div class="form-group">
@@ -1016,13 +1139,17 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="modal-actions">
                             <button type="submit" id="saveDynamicListButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create List'}</button>
                             ${isEdit ? `<button type="button" id="deleteDynamicListButton" class="admin-button-danger">Delete List</button>` : ''}
-                            <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" onclick="document.getElementById('${modalId}').remove();">Cancel</button>
+                            <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" data-dialog-close="true">Cancel</button>
                         </div>
                     </form>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#dl_list_name:not([readonly]), #dl_list_label, #dl_description, #saveDynamicListButton',
+        });
 
         const form = document.getElementById('dynamicListForm');
         const descriptionTextarea = document.getElementById('dl_description');
@@ -1053,7 +1180,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     try {
                         await apiRequest(`/api/v1/admin/dynamic-lists/${listName}`, 'DELETE');
                         displayAdminMessage(`List '${escapeHTML(listName)}' deleted successfully.`, 'success'); // Global message
-                        document.getElementById(modalId).remove();
+                        dialogController.close();
                         await populateListsForManagement();
                         await populateListSelectorForItems(); // Refresh selector in items tab
                         // Clear items view if the deleted list was selected
@@ -1093,7 +1220,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     await apiRequest("/api/v1/admin/dynamic-lists/", 'POST', data);
                     displayAdminMessage(`List '${escapeHTML(data.list_name)}' created.`, 'success'); // Global message
                 }
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 await populateListsForManagement();
                 await populateListSelectorForItems(); // Refresh selector in items tab
             } catch (error) {
@@ -1108,7 +1235,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // MODAL for Dynamic List Item (Add/Edit)
-    async function showAddEditDynamicListItemModal(itemId = null, listNameForNewItem = null) {
+    async function showAddEditDynamicListItemModal(itemId = null, listNameForNewItem = null, triggerElement = null) {
         const isEdit = itemId !== null;
         let itemData = null;
         let currentListName = listNameForNewItem;
@@ -1117,7 +1244,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const modalId = 'dynamicListItemModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         if (isEdit) {
@@ -1159,8 +1286,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
-                    <span class="close-button" onclick="document.getElementById(\'${modalId}\').remove();">&times;</span>
-                    <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List Item (for List: ${escapeHTML(currentListName)})</h2>
+                    <button type="button" class="close-button" data-dialog-close="true" aria-label="Close dialog">&times;</button>
+                    <h2 id="${modalId}-title">${isEdit ? 'Edit' : 'Add'} Dynamic List Item (for List: ${escapeHTML(currentListName)})</h2>
                     <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListItemForm" class="admin-form">
                         <input type="hidden" id="item_list_name" name="item_list_name" value="${escapeHTML(currentListName)}">
@@ -1187,13 +1314,17 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="modal-actions">
                             <button type="submit" id="saveDynamicListItemButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create Item'}</button>
                             ${isEdit ? `<button type="button" id="deleteDynamicListItemButton" class="admin-button-danger">Delete Item</button>` : ''}
-                            <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" onclick="document.getElementById(\\'${modalId}\\').remove();">Cancel</button>
+                            <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" data-dialog-close="true">Cancel</button>
                         </div>
                     </form>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#item_value',
+        });
 
         const form = document.getElementById('dynamicListItemForm');
         form.onsubmit = async (e) => {
@@ -1234,7 +1365,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     await apiRequest(`/api/v1/admin/dynamic-lists/${data.list_name}/items`, 'POST', data);
                     displayAdminMessage(`New item created in list '${data.list_name}'.`, 'success'); // Global message
                 }
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 await loadItemsForSelectedList(currentListName);
             } catch (error) {
                 console.error("Error saving dynamic list item:", error);
@@ -1260,7 +1391,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 try {
                     await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path
                     displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success'); // Global message
-                    document.getElementById(modalId).remove();
+                    dialogController.close();
                     await loadItemsForSelectedList(currentListName);
                 } catch (error) {
                     console.error("Error deleting item:", error);
@@ -1384,7 +1515,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 await apiRequest(`/api/v1/admin/management/users/${userId}`, 'PUT', payload);
                 displayAdminMessage(`User ${userId} ${updateType} updated successfully.`, 'success');
                 if (updateType === 'details' && document.getElementById(modalId)) {
-                    document.getElementById(modalId).remove();
+                    closeAdminDialog(modalId);
                 }
                 await loadUserManagement(); // Refresh the user table
             } catch (error) {
@@ -1422,13 +1553,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         },
-        editDynamicList: async (listName) => { // This function is now effectively an alias for the modal
-            showAddEditDynamicListModal(listName);
+        editDynamicList: async (listName, triggerElement = null) => { // This function is now effectively an alias for the modal
+            showAddEditDynamicListModal(listName, triggerElement);
         },
         // Exposing the new modal function for adding/editing items
-        showAddEditDynamicListItemModal: async (itemId = null, listNameForNewItem = null) => {
+        showAddEditDynamicListItemModal: async (itemId = null, listNameForNewItem = null, triggerElement = null) => {
             // This is the primary function now for adding AND editing dynamic list items via modal
-            showAddEditDynamicListItemModal(itemId, listNameForNewItem);
+            showAddEditDynamicListItemModal(itemId, listNameForNewItem, triggerElement);
         },
         deleteDynamicList: async (listName) => {
             // This function is effectively replaced by the modal's delete button logic.

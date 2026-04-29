@@ -128,3 +128,37 @@ test('dynamic list item modal escapes stored values before injecting innerHTML',
   fireEvent.focus(itemLabelInput);
   expect(window.__adminDynamicXssTriggered).toBe(0);
 });
+
+test('dynamic list modal exposes dialog semantics and restores focus after escape', async () => {
+  installApiMock();
+
+  await loadAdminScript();
+  fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
+
+  await waitFor(() => {
+    expect(document.getElementById('add-new-list-btn')).toBeTruthy();
+  });
+
+  const triggerButton = document.getElementById('add-new-list-btn');
+  fireEvent.click(triggerButton);
+
+  await waitFor(() => {
+    expect(document.getElementById('dynamicListModal')).toBeTruthy();
+  });
+
+  const dialog = document.getElementById('dynamicListModal');
+  const title = dialog.querySelector('h2');
+  const listNameInput = document.getElementById('dl_list_name');
+
+  expect(dialog.getAttribute('role')).toBe('dialog');
+  expect(dialog.getAttribute('aria-modal')).toBe('true');
+  expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
+  expect(document.activeElement).toBe(listNameInput);
+
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+
+  await waitFor(() => {
+    expect(document.getElementById('dynamicListModal')).toBeNull();
+  });
+  expect(document.activeElement).toBe(triggerButton);
+});

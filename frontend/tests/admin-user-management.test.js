@@ -146,3 +146,55 @@ test('escapes username and email in the edit user modal input values', async () 
   fireEvent.focus(emailInput);
   expect(window.__adminXssTriggered).toBe(0);
 });
+
+test('edit user modal exposes dialog semantics, traps focus, and restores focus on close', async () => {
+  installApiMock({
+    users: [
+      {
+        id: 12,
+        username: 'Modal User',
+        email: 'modal@example.com',
+        role: 'user',
+        is_active: true,
+      }
+    ]
+  });
+
+  await loadAdminScript();
+  clickUserManagementNav();
+
+  await waitFor(() => {
+    expect(document.querySelector('.user-edit-details-btn')).toBeTruthy();
+  });
+
+  const triggerButton = document.querySelector('.user-edit-details-btn');
+  fireEvent.click(triggerButton);
+
+  await waitFor(() => {
+    expect(document.getElementById('editUserDetailsModal')).toBeTruthy();
+  });
+
+  const dialog = document.getElementById('editUserDetailsModal');
+  const title = dialog.querySelector('h2');
+  const usernameInput = document.getElementById('edit_username');
+  const cancelButton = dialog.querySelector('.admin-button-secondary');
+  const closeButton = dialog.querySelector('.close-button');
+
+  expect(dialog.getAttribute('role')).toBe('dialog');
+  expect(dialog.getAttribute('aria-modal')).toBe('true');
+  expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
+  expect(document.activeElement).toBe(usernameInput);
+
+  fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+  expect(document.activeElement).toBe(cancelButton);
+
+  fireEvent.keyDown(dialog, { key: 'Tab' });
+  expect(document.activeElement).toBe(closeButton);
+
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+
+  await waitFor(() => {
+    expect(document.getElementById('editUserDetailsModal')).toBeNull();
+  });
+  expect(document.activeElement).toBe(triggerButton);
+});
