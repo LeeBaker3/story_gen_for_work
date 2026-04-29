@@ -635,6 +635,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const filterInvert = document.getElementById("filter-invert");
         const applyFilterBtn = document.getElementById("apply-filter-button");
         const clearFilterBtn = document.getElementById("clear-filter-button");
+        let rawLogContent = "";
 
         // Timers must be declared before any checks to avoid TDZ errors
         let statsTimer = null;
@@ -796,6 +797,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const file = document.getElementById("log-file-select").value;
             const tail = Math.max(10, Math.min(5000, parseInt(document.getElementById("log-tail-lines").value || "1000", 10)));
             if (!file) {
+                rawLogContent = "";
                 document.getElementById("log-content").textContent = "Select a log file to view.";
                 return;
             }
@@ -811,11 +813,13 @@ document.addEventListener("DOMContentLoaded", function () {
                     throw new Error(txt || `HTTP ${response.status}`);
                 }
                 const text = await response.text();
-                document.getElementById("log-content").textContent = text || "(no content)";
+                rawLogContent = text || "(no content)";
+                document.getElementById("log-content").textContent = rawLogContent;
                 applyLogFilter();
                 if (document.getElementById("follow-tail").checked) maybeScrollLogToBottom();
             } catch (error) {
                 console.error("Failed to fetch log content:", error);
+                rawLogContent = "";
                 document.getElementById("log-content").textContent = `Error loading log: ${error.message}`;
                 displayAdminMessage("Failed to load log content: " + error.message, "error");
             }
@@ -841,14 +845,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function applyLogFilter() {
-            const raw = document.getElementById('log-content').textContent || '';
             const query = filterInput.value;
             if (!query) {
-                // Show raw
-                document.getElementById('log-content').textContent = raw;
+                document.getElementById('log-content').textContent = rawLogContent;
                 return;
             }
-            let lines = raw.split(/\n/);
+            let lines = rawLogContent.split(/\n/);
             let matcher;
             if (filterRegex.checked) {
                 try {
