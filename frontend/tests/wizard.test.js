@@ -1,6 +1,9 @@
 import { fireEvent } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 // Helper to mount minimal DOM for wizard
 function mountWizardDom() {
   document.body.innerHTML = `
@@ -163,6 +166,28 @@ describe('wizard navigation', () => {
     expect(fontFamilySel.value).toBe('storybook');
   });
 
+  test('shipped wizard markup includes step guidance and required badges for required fields', () => {
+    const htmlPath = path.resolve(process.cwd(), 'frontend/index.html');
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    document.documentElement.innerHTML = html;
+
+    const guidanceBlocks = document.querySelectorAll('.wizard-step-guidance');
+    expect(guidanceBlocks).toHaveLength(4);
+    expect(guidanceBlocks[0].textContent).toMatch(/complete the required fields to unlock the next step/i);
+    expect(guidanceBlocks[1].textContent).toMatch(/only character names are required/i);
+    expect(guidanceBlocks[2].textContent).toMatch(/page count, image style, word-to-picture ratio, and text density are required/i);
+    expect(guidanceBlocks[3].textContent).toMatch(/review the story setup before generating/i);
+
+    expect(document.querySelector('label[for="story-genre"] .required-badge')?.textContent).toBe('Required');
+    expect(document.querySelector('label[for="story-outline"] .required-badge')?.textContent).toBe('Required');
+    expect(document.querySelector('label[for="char-name-1"] .required-badge')?.textContent).toBe('Required');
+    expect(document.querySelector('label[for="story-text-density"] .required-badge')?.textContent).toBe('Required');
+
+    expect(document.querySelector('label[for="story-title"]').textContent).toBe('Story Title');
+    expect(document.querySelector('label[for="story-tone"]').textContent).toBe('Tone');
+    expect(document.querySelector('label[for="char-age-1"]').textContent).toBe('Age');
+  });
+
   test('Next advances through steps and shows Generate on Review', () => {
     const next = document.getElementById('wizard-next');
     const prev = document.getElementById('wizard-prev');
@@ -231,6 +256,9 @@ describe('wizard navigation', () => {
     fireEvent.click(addButton);
 
     expect(document.getElementById('char-name-2')).not.toBeNull();
+    expect(document.querySelector('label[for="char-name-2"] .required-badge')?.textContent).toBe('Required');
+    expect(document.querySelector('label[for="char-age-2"]').textContent).toBe('Age');
+    expect(document.querySelector('label[for="char-key-traits-2"]').textContent).toBe('Key Traits/Habits');
 
     const removeButton = document.querySelector('.remove-character-button');
     expect(removeButton).not.toBeNull();

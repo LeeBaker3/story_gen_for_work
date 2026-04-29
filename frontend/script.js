@@ -1591,28 +1591,28 @@ document.addEventListener("DOMContentLoaded", function () {
                 </div>
             </div>
             <div class="form-group">
-                <label for="char-name-${characterCount}">Name:</label>
+                <label for="char-name-${characterCount}">Name <span class="required-badge">Required</span></label>
                 <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" class="char-name" required aria-describedby="main-characters-error">
             </div>
             <div id="char-details-${characterCount}" class="character-details-fields" style="display: none;">
                 <div class="form-group">
-                    <label for="char-age-${characterCount}">Age (Optional):</label>
+                    <label for="char-age-${characterCount}">Age</label>
                     <input type="number" id="char-age-${characterCount}" name="char-age-${characterCount}" class="char-age">
                 </div>
                 <div class="form-group">
-                    <label for="char-gender-${characterCount}">Gender (Optional):</label>
+                    <label for="char-gender-${characterCount}">Gender</label>
                     <select id="char-gender-${characterCount}" name="char-gender-${characterCount}" class="char-gender"></select>
                 </div>
                 <div class="form-group">
-                    <label for="char-physical-appearance-${characterCount}">Physical Appearance (Optional):</label>
+                    <label for="char-physical-appearance-${characterCount}">Physical Appearance</label>
                     <textarea id="char-physical-appearance-${characterCount}" name="char-physical-appearance-${characterCount}" class="char-physical-appearance" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="char-clothing-style-${characterCount}">Clothing Style (Optional):</label>
+                    <label for="char-clothing-style-${characterCount}">Clothing Style</label>
                     <textarea id="char-clothing-style-${characterCount}" name="char-clothing-style-${characterCount}" class="char-clothing-style" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="char-key-traits-${characterCount}">Key Traits/Habits (Optional):</label>
+                    <label for="char-key-traits-${characterCount}">Key Traits/Habits</label>
                     <textarea id="char-key-traits-${characterCount}" name="char-key-traits-${characterCount}" class="char-key-traits" rows="2"></textarea>
                 </div>
             </div>

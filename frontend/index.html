@@ -79,19 +79,23 @@
             <form id="story-creation-form" class="modern-form">
                 <!-- Step 0: Basics -->
                 <div id="step-0-basics" class="wizard-step-panel">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Complete the required fields to unlock the next step.</p>
+                        <p class="wizard-step-guidance-detail">Fields marked <span class="required-badge">Required</span> must be completed. The story title is optional.</p>
+                    </div>
                     <div>
-                        <label for="story-title">Story Title (Optional):</label>
+                        <label for="story-title">Story Title</label>
                         <input type="text" id="story-title" name="title" placeholder="Enter your story title or leave blank for AI to generate">
                     </div>
                     <div>
-                        <label for="story-genre">Genre:</label>
+                        <label for="story-genre">Genre <span class="required-badge">Required</span></label>
                         <select id="story-genre" name="genre" required aria-describedby="story-genre-error">
                             <!-- Options will be populated dynamically -->
                         </select>
                         <div id="story-genre-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
-                        <label for="story-outline">Story Outline:</label>
+                        <label for="story-outline">Story Outline <span class="required-badge">Required</span></label>
                         <textarea id="story-outline" name="story_outline" rows="4" required aria-describedby="story-outline-error"></textarea>
                         <div id="story-outline-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
@@ -99,36 +103,40 @@
 
                 <!-- Step 1: Characters -->
                 <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Add at least one named character to continue.</p>
+                        <p class="wizard-step-guidance-detail">Only character names are required. Details you reveal under each character are optional.</p>
+                    </div>
                     <fieldset id="main-characters-fieldset" class="modern-fieldset">
                         <legend>Main Characters (at least 1)</legend>
                         <div class="character-entry">
                             <div>
-                                <label for="char-name-1">Name:</label>
+                                <label for="char-name-1">Name <span class="required-badge">Required</span></label>
                                 <input type="text" id="char-name-1" name="char_name_1" class="char-name" required aria-describedby="main-characters-error">
                             </div>
                             <!-- Collapsible section for character details -->
                             <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
                             <div id="char-details-1" class="character-details-fields" style="display:none;">
                                 <div>
-                                    <label for="char-age-1">Age (optional):</label>
+                                    <label for="char-age-1">Age</label>
                                     <input type="number" id="char-age-1" name="char_age_1" class="char-age" placeholder="e.g., 30">
                                 </div>
                                 <div>
-                                    <label for="char-gender-1">Gender (optional):</label>
+                                    <label for="char-gender-1">Gender</label>
                                     <select id="char-gender-1" name="char_gender_1" class="char-gender">
                                         <!-- Options populated dynamically -->
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="char-physical-appearance-1">Physical Appearance (optional):</label>
+                                    <label for="char-physical-appearance-1">Physical Appearance</label>
                                     <textarea id="char-physical-appearance-1" name="char_physical_appearance_1" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
                                 </div>
                                 <div>
-                                    <label for="char-clothing-style-1">Clothing Style (optional):</label>
+                                    <label for="char-clothing-style-1">Clothing Style</label>
                                     <input type="text" id="char-clothing-style-1" name="char_clothing_style_1" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
                                 </div>
                                 <div>
-                                    <label for="char-key-traits-1">Key Personality Traits (optional):</label>
+                                    <label for="char-key-traits-1">Key Personality Traits</label>
                                     <textarea id="char-key-traits-1" name="char_key_traits_1" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
                                 </div>
                             </div>
@@ -162,35 +170,39 @@
 
                 <!-- Step 2: Options -->
                 <div id="step-2-options" class="wizard-step-panel" style="display:none;">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Choose the required story options before review.</p>
+                        <p class="wizard-step-guidance-detail">Page count, image style, word-to-picture ratio, and text density are required. Layout and typography settings are optional refinements.</p>
+                    </div>
                     <div>
-                        <label for="story-num-pages">Number of Pages:</label>
+                        <label for="story-num-pages">Number of Pages <span class="required-badge">Required</span></label>
                         <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required aria-describedby="story-num-pages-error">
                         <div id="story-num-pages-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
-                        <label for="story-tone">Tone (optional):</label>
+                        <label for="story-tone">Tone</label>
                         <input type="text" id="story-tone" name="tone" placeholder="e.g., humorous, serious, whimsical, dark">
                     </div>
                     <div>
-                        <label for="story-setting">Setting (optional):</label>
+                        <label for="story-setting">Setting</label>
                         <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
                     </div>
                     <div>
-                        <label for="story-image-style">Image Style:</label>
+                        <label for="story-image-style">Image Style <span class="required-badge">Required</span></label>
                         <select id="story-image-style" name="image_style" required aria-describedby="story-image-style-error">
                             <!-- Options will be populated dynamically -->
                         </select>
                         <div id="story-image-style-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
-                        <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
+                        <label for="story-word-to-picture-ratio">Word-to-Picture Ratio <span class="required-badge">Required</span></label>
                         <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required aria-describedby="story-word-to-picture-ratio-error">
                             <!-- Options will be populated dynamically -->
                         </select>
                         <div id="story-word-to-picture-ratio-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
-                        <label for="story-text-density">Text Density:</label>
+                        <label for="story-text-density">Text Density <span class="required-badge">Required</span></label>
                         <select id="story-text-density" name="text_density" required aria-describedby="story-text-density-error">
                             <!-- Options will be populated dynamically -->
                         </select>
@@ -239,6 +251,10 @@
 
                 <!-- Step 3: Review -->
                 <div id="step-3-review" class="wizard-step-panel" style="display:none;">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Review the story setup before generating.</p>
+                        <p class="wizard-step-guidance-detail">Use Back to revise any section, then choose Generate Story when everything looks complete.</p>
+                    </div>
                     <h3>Review</h3>
                     <div id="review-container"></div>
                 </div>

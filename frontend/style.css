@@ -341,6 +341,45 @@ label {
     color: var(--muted);
 }
 
+.wizard-step-guidance {
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: var(--radius-md);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.wizard-step-guidance-title,
+.wizard-step-guidance-detail {
+    margin: 0;
+}
+
+.wizard-step-guidance-title {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.wizard-step-guidance-detail {
+    margin-top: 0.35rem;
+    color: var(--muted);
+}
+
+.required-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.45rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+    color: #fcd34d;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
 input[type="text"],
 input[type="password"],
 input[type="number"],
