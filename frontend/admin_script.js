@@ -41,6 +41,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminViewPanel = document.getElementById("admin-view-panel");
     const adminSidebarLinks = document.querySelectorAll("#admin-sidebar ul li a");
 
+    ensureAdminStatusRegion(adminMessageArea);
+
     const authToken = localStorage.getItem("authToken");
 
     if (!authToken) {
@@ -1656,6 +1658,7 @@ function displayAdminMessage(message, type = 'info', modalId = null, { toast = f
     if (modalId) messageArea = document.getElementById(`${modalId}-message-area`);
     if (!messageArea) messageArea = document.getElementById('admin-message-area');
     if (messageArea) {
+        ensureAdminStatusRegion(messageArea);
         messageArea.textContent = message || '';
         messageArea.className = 'admin-message';
         if (type) messageArea.classList.add(type);
@@ -1684,4 +1687,14 @@ function displayAdminMessage(message, type = 'info', modalId = null, { toast = f
             node.addEventListener('click', () => { clearTimeout(t); if (node.parentNode) node.parentNode.removeChild(node); });
         }
     }
+}
+
+function ensureAdminStatusRegion(messageArea) {
+    if (!messageArea) {
+        return;
+    }
+
+    messageArea.setAttribute('role', 'status');
+    messageArea.setAttribute('aria-live', 'polite');
+    messageArea.setAttribute('aria-atomic', 'true');
 }
