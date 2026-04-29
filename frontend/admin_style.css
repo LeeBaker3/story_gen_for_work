@@ -91,21 +91,28 @@ header nav a:hover {
     margin-top: 1rem;
     /* Keep some space from header */
     position: relative;
+    width: min(100% - 2rem, 1400px);
+    margin-right: auto;
+    margin-left: auto;
 }
 
 #admin-content-wrapper {
     display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
 }
 
 #admin-sidebar {
     width: 230px;
     /* Slightly wider for better spacing */
+    flex: 0 0 230px;
     background-color: #1F1F1F;
     /* Darker background for sidebar */
     padding: 1.5rem;
     min-height: calc(100vh - 93px);
     /* Adjusted for header height (padding + font size approx) */
     border-right: 1px solid #333;
+    box-sizing: border-box;
 }
 
 #admin-sidebar h2 {
@@ -153,6 +160,7 @@ header nav a:hover {
 
 #admin-view-panel {
     flex-grow: 1;
+    min-width: 0;
     padding: 2rem;
     /* Increased padding */
     background-color: #18191a;
@@ -638,4 +646,76 @@ footer {
 #dynamicListItemModal #cancelDynamicListItemModalButton:hover {
     background-color: #545b62;
     /* Darker gray from .admin-button-secondary:hover */
+}
+
+@media (max-width: 900px) {
+    #admin-main-content {
+        width: min(100% - 1rem, 1400px);
+    }
+
+    #admin-content-wrapper {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    #admin-sidebar {
+        width: 100%;
+        min-height: auto;
+        border-right: none;
+        border-bottom: 1px solid #333;
+    }
+
+    #admin-sidebar h2 {
+        margin-bottom: 1rem;
+    }
+
+    #admin-sidebar ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+
+    #admin-sidebar ul li {
+        flex: 1 1 180px;
+    }
+
+    #admin-sidebar ul li a {
+        height: 100%;
+        padding: 0.85rem 0.9rem;
+        border: 1px solid #333;
+        background-color: #18191a;
+    }
+
+    #admin-view-panel {
+        width: 100%;
+        padding: 1.5rem;
+        box-sizing: border-box;
+    }
+}
+
+@media (max-width: 640px) {
+    #admin-main-content {
+        width: 100%;
+    }
+
+    #admin-message-area {
+        margin-right: 0.75rem;
+        margin-left: 0.75rem;
+    }
+
+    #admin-sidebar {
+        padding: 1rem;
+    }
+
+    #admin-sidebar ul {
+        gap: 0.5rem;
+    }
+
+    #admin-sidebar ul li {
+        flex-basis: 100%;
+    }
+
+    #admin-view-panel {
+        padding: 1rem;
+    }
 }
