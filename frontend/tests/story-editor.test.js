@@ -240,4 +240,86 @@ describe('story editor MVP', () => {
 
         expect(document.getElementById('export-pdf-button').style.display).toBe('inline-block');
     });
+
+    test('updates content page preview geometry when switching between top-left and bottom-left', async () => {
+        const story = {
+            id: 321,
+            title: 'Original Title',
+            genre: 'Fantasy',
+            story_outline: 'Outline',
+            main_characters: [],
+            num_pages: 2,
+            tone: null,
+            setting: null,
+            image_style: 'Default',
+            word_to_picture_ratio: 'One image per page',
+            text_density: 'Concise (~30-50 words)',
+            editor_settings: {
+                font_family: 'storybook',
+                font_size: 28,
+                font_color: '#ffffff',
+                text_position: 'middle-center',
+                text_box_opacity: 0.6,
+            },
+            pages: [
+                {
+                    id: 11,
+                    story_id: 321,
+                    page_number: 0,
+                    text: 'Original Title',
+                    image_description: 'Cover art',
+                    image_path: 'images/user_1/story_321/cover.png',
+                    editor_state: {
+                        original_text: 'Original Title',
+                        original_image_path: 'images/user_1/story_321/cover.png',
+                    },
+                    created_at: '2026-04-27T12:00:00Z',
+                    updated_at: '2026-04-27T12:00:00Z',
+                },
+                {
+                    id: 12,
+                    story_id: 321,
+                    page_number: 1,
+                    text: 'Page one text',
+                    image_description: 'Dragon scene',
+                    image_path: 'images/user_1/story_321/page1.png',
+                    editor_state: {
+                        original_text: 'Page one text',
+                        original_image_path: 'images/user_1/story_321/page1.png',
+                    },
+                    created_at: '2026-04-27T12:00:00Z',
+                    updated_at: '2026-04-27T12:00:00Z',
+                },
+            ],
+            created_at: '2026-04-27T12:00:00Z',
+            updated_at: '2026-04-27T12:00:00Z',
+            owner_id: 1,
+            is_draft: false,
+            generated_at: '2026-04-27T12:00:00Z',
+            is_hidden: false,
+            is_deleted: false,
+        };
+
+        window.__TEST_API__.displayStory(story);
+
+        const pagePreview = document.querySelector('.story-editor-page-preview[data-page-id="12"]');
+        const textCard = pagePreview.querySelector('.story-editor-text-card');
+        const verticalSelect = document.querySelector('[data-page-field="text_position_v"][data-page-id="12"]');
+        const horizontalSelect = document.querySelector('[data-page-field="text_position_h"][data-page-id="12"]');
+
+        fireEvent.input(horizontalSelect, { target: { value: 'left' } });
+        fireEvent.input(verticalSelect, { target: { value: 'top' } });
+
+        expect(textCard.style.left).toBe('5.882%');
+        expect(textCard.style.width).toBe('48.000%');
+        expect(textCard.style.height).toBe('22.000%');
+        expect(textCard.style.top).toBe('4.545%');
+        expect(textCard.style.bottom).toBe('');
+
+        fireEvent.input(verticalSelect, { target: { value: 'bottom' } });
+
+        expect(textCard.style.left).toBe('5.882%');
+        expect(textCard.style.top).toBe('');
+        expect(textCard.style.bottom).toBe('4.545%');
+    });
 });

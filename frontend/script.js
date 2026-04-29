@@ -1494,34 +1494,65 @@ document.addEventListener("DOMContentLoaded", function () {
         const parts = normalized.split("-");
         const vertical = ["top", "middle", "bottom"].includes(parts[0]) ? parts[0] : "bottom";
         const horizontal = ["left", "center", "right"].includes(parts[1]) ? parts[1] : "center";
-        const justifyContent = vertical === "top" ? "flex-start" : vertical === "middle" ? "center" : "flex-end";
+        const percent = (value, total) => `${((value / total) * 100).toFixed(3)}%`;
+        const stageWidth = 612;
+        const stageHeight = 792;
+        const margin = 36;
+        const top = vertical === "top"
+            ? percent(margin, stageHeight)
+            : vertical === "middle"
+                ? percent((stageHeight - (stageHeight * 0.34)) / 2, stageHeight)
+                : "";
+        const bottom = vertical === "bottom" ? percent(margin, stageHeight) : "";
+        const height = vertical === "middle"
+            ? percent(stageHeight * 0.34, stageHeight)
+            : percent(stageHeight * 0.22, stageHeight);
 
         let width;
-        let marginLeft;
-        let marginRight;
+        let left;
+        let right;
         if (horizontal === "left") {
-            width = "55%";
-            marginLeft = "0";
-            marginRight = "auto";
+            width = percent(stageWidth * 0.48, stageWidth);
+            left = percent(margin, stageWidth);
+            right = "";
         } else if (horizontal === "right") {
-            width = "55%";
-            marginLeft = "auto";
-            marginRight = "0";
+            width = percent(stageWidth * 0.48, stageWidth);
+            left = "";
+            right = percent(margin, stageWidth);
         } else {
-            width = vertical === "middle" ? "70%" : "100%";
-            marginLeft = "auto";
-            marginRight = "auto";
+            width = vertical === "middle"
+                ? percent(stageWidth * 0.65, stageWidth)
+                : percent(stageWidth - (2 * margin), stageWidth);
+            left = vertical === "middle"
+                ? percent((stageWidth - (stageWidth * 0.65)) / 2, stageWidth)
+                : percent(margin, stageWidth);
+            right = "";
         }
 
-        return { justifyContent, alignItems: "stretch", width, marginLeft, marginRight };
+        return {
+            position: "absolute",
+            top,
+            right,
+            bottom,
+            left,
+            width,
+            height,
+        };
     }
 
     function applyEditorPreviewStyles(pageStage, textCard, settings) {
         const positionStyle = getTextPositionStyle(settings.text_position);
-        pageStage.style.justifyContent = positionStyle.justifyContent;
+        pageStage.style.justifyContent = "";
+        textCard.style.position = positionStyle.position;
+        textCard.style.top = positionStyle.top;
+        textCard.style.right = positionStyle.right;
+        textCard.style.bottom = positionStyle.bottom;
+        textCard.style.left = positionStyle.left;
         textCard.style.width = positionStyle.width;
-        textCard.style.marginLeft = positionStyle.marginLeft;
-        textCard.style.marginRight = positionStyle.marginRight;
+        textCard.style.height = positionStyle.height;
+        textCard.style.marginLeft = "0";
+        textCard.style.marginRight = "0";
+        textCard.style.boxSizing = "border-box";
         textCard.style.fontSize = `${Math.max(12, parseInt(settings.font_size, 10) || 28)}px`;
         textCard.style.color = settings.font_color || "#ffffff";
         const opacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
