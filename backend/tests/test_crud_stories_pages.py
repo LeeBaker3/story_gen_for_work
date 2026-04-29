@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.orm import Session
 from backend import crud, schemas
@@ -47,6 +49,31 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
     assert isinstance(db_story, Story)
     assert db_story.is_draft is False
     assert db_story.generated_at is not None
+
+
+def test_story_request_schemas_exclude_generated_at():
+    assert "generated_at" not in schemas.StoryBase.model_fields
+    assert "generated_at" not in schemas.StoryCreate.model_fields
+
+
+def test_story_response_schema_includes_generated_at():
+    generated_at = datetime.now(UTC)
+
+    story = schemas.Story(
+        id=1,
+        owner_id=1,
+        title="The Dragon Slayer",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="A quest to defeat a dragon.",
+        main_characters=[],
+        num_pages=5,
+        pages=[],
+        generated_at=generated_at,
+        created_at=generated_at,
+        updated_at=generated_at,
+    )
+
+    assert story.generated_at == generated_at
 
 # Test Get Story by ID
 

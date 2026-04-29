@@ -159,7 +159,6 @@ class StoryBase(BaseModel):
     editor_settings: Optional[StoryEditorSettings] = None
     # Add other metadata fields from PRD if necessary
     is_draft: Optional[bool] = True  # For FR24
-    generated_at: Optional[datetime] = None  # For FR24
 
 
 class StoryCreate(StoryBase):  # This schema is for user input to generate a story
@@ -177,6 +176,7 @@ class Story(StoryBase):  # This schema is for representing a story, including AI
     owner_id: int
     pages: List[Page] = []
     editor_settings: Optional[dict] = None
+    generated_at: Optional[datetime] = None  # For FR24
     created_at: datetime  # Added based on previous work
     updated_at: datetime
     # Admin moderation fields
