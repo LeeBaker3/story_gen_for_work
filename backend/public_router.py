@@ -189,7 +189,19 @@ async def create_new_story(
     )
     draft_id = story_input.draft_id
     app_logger.info(
-        f"User {current_user.username} initiating new story creation. Input: {story_input.model_dump(exclude_none=True)}. Draft ID: {draft_id}")
+        "User %s (id=%s) initiating new story creation with metadata: %s",
+        current_user.username,
+        current_user.id,
+        {
+            "title": story_input.title,
+            "has_title": bool(story_input.title),
+            "genre": str(story_input.genre),
+            "num_pages": story_input.num_pages,
+            "character_count": len(story_input.main_characters or []),
+            "character_id_count": len(story_input.character_ids or []),
+            "draft_id": draft_id,
+        },
+    )
 
     if story_input.title and crud.get_story_by_title_and_owner(db, title=story_input.title, user_id=current_user.id):
         raise HTTPException(
@@ -578,4 +590,4 @@ async def export_story_as_pdf_api(
         error_logger.error(
             f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate PDF: {e}")
+            status_code=500, detail="Failed to generate PDF")

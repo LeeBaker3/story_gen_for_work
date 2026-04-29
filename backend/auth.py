@@ -20,7 +20,7 @@ load_dotenv()  # Load environment variables from .env file
 SECRET_KEY = os.getenv(
     "SECRET_KEY", "your-default-secret-key")  # Should be in .env
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

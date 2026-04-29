@@ -259,9 +259,18 @@ async def create_story_draft_endpoint(
     """Create a draft story for the current user."""
 
     app_logger.info(
-        "User %s creating a new story draft with input: %s",
+        "User %s (id=%s) creating a new story draft with metadata: %s",
         current_user.username,
-        story_input.model_dump(exclude_none=True),
+        current_user.id,
+        {
+            "title": story_input.title,
+            "has_title": bool(story_input.title),
+            "genre": str(story_input.genre),
+            "num_pages": story_input.num_pages,
+            "character_count": len(story_input.main_characters or []),
+            "character_id_count": len(story_input.character_ids or []),
+            "draft_id": story_input.draft_id,
+        },
     )
     try:
         db_story_draft = crud.create_story_draft(
@@ -298,10 +307,19 @@ async def update_story_draft_endpoint(
     """Update an existing draft owned by the current user."""
 
     app_logger.info(
-        "User %s updating draft ID %s with data: %s",
+        "User %s (id=%s) updating draft ID %s with metadata: %s",
         current_user.username,
+        current_user.id,
         story_id,
-        story_update_data.model_dump(exclude_none=True),
+        {
+            "title": story_update_data.title,
+            "has_title": bool(story_update_data.title),
+            "genre": str(story_update_data.genre),
+            "num_pages": story_update_data.num_pages,
+            "character_count": len(story_update_data.main_characters or []),
+            "character_id_count": len(story_update_data.character_ids or []),
+            "draft_id": story_update_data.draft_id,
+        },
     )
 
     existing_draft = crud.get_story(db, story_id=story_id, user_id=current_user.id)

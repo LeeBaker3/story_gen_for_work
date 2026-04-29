@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 from fastapi.middleware.cors import CORSMiddleware
+from types import SimpleNamespace
 
 from backend import auth, database, schemas
 from backend.main import app
@@ -236,3 +237,136 @@ def test_create_story_draft_endpoint_hides_internal_exception_details(
     assert response.status_code == 500
     assert "internal db error" not in response.json()["detail"]
     assert response.json()["detail"] == "Failed to create story draft."
+
+
+def test_create_story_draft_logs_only_metadata(
+    client,
+    mock_normal_user,
+    monkeypatch,
+):
+    """Draft creation INFO logs should exclude sensitive request fields."""
+
+    now = datetime.now(UTC)
+    payload = {
+        "title": "Private Draft",
+        "genre": "Sci-Fi",
+        "story_outline": "A private outline for draft creation.",
+        "main_characters": [
+            {
+                "name": "Draft Hero",
+                "description": "Private description",
+                "reference_image_path": "private_data/uploads/draft.png",
+            }
+        ],
+        "num_pages": 3,
+        "draft_id": 55,
+    }
+
+    draft = schemas.Story(
+        id=55,
+        owner_id=mock_normal_user.id,
+        title=payload["title"],
+        genre=payload["genre"],
+        story_outline=payload["story_outline"],
+        main_characters=payload["main_characters"],
+        num_pages=payload["num_pages"],
+        is_draft=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+    app.dependency_overrides[auth.get_current_active_user] = (
+        lambda: mock_normal_user
+    )
+    app.dependency_overrides[main_module.get_db] = lambda: None
+    monkeypatch.setattr(main_module.crud, "create_story_draft", lambda **kwargs: draft)
+
+    try:
+        with patch.object(main_module.app_logger, "info") as mock_info:
+            response = client.post("/stories/drafts/", json=payload)
+    finally:
+        del app.dependency_overrides[auth.get_current_active_user]
+        del app.dependency_overrides[main_module.get_db]
+
+    assert response.status_code == 200
+    first_log_args = mock_info.call_args_list[0].args
+    rendered_log = " ".join(str(arg) for arg in first_log_args)
+    assert "A private outline for draft creation." not in rendered_log
+    assert "Private description" not in rendered_log
+    assert "private_data/uploads/draft.png" not in rendered_log
+    assert "genre" in rendered_log
+    assert "num_pages" in rendered_log
+    assert "draft_id" in rendered_log
+
+
+def test_update_story_draft_logs_only_metadata(
+    client,
+    mock_normal_user,
+    monkeypatch,
+):
+    """Draft update INFO logs should exclude sensitive request fields."""
+
+    now = datetime.now(UTC)
+    payload = {
+        "title": "Updated Private Draft",
+        "genre": "Drama",
+        "story_outline": "A private outline for draft update.",
+        "main_characters": [
+            {
+                "name": "Updated Hero",
+                "description": "Updated secret description",
+                "reference_image_path": "private_data/uploads/update.png",
+            }
+        ],
+        "num_pages": 4,
+        "draft_id": 99,
+    }
+
+    updated_draft = schemas.Story(
+        id=99,
+        owner_id=mock_normal_user.id,
+        title=payload["title"],
+        genre=payload["genre"],
+        story_outline=payload["story_outline"],
+        main_characters=payload["main_characters"],
+        num_pages=payload["num_pages"],
+        is_draft=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+    app.dependency_overrides[auth.get_current_active_user] = (
+        lambda: mock_normal_user
+    )
+    app.dependency_overrides[main_module.get_db] = lambda: None
+    monkeypatch.setattr(
+        main_module.crud,
+        "get_story",
+        lambda db, story_id, user_id: SimpleNamespace(
+            id=story_id,
+            owner_id=user_id,
+            is_draft=True,
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.crud,
+        "update_story_draft",
+        lambda **kwargs: updated_draft,
+    )
+
+    try:
+        with patch.object(main_module.app_logger, "info") as mock_info:
+            response = client.put("/stories/drafts/99", json=payload)
+    finally:
+        del app.dependency_overrides[auth.get_current_active_user]
+        del app.dependency_overrides[main_module.get_db]
+
+    assert response.status_code == 200
+    first_log_args = mock_info.call_args_list[0].args
+    rendered_log = " ".join(str(arg) for arg in first_log_args)
+    assert "A private outline for draft update." not in rendered_log
+    assert "Updated secret description" not in rendered_log
+    assert "private_data/uploads/update.png" not in rendered_log
+    assert "genre" in rendered_log
+    assert "num_pages" in rendered_log
+    assert "draft_id" in rendered_log

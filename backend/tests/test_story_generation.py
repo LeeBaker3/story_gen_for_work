@@ -125,6 +125,88 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         mock_background_task.assert_called_once()
 
 
+def test_create_story_generation_logs_only_metadata(
+    client,
+    db_session_mock,
+    current_user_mock,
+    monkeypatch,
+):
+    """Story creation INFO logs should exclude full payload fields."""
+
+    mock_task_id = str(uuid.uuid4())
+    mock_story_id = 8
+    now = datetime.now(UTC)
+    story_payload = {
+        "title": "Privacy Story",
+        "genre": "Fantasy",
+        "story_outline": "Hidden outline that must not appear in INFO logs.",
+        "main_characters": [
+            {
+                "name": "Hidden Hero",
+                "description": "Sensitive backstory",
+                "reference_image_path": "private_data/uploads/hero.png",
+            }
+        ],
+        "num_pages": 2,
+        "draft_id": 77,
+        "image_style": "Default",
+        "word_to_picture_ratio": "One image per page",
+        "text_density": "Standard (~60-90 words)",
+    }
+
+    mock_story_db = schemas.Story(
+        id=mock_story_id,
+        owner_id=current_user_mock.id,
+        title=story_payload["title"],
+        is_draft=False,
+        genre=story_payload["genre"],
+        story_outline=story_payload["story_outline"],
+        main_characters=story_payload["main_characters"],
+        num_pages=story_payload["num_pages"],
+        created_at=now,
+        updated_at=now,
+    )
+
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner", MagicMock(return_value=None))
+    monkeypatch.setattr(crud, "create_story_db_entry", MagicMock(return_value=mock_story_db))
+    monkeypatch.setattr(
+        crud,
+        "create_story_generation_task",
+        MagicMock(
+            return_value=schemas.StoryGenerationTask(
+                id=mock_task_id,
+                story_id=mock_story_id,
+                user_id=current_user_mock.id,
+                status=schemas.GenerationTaskStatus.PENDING,
+                created_at=now,
+                updated_at=now,
+            )
+        ),
+    )
+    db_session_mock.refresh = MagicMock()
+
+    with patch("backend.public_router.app_logger.info") as mock_info:
+        with patch(
+            "backend.public_router.story_generation_service"
+            ".generate_story_as_background_task"
+        ):
+            response = client.post(
+                "/api/v1/stories/",
+                json=story_payload,
+                headers={"X-Token": "testtoken"},
+            )
+
+    assert response.status_code == 202
+    first_log_args = mock_info.call_args_list[0].args
+    rendered_log = " ".join(str(arg) for arg in first_log_args)
+    assert "Hidden outline that must not appear" not in rendered_log
+    assert "Sensitive backstory" not in rendered_log
+    assert "private_data/uploads/hero.png" not in rendered_log
+    assert "genre" in rendered_log
+    assert "num_pages" in rendered_log
+    assert "draft_id" in rendered_log
+
+
 def test_create_story_with_existing_title_fails(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that creating a story with an existing title for the same user fails.

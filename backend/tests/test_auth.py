@@ -85,6 +85,18 @@ def test_create_access_token_contains_sub() -> None:
     assert payload["sub"] == "user@example.com"
 
 
+def test_create_access_token_uses_default_sixty_minute_expiry() -> None:
+    """The default token expiry should be about one hour from issuance."""
+
+    issued_at = datetime.now(UTC)
+    token = auth.create_access_token(data={"sub": "user@example.com"})
+    payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
+    expires_in = expires_at - issued_at
+
+    assert timedelta(minutes=59) <= expires_in <= timedelta(minutes=61)
+
+
 def test_get_current_user_valid_token(db_session: Session) -> None:
     """A valid token should resolve to the matching user."""
 

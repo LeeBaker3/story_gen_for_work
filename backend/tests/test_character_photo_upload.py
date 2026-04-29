@@ -137,7 +137,7 @@ def test_upload_character_photo_rejects_invalid_image_bytes(
         files={"photo": ("photo.png", b"not-a-real-image", "image/png")},
         headers=regular_user_auth_headers,
     )
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 415, resp.text
     assert resp.json()["detail"] == "Uploaded file is not a valid image."
 
     user_id = _get_regular_user_id(db_session)

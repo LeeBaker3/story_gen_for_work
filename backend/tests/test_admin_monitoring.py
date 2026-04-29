@@ -220,17 +220,21 @@ def test_config_diagnostics_endpoint(client, monkeypatch, admin_auth_headers):
     for key in [
         "text_model", "image_model", "run_env",
         "enable_image_style_mapping", "mount_frontend_static",
-        "mount_data_static", "frontend_static_dir", "data_dir",
-        "logs_dir", "client_initialized"
+        "mount_data_static", "frontend_static_dir_exists",
+        "data_dir_exists", "logs_dir_exists", "client_initialized"
     ]:
         assert key in data
 
+    assert isinstance(data["frontend_static_dir_exists"], bool)
+    assert isinstance(data["data_dir_exists"], bool)
+    assert isinstance(data["logs_dir_exists"], bool)
 
-def test_config_diagnostics_endpoint_strips_absolute_path_details(
+
+def test_config_diagnostics_endpoint_omits_directory_paths(
     client,
     admin_auth_headers,
 ):
-    """The diagnostics response should expose only basename path values."""
+    """The diagnostics response should not expose directory paths."""
 
     response = client.get(
         "/api/v1/admin/monitoring/config",
@@ -239,7 +243,6 @@ def test_config_diagnostics_endpoint_strips_absolute_path_details(
 
     assert response.status_code == 200
     data = response.json()
-    assert "/" not in data["data_dir"]
-    assert "\\" not in data["data_dir"]
-    assert "/" not in data["logs_dir"]
-    assert "\\" not in data["logs_dir"]
+    assert "frontend_static_dir" not in data
+    assert "data_dir" not in data
+    assert "logs_dir" not in data

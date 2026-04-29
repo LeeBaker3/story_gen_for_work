@@ -255,9 +255,13 @@ def config_diagnostics():
             "enable_image_style_mapping": settings.enable_image_style_mapping,
             "mount_frontend_static": settings.mount_frontend_static,
             "mount_data_static": settings.mount_data_static,
-            "frontend_static_dir": settings.frontend_static_dir,
-            "data_dir": os.path.basename(settings.data_dir) if settings.data_dir else "data",
-            "logs_dir": os.path.basename(LOG_DIRECTORY) if LOG_DIRECTORY else "logs",
+            "frontend_static_dir_exists": os.path.isdir(
+                settings.frontend_static_dir
+            ) if settings.frontend_static_dir else False,
+            "data_dir_exists": os.path.isdir(settings.data_dir)
+            if settings.data_dir else False,
+            "logs_dir_exists": os.path.isdir(LOG_DIRECTORY)
+            if LOG_DIRECTORY else False,
             "client_initialized": client_initialized,
         }
     except Exception:

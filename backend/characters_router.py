@@ -192,7 +192,7 @@ async def upload_character_photo(
         except Exception:
             os.remove(tmp_path)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Uploaded file is not a valid image.",
             )
         os.replace(tmp_path, final_path)
@@ -273,11 +273,13 @@ async def regenerate_character_image(char_id: int, payload: schemas.RegenerateIm
         else:
             raise HTTPException(
                 status_code=500, detail="Image generation failed")
+    except HTTPException:
+        raise
     except Exception as e:
         error_logger.error(
             f"Failed to regenerate character image for {ch.id}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Image generation error: {e}")
+            status_code=500, detail="Image generation error")
 
     # Return fresh object
     ch = crud.get_character(db, current_user.id, char_id)

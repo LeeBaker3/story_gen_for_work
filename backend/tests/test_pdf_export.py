@@ -118,6 +118,43 @@ def test_export_pdf_filename_sanitization(client: TestClient, db_session, regula
         assert "AWeirdTitle.pdf" in cd or "story_" in cd
 
 
+def test_export_pdf_hides_internal_exception_message(
+    client: TestClient,
+    db_session,
+    regular_user_auth_headers,
+):
+    user = db_session.query(database.User).filter_by(
+        username="user@example.com").first()
+    story = database.Story(
+        title="Leaky PDF Story",
+        genre="fantasy",
+        story_outline="O",
+        main_characters=[],
+        num_pages=1,
+        owner_id=user.id,
+        is_draft=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    with patch(
+        "backend.pdf_generator.create_story_pdf",
+        side_effect=RuntimeError("internal renderer failure: /srv/private/template.ttf"),
+    ):
+        resp = client.get(
+            f"/api/v1/stories/{story.id}/pdf",
+            headers=regular_user_auth_headers,
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Failed to generate PDF"
+    assert "internal renderer failure" not in resp.text
+    assert "/srv/private/template.ttf" not in resp.text
+
+
 def test_create_story_pdf_basic_generation_returns_pdf_bytes(tmp_path) -> None:
     story = MockPdfStory(
         id=101,
