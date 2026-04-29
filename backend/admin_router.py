@@ -50,11 +50,16 @@ def get_admin_stats(db: Session = Depends(get_db)):
         StoryGenerationTask.created_at >= since_24h)
     tasks_last_24h = tasks_24h_q.count()
     tasks_completed_last_24h = tasks_24h_q.filter(
-        StoryGenerationTask.status == 'completed').count()
+        StoryGenerationTask.status
+        == schemas.GenerationTaskStatus.COMPLETED.value).count()
     tasks_failed_last_24h = tasks_24h_q.filter(
-        StoryGenerationTask.status == 'failed').count()
+        StoryGenerationTask.status
+        == schemas.GenerationTaskStatus.FAILED.value).count()
     tasks_in_progress = db.query(StoryGenerationTask).filter(
-        StoryGenerationTask.status.in_(['pending', 'in_progress'])).count()
+        StoryGenerationTask.status.in_([
+            schemas.GenerationTaskStatus.PENDING.value,
+            schemas.GenerationTaskStatus.IN_PROGRESS.value,
+        ])).count()
 
     # Precise avg duration (prefer duration_ms; fallback to updated_at-created_at)
     durations = []
@@ -62,7 +67,8 @@ def get_admin_stats(db: Session = Depends(get_db)):
     completed_tasks = []
     if tasks_completed_last_24h:
         completed_tasks = tasks_24h_q.filter(
-            StoryGenerationTask.status == 'completed').all()
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.COMPLETED.value).all()
         for t in completed_tasks:
             try:
                 # Prefer explicit duration_ms
