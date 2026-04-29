@@ -101,6 +101,7 @@ nav {
 .nav-buttons {
     display: flex;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 1rem;
 }
 
@@ -129,7 +130,9 @@ nav button:active {
 
 /* Navigation button style for both <button> and <a> */
 .nav-button {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background-color: #007bff;
     background: linear-gradient(180deg, var(--accent), var(--accent-2));
     border: none;
@@ -139,7 +142,10 @@ nav button:active {
     font-weight: 600;
     color: #fff;
     /* Ensure anchors look like buttons */
-    margin: 0 8px 10px 0;
+    margin: 0;
+    max-width: 100%;
+    text-align: center;
+    white-space: normal;
     text-decoration: none;
     cursor: pointer;
     transition: background 0.2s, color 0.2s, transform 0.2s;
@@ -161,6 +167,33 @@ nav button:active {
 
 .nav-button:active {
     transform: translateY(0);
+}
+
+@media (max-width: 640px) {
+    header {
+        padding: 1rem 0.75rem;
+    }
+
+    nav {
+        margin-top: 0.75rem;
+    }
+
+    .nav-buttons {
+        gap: 0.5rem;
+    }
+
+    .nav-button {
+        flex: 1 1 calc(50% - 0.5rem);
+        min-width: 0;
+        padding: 0.7rem 1rem;
+    }
+}
+
+@media (max-width: 420px) {
+    .nav-button {
+        flex-basis: 100%;
+        width: 100%;
+    }
 }
 
 main {
