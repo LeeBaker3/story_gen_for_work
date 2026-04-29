@@ -177,27 +177,36 @@ describe('wizard navigation', () => {
     const next = document.getElementById('wizard-next');
 
     expect(steps[0].getAttribute('aria-current')).toBe('step');
+    expect(steps[0].disabled).toBe(false);
     expect(steps[1].hasAttribute('aria-current')).toBe(false);
     expect(steps[1].getAttribute('aria-disabled')).toBe('true');
+    expect(steps[1].disabled).toBe(true);
     expect(steps[2].getAttribute('aria-disabled')).toBe('true');
+    expect(steps[2].disabled).toBe(true);
 
     fireEvent.click(next);
 
     expect(steps[0].hasAttribute('aria-current')).toBe(false);
     expect(steps[0].hasAttribute('aria-disabled')).toBe(false);
+    expect(steps[0].disabled).toBe(false);
     expect(steps[1].getAttribute('aria-current')).toBe('step');
     expect(steps[1].hasAttribute('aria-disabled')).toBe(false);
+    expect(steps[1].disabled).toBe(false);
     expect(steps[2].getAttribute('aria-disabled')).toBe('true');
+    expect(steps[2].disabled).toBe(true);
   });
 
   test('future step pills do not activate until they are reachable', () => {
     const steps = Array.from(document.querySelectorAll('#wizard-steps .wizard-step'));
 
+    expect(steps[2].disabled).toBe(true);
     fireEvent.click(steps[2]);
     expect(document.getElementById('step-0-basics').style.display).not.toBe('none');
     expect(steps[0].getAttribute('aria-current')).toBe('step');
 
     fireEvent.click(document.getElementById('wizard-next'));
+    steps[0].focus();
+    expect(document.activeElement).toBe(steps[0]);
     fireEvent.click(steps[0]);
 
     expect(document.getElementById('step-0-basics').style.display).toBe('block');

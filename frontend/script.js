@@ -260,6 +260,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         // Step indicators
         stepDots.forEach((dot, i) => {
+            const isReachable = i <= wizardStep;
             dot.classList.toggle('active', i === wizardStep);
             if (i === wizardStep) {
                 dot.setAttribute('aria-current', 'step');
@@ -267,7 +268,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 dot.removeAttribute('aria-current');
             }
 
-            if (i > wizardStep) {
+            dot.disabled = !isReachable;
+
+            if (!isReachable) {
                 dot.setAttribute('aria-disabled', 'true');
             } else {
                 dot.removeAttribute('aria-disabled');
@@ -1173,6 +1176,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Click on step indicators
     stepDots.forEach((dot) => {
         dot.addEventListener('click', () => {
+            if (dot.disabled || dot.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
             // Close Characters modal if open and reset modal state
             try {
                 const modal = document.getElementById('char-modal');
@@ -1185,7 +1191,6 @@ document.addEventListener("DOMContentLoaded", function () {
             } catch (error) {
                 console.error("Error closing modal:", error);
             }
-            if (dot.getAttribute('aria-disabled') === 'true') return;
             const s = parseInt(dot.getAttribute('data-step'), 10);
             // Navigate to requested step
             if (!Number.isNaN(s)) {
