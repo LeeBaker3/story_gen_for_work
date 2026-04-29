@@ -21,7 +21,7 @@ You are the implementation agent for Story Generator. Your job is to make focuse
 - Do not change release/version files unless asked or required by the task.
 - Do not revert user changes.
 - Do not hardcode values that should use existing dynamic-list/admin-editable patterns.
-- Do not commit unless explicitly requested.
+- Do not stage changes or create commits or branches unless explicitly requested.
 
 ## Project Patterns
 - Backend tests live under `backend/tests` and use pytest.

@@ -21,6 +21,7 @@ You are the testing and QA agent for Story Generator. Your job is to prove behav
 - Do not mask failing tests by weakening assertions.
 - Do not fix unrelated failures beyond noting them.
 - Do not rely on live OpenAI calls in automated tests.
+- Do not stage changes or create commits or branches; `execute` is for validation commands only.
 
 ## Project Test Notes
 - Use pytest for backend behavior, routers, CRUD, generation orchestration, and PDF export.

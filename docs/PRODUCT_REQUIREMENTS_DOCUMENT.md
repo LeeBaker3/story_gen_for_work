@@ -164,6 +164,7 @@ The editor should handle choices that users naturally make after seeing the gene
 - FR-AI-01: JSON output includes Title, Page, Image_description.
 - FR-AI-02: Defaults to gpt-4.1-mini (text) and gpt-image-1 (image); configurable.
 - FR-AI-03: Optional style mapping flag to adjust API style/prompts; future admin UI may manage.
+- FR-AI-04: Development and test environments should be able to switch, via configuration, to a local OpenAI-compatible model/provider while production defaults remain unchanged. (Backlog #106)
 
 ### 3.6 Administration
 - FR-ADM-01/02/03/04: Admin role, user management, moderation, monitoring.
@@ -180,6 +181,7 @@ The editor should handle choices that users naturally make after seeing the gene
 ## 4. Deployment & Environment
 - Runs locally: FastAPI, SQLite, HTML/CSS/JS, filesystem for images/logs.
 - Configuration via root `.env`; `backend/settings.py` centralizes defaults.
+- Future configuration should support a local OpenAI-compatible endpoint for development and testing while preserving hosted OpenAI defaults in production.
 - Static mounts `/static` (frontend) and `/static_content` (data) on by default in dev; off in tests by default.
 - Admin diagnostics at `/api/v1/admin/monitoring/config` for safe verification.
 
