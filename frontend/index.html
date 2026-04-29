@@ -85,13 +85,15 @@
                     </div>
                     <div>
                         <label for="story-genre">Genre:</label>
-                        <select id="story-genre" name="genre" required>
+                        <select id="story-genre" name="genre" required aria-describedby="story-genre-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div id="story-genre-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
                         <label for="story-outline">Story Outline:</label>
-                        <textarea id="story-outline" name="story_outline" rows="4" required></textarea>
+                        <textarea id="story-outline" name="story_outline" rows="4" required aria-describedby="story-outline-error"></textarea>
+                        <div id="story-outline-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                 </div>
 
@@ -102,7 +104,7 @@
                         <div class="character-entry">
                             <div>
                                 <label for="char-name-1">Name:</label>
-                                <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
+                                <input type="text" id="char-name-1" name="char_name_1" class="char-name" required aria-describedby="main-characters-error">
                             </div>
                             <!-- Collapsible section for character details -->
                             <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1">Show Details</button>
@@ -132,6 +134,7 @@
                             </div>
                         </div>
                     </fieldset>
+                    <div id="main-characters-error" class="field-error" role="alert" aria-live="polite"></div>
                     <button type="button" id="add-character-button" class="action-button-info">Add Another Character</button>
                     <!-- Show character library in this step -->
                     <div id="character-library-panel" style="display:none;" aria-label="Character library">
@@ -161,7 +164,8 @@
                 <div id="step-2-options" class="wizard-step-panel" style="display:none;">
                     <div>
                         <label for="story-num-pages">Number of Pages:</label>
-                        <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required>
+                        <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required aria-describedby="story-num-pages-error">
+                        <div id="story-num-pages-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
                         <label for="story-tone">Tone (optional):</label>
@@ -173,21 +177,24 @@
                     </div>
                     <div>
                         <label for="story-image-style">Image Style:</label>
-                        <select id="story-image-style" name="image_style" required>
+                        <select id="story-image-style" name="image_style" required aria-describedby="story-image-style-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div id="story-image-style-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
                         <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
-                        <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
+                        <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required aria-describedby="story-word-to-picture-ratio-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div id="story-word-to-picture-ratio-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
                         <label for="story-text-density">Text Density:</label>
-                        <select id="story-text-density" name="text_density" required>
+                        <select id="story-text-density" name="text_density" required aria-describedby="story-text-density-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div id="story-text-density-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
                             <label>Default Text Placement:</label>

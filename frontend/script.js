@@ -253,6 +253,129 @@ document.addEventListener("DOMContentLoaded", function () {
     const btnPrev = document.getElementById('wizard-prev');
     const btnNext = document.getElementById('wizard-next');
 
+    const WIZARD_FIELD_ERROR_CONFIG = {
+        'story-genre': { errorId: 'story-genre-error' },
+        'story-outline': { errorId: 'story-outline-error' },
+        'char-name-1': { errorId: 'main-characters-error' },
+        'story-num-pages': { errorId: 'story-num-pages-error' },
+        'story-image-style': { errorId: 'story-image-style-error' },
+        'story-word-to-picture-ratio': {
+            errorId: 'story-word-to-picture-ratio-error',
+        },
+        'story-text-density': { errorId: 'story-text-density-error' },
+    };
+
+    function getWizardValidationControl(controlOrId) {
+        if (!controlOrId) return null;
+        if (typeof controlOrId === 'string') {
+            return document.getElementById(controlOrId);
+        }
+        return controlOrId;
+    }
+
+    function getWizardValidationMeta(controlOrId) {
+        const control = getWizardValidationControl(controlOrId);
+        if (!control) return {};
+        const config = WIZARD_FIELD_ERROR_CONFIG[control.id] || {};
+        const errorId = config.errorId || control.getAttribute('aria-describedby');
+        const errorEl = errorId ? document.getElementById(errorId) : null;
+        return { control, errorId, errorEl };
+    }
+
+    function setWizardFieldError(controlOrId, message) {
+        const { control, errorId, errorEl } = getWizardValidationMeta(controlOrId);
+        if (!control) return;
+
+        if (errorId) {
+            control.setAttribute('aria-describedby', errorId);
+        }
+
+        if (message) {
+            control.setAttribute('aria-invalid', 'true');
+            if (errorEl) {
+                errorEl.textContent = message;
+            }
+            return;
+        }
+
+        control.removeAttribute('aria-invalid');
+        if (errorEl) {
+            errorEl.textContent = '';
+        }
+    }
+
+    function clearWizardStepErrors(stepIdx) {
+        if (stepIdx === 0) {
+            setWizardFieldError('story-genre', '');
+            setWizardFieldError('story-outline', '');
+        } else if (stepIdx === 1) {
+            document
+                .querySelectorAll('#main-characters-fieldset .char-name')
+                .forEach((input) => setWizardFieldError(input, ''));
+            const sharedError = document.getElementById('main-characters-error');
+            if (sharedError) {
+                sharedError.textContent = '';
+            }
+        } else if (stepIdx === 2) {
+            setWizardFieldError('story-num-pages', '');
+            setWizardFieldError('story-image-style', '');
+            setWizardFieldError('story-word-to-picture-ratio', '');
+            setWizardFieldError('story-text-density', '');
+        }
+    }
+
+    function focusFirstInvalidWizardControl(invalidControls) {
+        const firstInvalid = invalidControls.find(Boolean);
+        if (firstInvalid && typeof firstInvalid.focus === 'function') {
+            firstInvalid.focus();
+        }
+    }
+
+    function attachWizardValidationClearHandler(controlOrId, eventNames = ['input', 'change']) {
+        const control = getWizardValidationControl(controlOrId);
+        if (!control || control.dataset.inlineValidationBound === 'true') {
+            return;
+        }
+
+        eventNames.forEach((eventName) => {
+            control.addEventListener(eventName, () => {
+                if (control.id.startsWith('char-name-')) {
+                    const names = Array.from(
+                        document.querySelectorAll('#main-characters-fieldset .char-name'),
+                    );
+                    const hasCharacterName = names.some((input) => input.value.trim());
+                    if (hasCharacterName) {
+                        names.forEach((input) => setWizardFieldError(input, ''));
+                        const sharedError = document.getElementById('main-characters-error');
+                        if (sharedError) {
+                            sharedError.textContent = '';
+                        }
+                    }
+                    return;
+                }
+
+                const isEmptyNumber =
+                    control.id === 'story-num-pages' &&
+                    !parseInt(control.value || '0', 10);
+                if (!control.value || isEmptyNumber) {
+                    return;
+                }
+                setWizardFieldError(control, '');
+            });
+        });
+
+        control.dataset.inlineValidationBound = 'true';
+    }
+
+    function initializeWizardValidationA11y() {
+        Object.keys(WIZARD_FIELD_ERROR_CONFIG).forEach((id) => {
+            attachWizardValidationClearHandler(id);
+        });
+        document
+            .querySelectorAll('#main-characters-fieldset .char-name')
+            .forEach((input) => attachWizardValidationClearHandler(input));
+    }
+
     function updateStepUI() {
         // Show only current panel
         stepPanels.forEach((el, i) => {
@@ -294,26 +417,92 @@ document.addEventListener("DOMContentLoaded", function () {
     function validateStep(stepIdx) {
         // Minimal validation per step
         if (stepIdx === 0) {
-            const genre = document.getElementById('story-genre')?.value;
-            const outline = document.getElementById('story-outline')?.value?.trim();
-            if (!genre || !outline) {
+            const genreInput = document.getElementById('story-genre');
+            const outlineInput = document.getElementById('story-outline');
+            const genre = genreInput?.value;
+            const outline = outlineInput?.value?.trim();
+            const invalidControls = [];
+
+            clearWizardStepErrors(stepIdx);
+
+            if (!genre) {
+                setWizardFieldError(genreInput, 'Select a genre to continue.');
+                invalidControls.push(genreInput);
+            }
+            if (!outline) {
+                setWizardFieldError(
+                    outlineInput,
+                    'Enter a story outline to continue.',
+                );
+                invalidControls.push(outlineInput);
+            }
+            if (invalidControls.length > 0) {
                 displayMessage('Please select a Genre and provide a Story Outline to continue.', 'warning');
+                focusFirstInvalidWizardControl(invalidControls);
                 return false;
             }
         } else if (stepIdx === 1) {
             // Require at least one character name or at least one selected existing character (future)
-            const names = Array.from(document.querySelectorAll('#main-characters-fieldset .char-name')).map(i => i.value.trim()).filter(Boolean);
+            const nameInputs = Array.from(
+                document.querySelectorAll('#main-characters-fieldset .char-name'),
+            );
+            const names = nameInputs.map(i => i.value.trim()).filter(Boolean);
+            clearWizardStepErrors(stepIdx);
             if (names.length === 0) {
+                nameInputs.forEach((input) => {
+                    setWizardFieldError(
+                        input,
+                        'Add at least one character name to continue.',
+                    );
+                });
                 displayMessage('Add at least one character name.', 'warning');
+                focusFirstInvalidWizardControl(nameInputs);
                 return false;
             }
         } else if (stepIdx === 2) {
-            const numPages = parseInt(document.getElementById('story-num-pages')?.value || '0', 10);
-            const imgStyle = document.getElementById('story-image-style')?.value;
-            const ratio = document.getElementById('story-word-to-picture-ratio')?.value;
-            const density = document.getElementById('story-text-density')?.value;
-            if (!numPages || !imgStyle || !ratio || !density) {
+            const numPagesInput = document.getElementById('story-num-pages');
+            const imageStyleInput = document.getElementById('story-image-style');
+            const ratioInput = document.getElementById('story-word-to-picture-ratio');
+            const densityInput = document.getElementById('story-text-density');
+            const numPages = parseInt(numPagesInput?.value || '0', 10);
+            const imgStyle = imageStyleInput?.value;
+            const ratio = ratioInput?.value;
+            const density = densityInput?.value;
+            const invalidControls = [];
+
+            clearWizardStepErrors(stepIdx);
+
+            if (!numPages) {
+                setWizardFieldError(
+                    numPagesInput,
+                    'Enter the number of pages to continue.',
+                );
+                invalidControls.push(numPagesInput);
+            }
+            if (!imgStyle) {
+                setWizardFieldError(
+                    imageStyleInput,
+                    'Select an image style to continue.',
+                );
+                invalidControls.push(imageStyleInput);
+            }
+            if (!ratio) {
+                setWizardFieldError(
+                    ratioInput,
+                    'Select a word-to-picture ratio to continue.',
+                );
+                invalidControls.push(ratioInput);
+            }
+            if (!density) {
+                setWizardFieldError(
+                    densityInput,
+                    'Select a text density to continue.',
+                );
+                invalidControls.push(densityInput);
+            }
+            if (invalidControls.length > 0) {
                 displayMessage('Please complete options: pages, image style, ratio, and text density.', 'warning');
+                focusFirstInvalidWizardControl(invalidControls);
                 return false;
             }
         }
@@ -1211,6 +1400,7 @@ document.addEventListener("DOMContentLoaded", function () {
             showSection(storyCreationSection);
             populateAllDropdowns(); // Populate all dropdowns on load if logged in
         }
+        initializeWizardValidationA11y();
         // Initialize wizard UI state on load
         goToStep(0);
         // Add first character entry if not already present by HTML
@@ -1264,6 +1454,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 select.selectedIndex = 0; // The placeholder is the first option
             }
         });
+
+        clearWizardStepErrors(0);
+        clearWizardStepErrors(1);
+        clearWizardStepErrors(2);
 
         // Clear existing dynamic characters (beyond the first one)
         const characterEntries = document.querySelectorAll(
@@ -1373,7 +1567,7 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>
             <div class="form-group">
                 <label for="char-name-${characterCount}">Name:</label>
-                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" class="char-name" required>
+                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" class="char-name" required aria-describedby="main-characters-error">
             </div>
             <div id="char-details-${characterCount}" class="character-details-fields" style="display: none;">
                 <div class="form-group">
@@ -1399,6 +1593,7 @@ document.addEventListener("DOMContentLoaded", function () {
             </div>
         `;
         fieldset.appendChild(newCharacterEntry);
+        attachWizardValidationClearHandler(newCharacterEntry.querySelector('.char-name'));
         // Populate gender dropdown for the newly added character entry
         try { populateDropdown(`char-gender-${characterCount}`, 'genders'); } catch (e) { /* ignore */ }
     }
