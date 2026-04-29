@@ -114,6 +114,13 @@ Database
 - Tables auto-created on startup; seed data is applied during app startup lifespan
  - In dev/test, startup helpers idempotently add new columns (task tracking, soft-delete/moderation). Use proper migrations (e.g., Alembic) for production.
 
+Schema migrations
+- Alembic bootstrap files live under `alembic/` with config in `alembic.ini`.
+- The Alembic environment imports `backend.database.Base.metadata` and uses `DATABASE_URL`, so migration autogeneration targets the same models as the app.
+- Runtime startup behavior is unchanged on this branch: the app still uses `create_all` plus SQLite `_ensure_*` helpers for local/dev/test bootstrap.
+- Create a revision: `./.venv/bin/python -m alembic -c alembic.ini revision --autogenerate -m "describe change"`
+- Inspect the generated file under `alembic/versions/`, then apply it with `./.venv/bin/python -m alembic -c alembic.ini upgrade head`
+
 ## Running
 Dev server
 - From repo root with venv active:

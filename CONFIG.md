@@ -57,6 +57,16 @@ CORS
 Database
 - DATABASE_URL: SQLAlchemy URL (default: sqlite:///./story_generator.db)
 
+Alembic migrations
+- The repository now includes a minimal Alembic scaffold rooted at `alembic.ini` and `alembic/`.
+- Alembic resolves `DATABASE_URL` from the environment, matching the app's SQLAlchemy connection target.
+- Alembic autogenerate uses `backend.database.Base.metadata`, so revisions are based on the existing backend model definitions.
+- Current runtime bootstrap remains in place for dev/test compatibility: startup still runs `create_all` and the SQLite `_ensure_*` helpers.
+- Typical commands:
+  - `./.venv/bin/python -m alembic -c alembic.ini revision --autogenerate -m "describe change"`
+  - `./.venv/bin/python -m alembic -c alembic.ini upgrade head`
+  - `./.venv/bin/python -m alembic -c alembic.ini downgrade -1`
+
 ## Admin bootstrap (create first admin)
 
 Use `create_admin.py` to create the first admin user, or to promote an existing
