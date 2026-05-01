@@ -1,4 +1,4 @@
-import { fireEvent } from '@testing-library/dom';
+import { fireEvent, waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
 import fs from 'node:fs';
@@ -42,12 +42,27 @@ function mountWizardDom() {
           </div>
           <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
             <fieldset id="main-characters-fieldset">
-              <input id="char-name-1" class="char-name" value="Alice" />
-              <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
-              <div id="char-details-1" class="character-details-fields" style="display:none;"></div>
-              <select id="char-gender-1"><option value="">Select…</option><option value="female">Female</option></select>
+              <div class="character-entry">
+                <input id="char-name-1" class="char-name" value="Alice" />
+                <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                <div id="char-details-1" class="character-details-fields" style="display:none;">
+                  <input id="char-age-1" class="char-age" value="" />
+                  <select id="char-gender-1"><option value="">Select…</option><option value="female">Female</option></select>
+                  <textarea id="char-physical-appearance-1"></textarea>
+                  <textarea id="char-clothing-style-1"></textarea>
+                  <textarea id="char-key-traits-1"></textarea>
+                </div>
+              </div>
             </fieldset>
             <button type="button" id="add-character-button">Add Another Character</button>
+            <div id="character-library-panel" style="display:none;" aria-label="Character library">
+              <input type="text" id="character-search" aria-label="Search characters" />
+              <button type="button" id="character-sync-btn">Sync from stories</button>
+              <button type="button" id="character-create-from-current-btn">Save form characters</button>
+              <div id="character-list"></div>
+              <div id="character-pagination"></div>
+              <div id="character-detail-modal" style="display:none;"></div>
+            </div>
           </div>
           <div id="step-2-options" class="wizard-step-panel" style="display:none;">
             <input id="story-num-pages" type="number" value="3" />
@@ -78,6 +93,7 @@ function mountWizardDom() {
           <div class="wizard-nav">
             <button type="button" id="wizard-prev">Back</button>
             <button type="button" id="wizard-next">Next</button>
+            <button type="button" id="save-draft-button">Save Draft</button>
             <button type="submit" id="generate-story-button" style="display:none;">Generate Story</button>
           </div>
         </form>
@@ -89,6 +105,7 @@ function mountWizardDom() {
       <section id="story-preview-section" style="display:none;"></section>
       <section id="browse-stories-section" style="display:none;"></section>
       <section id="characters-section" style="display:none;"></section>
+      <section id="message-area"><p id="api-message"></p></section>
       <div id="snackbar" style="display:none;"></div>
     </main>`;
 }
@@ -121,6 +138,40 @@ describe('wizard navigation', () => {
       }
       if (u.includes('/api/v1/dynamic-lists/genders')) {
         return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/characters/?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [
+              {
+                id: 101,
+                name: 'Library Fox',
+                thumbnail_path: 'images/library-fox.png',
+                description: 'Quick and curious',
+              },
+            ],
+            total: 1,
+          }),
+          headers: { get: () => 'application/json' },
+        };
+      }
+      if (u.includes('/api/v1/characters/101')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 101,
+            name: 'Library Fox',
+            age: 7,
+            gender: 'female',
+            description: 'Quick and curious',
+            clothing_style: 'Travel cloak',
+            key_traits: 'Brave',
+          }),
+          headers: { get: () => 'application/json' },
+        };
       }
       return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
     });
@@ -479,5 +530,216 @@ describe('wizard navigation', () => {
 
     const review = document.getElementById('review-container');
     expect(review.textContent).toContain('Page format: Landscape');
+  });
+
+  test('draft save failure preserves form state and sends editor settings payload', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+    document.getElementById('story-title').value = 'Draft Title';
+    document.getElementById('story-genre').value = 'Fantasy';
+    document.getElementById('story-outline').value = 'Draft outline';
+    document.getElementById('story-tone').value = 'Warm';
+    document.getElementById('story-setting').value = 'Forest';
+    document.getElementById('story-num-pages').value = '7';
+    document.getElementById('story-page-format').value = 'a4';
+    document.getElementById('story-default-text-position-v').value = 'top';
+    document.getElementById('story-default-text-position-h').value = 'right';
+    document.getElementById('story-default-font-family').value = 'classic';
+    document.getElementById('story-default-font-size').value = '32';
+    document.getElementById('story-default-font-color').value = '#abcdef';
+    document.getElementById('story-default-text-box-opacity').value = '0.3';
+
+    const fetchMock = global.fetch;
+    fetchMock.mockImplementation(async (url, options = {}) => {
+      const u = String(url);
+      if (u.includes('/stories/drafts/') && options.method === 'POST') {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ detail: 'Draft exploded' }),
+          headers: { get: () => 'application/json' },
+          text: async () => 'Draft exploded',
+        };
+      }
+      if (u.includes('/api/v1/dynamic-lists/genres')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/text_density')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/font_families')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/genders')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+      }
+      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+    });
+
+    fireEvent.click(document.getElementById('save-draft-button'));
+
+    await waitFor(() => {
+      const draftRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST');
+      expect(draftRequest).toBeTruthy();
+    });
+
+    const [, requestOptions] = fetchMock.mock.calls.find(
+      ([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST'
+    );
+    const payload = JSON.parse(requestOptions.body);
+
+    expect(payload.editor_settings).toEqual({
+      page_format: 'a4',
+      text_position: 'top-right',
+      font_family: 'classic',
+      font_size: 32,
+      font_color: '#abcdef',
+      text_box_opacity: 0.3,
+    });
+    await waitFor(() => {
+      expect(document.getElementById('api-message').textContent).toMatch(/draft saving failed: draft exploded/i);
+    });
+    expect(document.getElementById('story-title').value).toBe('Draft Title');
+    expect(document.getElementById('story-outline').value).toBe('Draft outline');
+    expect(document.getElementById('story-genre').value).toBe('Fantasy');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  test('story start failure preserves form state and includes selected library character ids', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+    document.getElementById('story-title').value = 'Library Story';
+    document.getElementById('story-genre').value = 'Fantasy';
+    document.getElementById('story-outline').value = 'A fox saves the village';
+    document.getElementById('story-num-pages').value = '6';
+    document.getElementById('story-page-format').value = 'square-storybook';
+    document.getElementById('story-default-text-position-v').value = 'middle';
+    document.getElementById('story-default-text-position-h').value = 'left';
+    document.getElementById('story-default-font-family').value = 'classic';
+    document.getElementById('story-default-font-size').value = '30';
+    document.getElementById('story-default-font-color').value = '#334455';
+    document.getElementById('story-default-text-box-opacity').value = '0.5';
+
+    const fetchMock = global.fetch;
+    fetchMock.mockImplementation(async (url, options = {}) => {
+      const u = String(url);
+      if (u.includes('/api/v1/stories/') && options.method === 'POST') {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ detail: 'Story start exploded' }),
+          headers: { get: () => 'application/json' },
+          text: async () => 'Story start exploded',
+        };
+      }
+      if (u.includes('/api/v1/characters/?')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [
+              {
+                id: 101,
+                name: 'Library Fox',
+                thumbnail_path: 'images/library-fox.png',
+                description: 'Quick and curious',
+              },
+            ],
+            total: 1,
+          }),
+          headers: { get: () => 'application/json' },
+        };
+      }
+      if (u.includes('/api/v1/characters/101')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 101,
+            name: 'Library Fox',
+            age: 7,
+            gender: 'female',
+            description: 'Quick and curious',
+            clothing_style: 'Travel cloak',
+            key_traits: 'Brave',
+          }),
+          headers: { get: () => 'application/json' },
+        };
+      }
+      if (u.includes('/api/v1/dynamic-lists/genres')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/text_density')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/font_families')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/genders')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+      }
+      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+    });
+
+    fireEvent.click(document.getElementById('wizard-next'));
+
+    await waitFor(() => {
+      expect(document.querySelector('.character-card[data-id="101"]')).not.toBeNull();
+    });
+
+    fireEvent.click(document.querySelector('.character-card[data-id="101"]'));
+
+    await waitFor(() => {
+      expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
+    });
+
+    fireEvent.click(document.getElementById('wizard-next'));
+    fireEvent.click(document.getElementById('wizard-next'));
+    fireEvent.click(document.getElementById('generate-story-button'));
+
+    await waitFor(() => {
+      const storyRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST');
+      expect(storyRequest).toBeTruthy();
+    });
+
+    const [, requestOptions] = fetchMock.mock.calls.find(
+      ([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST'
+    );
+    const payload = JSON.parse(requestOptions.body);
+
+    expect(payload.character_ids).toEqual([101]);
+    expect(payload.editor_settings).toEqual({
+      page_format: 'square-storybook',
+      text_position: 'middle-left',
+      font_family: 'classic',
+      font_size: 30,
+      font_color: '#334455',
+      text_box_opacity: 0.5,
+    });
+    await waitFor(() => {
+      expect(document.getElementById('api-message').textContent).toMatch(/story start exploded/i);
+    });
+    expect(document.getElementById('story-title').value).toBe('Library Story');
+    expect(document.getElementById('story-outline').value).toBe('A fox saves the village');
+    expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
