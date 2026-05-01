@@ -1,5 +1,5 @@
 import { fireEvent, waitFor } from '@testing-library/dom';
-import { jest } from '@jest/globals';
+import { afterEach, jest } from '@jest/globals';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -190,6 +190,7 @@ describe('wizard navigation', () => {
     }
     jest.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:loop-asset');
     jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     // Mock dynamic lists to allow selects to have valid options
     global.fetch = jest.fn(async (url) => {
       const u = String(url);
@@ -282,6 +283,10 @@ describe('wizard navigation', () => {
     document.getElementById('story-image-style').value = 'Cartoon';
     document.getElementById('story-word-to-picture-ratio').value = 'One image per page';
     document.getElementById('story-text-density').value = 'Concise (~30-50 words)';
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   test('layout dropdowns load with split text position defaults', () => {
