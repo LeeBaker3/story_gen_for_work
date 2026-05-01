@@ -3,8 +3,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from backend import settings as settings_mod, storage_paths
-from backend.database import DynamicList, DynamicListItem, Page, Story, User
-from unittest.mock import AsyncMock, patch
+from backend.database import Character, DynamicList, DynamicListItem, Page, Story, User
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -337,6 +337,242 @@ def test_save_story_editor_via_api_prefix(
         item for item in data["pages"] if item["id"] == page.id)
     assert updated_page["text"] == "Edited through API"
     assert updated_page["editor_state"]["text_position"] == "left"
+
+
+def test_save_story_editor_via_api_prefix_returns_404_for_unknown_page_id(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Editor Unknown Page",
+        story_outline="A story with one editable page.",
+        genre="Fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    page = __import__("backend.database", fromlist=["Page"]).Page(
+        story_id=story.id,
+        page_number=1,
+        text="Original text",
+        image_description="page image",
+        image_path="images/user_1/story_1/page1.png",
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    response = client.put(
+        f"/api/v1/stories/{story.id}/editor",
+        headers=regular_user_auth_headers,
+        json={
+            "pages": [
+                {
+                    "id": page.id + 999,
+                    "text": "Should fail",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Page not found"}
+
+
+def test_create_new_story_returns_500_when_task_creation_fails(
+    client: TestClient,
+    regular_user_auth_headers: dict,
+    monkeypatch,
+):
+    mock_story = MagicMock(id=123)
+    monkeypatch.setattr(
+        "backend.public_router.crud.get_story_by_title_and_owner",
+        MagicMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "backend.public_router.crud.create_story_db_entry",
+        MagicMock(return_value=mock_story),
+    )
+    monkeypatch.setattr(
+        "backend.public_router.crud.create_story_generation_task",
+        MagicMock(return_value=None),
+    )
+
+    response = client.post(
+        "/api/v1/stories/",
+        headers=regular_user_auth_headers,
+        json={
+            "title": "Task Failure",
+            "genre": "fantasy",
+            "story_outline": "A route-level failure case.",
+            "main_characters": [],
+            "num_pages": 1,
+            "image_style": "cartoon",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Could not create generation task."}
+
+
+def test_restore_story_page_image_returns_404_for_unknown_page_id(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Restore Missing Image",
+        story_outline="A story with one page.",
+        genre="Fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    page = Page(
+        story_id=story.id,
+        page_number=1,
+        text="Original text",
+        image_description="page image",
+        image_path="images/user_1/story_1/page1.png",
+        editor_state={
+            "original_image_path": "images/user_1/story_1/page1.png",
+        },
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    response = client.post(
+        f"/api/v1/stories/{story.id}/pages/{page.id + 999}/restore-image",
+        headers=regular_user_auth_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Page not found"}
+
+
+def test_regenerate_story_page_image_returns_502_when_generation_returns_none(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = Story(
+        title="Regenerate Failure",
+        story_outline="A story to edit.",
+        genre="Fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+        image_style="Default",
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    page = Page(
+        story_id=story.id,
+        page_number=1,
+        text="A dragon by the sea",
+        image_description="Dragon scene",
+        image_path="images/user_1/story_1/page1.png",
+    )
+    db_session.add(page)
+    db_session.commit()
+    db_session.refresh(page)
+
+    with patch(
+        "backend.public_router.ai_services.generate_image_for_page",
+        new_callable=AsyncMock,
+    ) as mock_generate:
+        mock_generate.return_value = None
+        response = client.post(
+            f"/api/v1/stories/{story.id}/pages/{page.id}/regenerate-image",
+            headers=regular_user_auth_headers,
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "Image generation did not return a new page image.",
+    }
+
+
+def test_create_new_story_rejects_missing_or_unowned_character_ids(
+    client: TestClient,
+    db_session: Session,
+    regular_user_auth_headers: dict,
+):
+    owner = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+    other_user = db_session.query(User).filter(
+        User.username == "admin@example.com"
+    ).first()
+    assert owner is not None
+    assert other_user is not None
+
+    owned_character = Character(
+        user_id=owner.id,
+        name="Owned Hero",
+        description="Brave",
+    )
+    unowned_character = Character(
+        user_id=other_user.id,
+        name="Someone Else",
+        description="Off limits",
+    )
+    db_session.add(owned_character)
+    db_session.add(unowned_character)
+    db_session.commit()
+    db_session.refresh(owned_character)
+    db_session.refresh(unowned_character)
+
+    response = client.post(
+        "/api/v1/stories/",
+        headers=regular_user_auth_headers,
+        json={
+            "title": "Invalid Character Selection",
+            "genre": "fantasy",
+            "story_outline": "A story request with invalid selected characters.",
+            "main_characters": [],
+            "character_ids": [
+                owned_character.id,
+                unowned_character.id,
+                999999,
+            ],
+            "num_pages": 1,
+            "image_style": "cartoon",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Character not found"}
 
 
 def test_story_page_image_endpoint_requires_auth(

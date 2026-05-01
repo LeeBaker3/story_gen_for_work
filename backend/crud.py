@@ -441,7 +441,10 @@ def save_story_editor(
     for page_update in editor_update.pages:
         db_page = pages_by_id.get(page_update.id)
         if not db_page:
-            continue
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Page not found",
+            )
 
         if page_update.text is not None:
             db_page.text = page_update.text

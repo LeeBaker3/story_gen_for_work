@@ -52,10 +52,16 @@ def _merge_selected_characters_into_story_input(
     if not story_input.character_ids:
         return story_input
 
+    requested_character_ids = set(story_input.character_ids)
+
     saved_characters = db.query(database.Character).filter(
         database.Character.user_id == user_id,
         database.Character.id.in_(story_input.character_ids),
     ).all()
+
+    found_character_ids = {character.id for character in saved_characters}
+    if found_character_ids != requested_character_ids:
+        raise HTTPException(status_code=404, detail="Character not found")
 
     saved_by_name = {
         (character.name or "").strip().casefold(): character
