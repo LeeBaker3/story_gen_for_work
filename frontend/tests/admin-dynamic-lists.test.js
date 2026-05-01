@@ -70,6 +70,13 @@ function installApiMock(options = {}) {
   );
   const usageByItemId = { ...initialUsageByItemId };
 
+  function nextItemId() {
+    return Math.max(
+      0,
+      ...Object.values(currentItemsByList).flat().map((item) => item.id)
+    ) + 1;
+  }
+
   window.fetch = jest.fn(async (url, options = {}) => {
     if (url.endsWith('/api/v1/users/me/')) {
       return new Response(JSON.stringify({ id: 1, username: 'admin', role: 'admin' }), { status: 200 });
@@ -92,12 +99,31 @@ function installApiMock(options = {}) {
       return new Response('', { status: 204 });
     }
     const listItemsMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/([^/]+)\/items$/);
-    if (listItemsMatch) {
+    if (listItemsMatch && (!options.method || options.method === 'GET')) {
       const listName = decodeURIComponent(listItemsMatch[1]);
       return new Response(
         JSON.stringify(currentItemsByList[listName] || []),
         { status: 200 }
       );
+    }
+    if (listItemsMatch && options.method === 'POST') {
+      const listName = decodeURIComponent(listItemsMatch[1]);
+      const payload = JSON.parse(options.body || '{}');
+      const createdItem = {
+        id: nextItemId(),
+        list_name: listName,
+        item_value: payload.item_value,
+        item_label: payload.item_label,
+        is_active: payload.is_active,
+        sort_order: payload.sort_order,
+        additional_config: payload.additional_config ?? null
+      };
+      currentItemsByList[listName] = [
+        ...(currentItemsByList[listName] || []),
+        createdItem
+      ];
+      usageByItemId[createdItem.id] = { is_in_use: false, details: [] };
+      return new Response(JSON.stringify(createdItem), { status: 201 });
     }
     const itemDetailMatch = url.match(/\/api\/v1\/admin\/dynamic-lists\/items\/(\d+)$/);
     if (itemDetailMatch && (!options.method || options.method === 'GET')) {
@@ -107,6 +133,30 @@ function installApiMock(options = {}) {
         .find((entry) => entry.id === itemId);
       if (item) {
         return new Response(JSON.stringify(item), { status: 200 });
+      }
+    }
+    if (itemDetailMatch && options.method === 'PUT') {
+      const itemId = Number(itemDetailMatch[1]);
+      const payload = JSON.parse(options.body || '{}');
+      let updatedItem = null;
+      currentItemsByList = Object.fromEntries(
+        Object.entries(currentItemsByList).map(([listName, items]) => [
+          listName,
+          items.map((entry) => {
+            if (entry.id !== itemId) {
+              return entry;
+            }
+            updatedItem = {
+              ...entry,
+              ...payload,
+              additional_config: payload.additional_config ?? null
+            };
+            return updatedItem;
+          })
+        ])
+      );
+      if (updatedItem) {
+        return new Response(JSON.stringify(updatedItem), { status: 200 });
       }
     }
     if (itemDetailMatch && options.method === 'DELETE') {
@@ -324,4 +374,101 @@ test('dynamic list item delete uses admin confirmation modal before removing the
   });
 
   expect(confirmSpy).not.toHaveBeenCalled();
+});
+
+test('dynamic list item modal submits create and edit payloads to the admin API', async () => {
+  installApiMock();
+
+  await loadAdminScript();
+  fireEvent.click(document.querySelector('[data-section="dynamic-content"]'));
+
+  await waitFor(() => {
+    expect(typeof window.adminScript.showAddEditDynamicListItemModal)
+      .toBe('function');
+  });
+
+  await window.adminScript.showAddEditDynamicListItemModal(
+    null,
+    'genres',
+    document.getElementById('add-new-item-btn')
+  );
+
+  await waitFor(() => {
+    expect(document.getElementById('dynamicListItemForm')).toBeTruthy();
+  });
+
+  fireEvent.change(document.getElementById('item_value'), {
+    target: { value: 'mystery' }
+  });
+  fireEvent.change(document.getElementById('item_label'), {
+    target: { value: 'Mystery' }
+  });
+  fireEvent.change(document.getElementById('item_sort_order'), {
+    target: { value: '7' }
+  });
+  fireEvent.click(document.getElementById('item_is_active'));
+  fireEvent.change(document.getElementById('item_additional_config'), {
+    target: { value: '{"openai_style":"vivid"}' }
+  });
+  fireEvent.submit(document.getElementById('dynamicListItemForm'));
+
+  let createCall;
+  await waitFor(() => {
+    createCall = window.fetch.mock.calls.find(([url, requestOptions]) => (
+      String(url).endsWith('/api/v1/admin/dynamic-lists/genres/items')
+      && requestOptions?.method === 'POST'
+    ));
+    expect(createCall).toBeTruthy();
+  });
+
+  expect(JSON.parse(createCall[1].body)).toEqual({
+    list_name: 'genres',
+    item_value: 'mystery',
+    item_label: 'Mystery',
+    sort_order: 7,
+    is_active: false,
+    additional_config: { openai_style: 'vivid' }
+  });
+
+  await window.adminScript.showAddEditDynamicListItemModal(
+    5,
+    null,
+    document.querySelector('.edit-dynamic-list-item-btn')
+  );
+
+  await waitFor(() => {
+    expect(document.getElementById('dynamicListItemForm')).toBeTruthy();
+    expect(document.getElementById('item_value').value).toBe('<img src=x data-admin-dynamic-xss="value">');
+  });
+
+  fireEvent.change(document.getElementById('item_value'), {
+    target: { value: 'spooky' }
+  });
+  fireEvent.change(document.getElementById('item_label'), {
+    target: { value: 'Spooky label' }
+  });
+  fireEvent.change(document.getElementById('item_sort_order'), {
+    target: { value: '9' }
+  });
+  fireEvent.change(document.getElementById('item_additional_config'), {
+    target: { value: '{"openai_style":"natural"}' }
+  });
+  fireEvent.submit(document.getElementById('dynamicListItemForm'));
+
+  let updateCall;
+  await waitFor(() => {
+    updateCall = window.fetch.mock.calls.find(([url, requestOptions]) => (
+      String(url).endsWith('/api/v1/admin/dynamic-lists/items/5')
+      && requestOptions?.method === 'PUT'
+    ));
+    expect(updateCall).toBeTruthy();
+  });
+
+  expect(JSON.parse(updateCall[1].body)).toEqual({
+    item_value: 'spooky',
+    item_label: 'Spooky label',
+    sort_order: 9,
+    is_active: true,
+    additional_config: { openai_style: 'natural' }
+  });
 });
