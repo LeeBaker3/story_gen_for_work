@@ -58,6 +58,21 @@ def _format_task_error_message(error: Exception) -> str:
     return str(error)
 
 
+def _restore_failed_story_shell(
+    failed_story,
+    story_input: schemas.StoryCreate,
+) -> None:
+    """Restore the pre-generation story shell after a failed generation."""
+
+    failed_story.is_draft = True
+    if hasattr(failed_story, 'generated_at'):
+        failed_story.generated_at = None
+    failed_story.title = story_input.title or "[AI Title Pending...]"
+
+    if hasattr(failed_story, 'pages'):
+        failed_story.pages = []
+
+
 async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
     db: Session = next(database.get_db())
     _settings = get_settings()
@@ -349,9 +364,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
 
             failed_story = crud.get_story(db, story_id, user_id)
             if failed_story is not None:
-                failed_story.is_draft = True
-                if hasattr(failed_story, 'generated_at'):
-                    failed_story.generated_at = None
+                _restore_failed_story_shell(failed_story, story_input)
                 db.commit()
         except Exception:
             error_logger.error(

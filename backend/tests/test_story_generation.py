@@ -1116,6 +1116,88 @@ async def test_generate_story_as_background_task_marks_failed_story_as_draft():
 
 
 @pytest.mark.asyncio
+async def test_generate_story_as_background_task_cleans_saved_content_on_post_save_failure():
+    """A failure after saving generated content should restore the story shell."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-post-save-failure"
+    story_id = 14
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="",
+        genre="Fantasy",
+        story_outline="A generation fails after saving content.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    failed_story = MagicMock()
+    failed_story.is_draft = False
+    failed_story.generated_at = datetime.now(UTC)
+    failed_story.title = "[AI Title Pending...]"
+    failed_story.pages = []
+
+    saved_story_content = {
+        "Title": "Generated Title",
+        "Pages": [
+            {
+                "Page_number": 1,
+                "Text": "Generated page text.",
+                "Image_description": "Generated image.",
+                "Characters_in_scene": ["Mina"],
+                "image_url": "images/user_1/story_14/page_1.png",
+            }
+        ],
+    }
+
+    def _persist_generated_content(_db, _story_id, story_content):
+        failed_story.title = story_content["Title"]
+        failed_story.pages = list(story_content["Pages"])
+        failed_story.generated_at = datetime.now(UTC)
+        return failed_story
+
+    def _update_progress(_db, _task_id, progress, _step):
+        if progress == 100:
+            raise RuntimeError("final task update failed")
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(
+                    return_value=saved_story_content
+                )
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value="images/user_1/story_14/page_1.png"
+                )
+                mock_crud.update_story_with_generated_content.side_effect = (
+                    _persist_generated_content
+                )
+                mock_crud.update_story_generation_task_progress.side_effect = (
+                    _update_progress
+                )
+                mock_crud.get_story.return_value = failed_story
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input
+                )
+
+                assert failed_story.is_draft is True
+                assert failed_story.generated_at is None
+                assert failed_story.title == "[AI Title Pending...]"
+                assert failed_story.pages == []
+
+
+@pytest.mark.asyncio
 async def test_generate_story_as_background_task_uses_wizard_text_position_guidance():
     """Initial page image generation should include wizard text-placement guidance."""
 
