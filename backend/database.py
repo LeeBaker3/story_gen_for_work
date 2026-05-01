@@ -58,6 +58,7 @@ class Story(Base):
     num_pages = Column(Integer, nullable=False, default=0)
     tone = Column(String, nullable=True)
     setting = Column(String, nullable=True)
+    writing_style = Column(String, nullable=True)
     # FR14: Added image_style column
     image_style = Column(String, nullable=True, default="Default")
     # FR13: Added word_to_picture_ratio column
@@ -255,6 +256,7 @@ def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
     _ensure_story_generation_task_new_columns()
     _ensure_soft_delete_and_moderation_columns()
+    _ensure_story_metadata_columns()
     _ensure_story_editor_columns()
 
 
@@ -331,6 +333,38 @@ def _ensure_soft_delete_and_moderation_columns():
                             pass
             except Exception:
                 # Non-fatal in dev/test
+                pass
+
+
+def _ensure_story_metadata_columns():
+    """Idempotently add newer story metadata columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "stories": {
+            "writing_style": "TEXT NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}"
+                                )
+                            )
+                        except Exception:
+                            pass
+            except Exception:
                 pass
 
 

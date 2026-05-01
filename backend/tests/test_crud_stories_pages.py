@@ -30,6 +30,7 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
         num_pages=5,
         tone="Epic",
         setting="Medieval kingdom",
+        writing_style="Playful",
         image_style=schemas.ImageStyle.FANTASY_ART,
         word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
         text_density=schemas.TextDensity.STANDARD
@@ -44,6 +45,7 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
     assert db_story.owner_id == test_user.id
     assert db_story.genre == schemas.StoryGenre.FANTASY.value
     assert db_story.num_pages == 5
+    assert db_story.writing_style == "Playful"
     assert len(db_story.main_characters) == 1
     assert db_story.main_characters[0]['name'] == "Hero"
     assert isinstance(db_story, Story)
@@ -420,6 +422,7 @@ def test_create_story_draft(db_session: Session, test_user: User):
         story_outline="A detective solves a case.",
         main_characters=[schemas.CharacterDetail(name="Detective X")],
         num_pages=3,
+        writing_style="Detective Noir",
         # Changed to a valid style, NOIR was added to schema
         image_style=schemas.ImageStyle.NOIR
     )
@@ -432,12 +435,14 @@ def test_create_story_draft(db_session: Session, test_user: User):
     assert db_draft.is_draft is True
     assert db_draft.generated_at is None  # Drafts are not generated yet
     assert db_draft.genre == schemas.StoryGenre.MYSTERY.value
+    assert db_draft.writing_style == "Detective Noir"
 
 
 def test_update_story_draft(db_session: Session, test_user: User):
     # First, create a draft
     initial_draft_data = schemas.StoryCreate(
-        title="Space Draft v1", genre="Sci-Fi", story_outline="Initial outline", main_characters=[], num_pages=1)
+        title="Space Draft v1", genre="Sci-Fi", story_outline="Initial outline", main_characters=[], num_pages=1,
+        writing_style="Sparse")
     # initial_title = "Space Draft v1" # Title is in initial_draft_data
     draft_story = crud.create_story_draft(
         db=db_session, story_data=initial_draft_data, user_id=test_user.id)
@@ -450,7 +455,8 @@ def test_update_story_draft(db_session: Session, test_user: User):
         main_characters=[schemas.CharacterDetail(
             name="Action Hero")],  # Added character
         num_pages=2,  # Changed num_pages
-        tone="Exciting"
+        tone="Exciting",
+        writing_style="Cinematic"
     )
     # updated_title = "Action Draft v2" # Title is in updated_draft_data
 
@@ -467,6 +473,7 @@ def test_update_story_draft(db_session: Session, test_user: User):
     assert updated_db_draft.main_characters[0]['name'] == "Action Hero"
     assert updated_db_draft.num_pages == 2
     assert updated_db_draft.tone == "Exciting"
+    assert updated_db_draft.writing_style == "Cinematic"
     assert updated_db_draft.is_draft is True  # Still a draft
     assert updated_db_draft.generated_at is None
 

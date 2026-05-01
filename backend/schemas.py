@@ -153,6 +153,7 @@ class StoryBase(BaseModel):
     num_pages: int
     tone: Optional[str] = Field(None, max_length=200)
     setting: Optional[str] = Field(None, max_length=500)
+    writing_style: Optional[str] = Field(None, max_length=200)
     # FR14: Added image_style
     image_style: Optional[str] = ImageStyle.DEFAULT.value
     # FR13: Added word_to_picture_ratio

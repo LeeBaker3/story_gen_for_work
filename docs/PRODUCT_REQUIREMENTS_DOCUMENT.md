@@ -129,6 +129,8 @@ The wizard should collect only choices that materially influence story/image gen
 
 The following wizard controls remain future work on this branch and should not be treated as already implemented inputs: writing style, image fill/contain behavior, cover/title placement preference, and explicit readability treatment selection.
 
+Stories now persist optional `writing_style` when it is supplied through API, import, or template flows, but that field remains future wizard work on this branch.
+
 These wizard settings should be included in image prompt construction. For example, if the user selects bottom text placement, page image prompts should request important visual detail away from the lower text-safe area where possible.
 
 #### Post-Generation Editor Responsibilities

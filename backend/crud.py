@@ -16,6 +16,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 _STORY_DYNAMIC_LIST_NAMES: Dict[str, str] = {
     "genre": "genres",
+    "writing_style": "writing_styles",
     "image_style": "image_styles",
     "word_to_picture_ratio": "word_to_picture_ratio",
     "text_density": "text_density",
@@ -50,6 +51,9 @@ def validate_story_dynamic_list_values(
 
     resolved_values = {
         "genre": _coerce_story_field_value(story_data.genre),
+        "writing_style": _coerce_story_field_value(
+            getattr(story_data, "writing_style", None)
+        ),
         "image_style": _coerce_story_field_value(
             story_data.image_style,
             _STORY_FIELD_DEFAULTS["image_style"],
@@ -66,6 +70,8 @@ def validate_story_dynamic_list_values(
 
     for field_name, list_name in _STORY_DYNAMIC_LIST_NAMES.items():
         field_value = resolved_values[field_name]
+        if field_value is None:
+            continue
         active_items = get_active_dynamic_list_items(db, list_name=list_name)
         if not active_items:
             continue
@@ -214,6 +220,7 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
     word_to_picture_ratio_value = resolved_values["word_to_picture_ratio"]
     text_density_value = resolved_values["text_density"]
     image_style_value = resolved_values["image_style"]
+    writing_style_value = resolved_values["writing_style"]
     editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
     if getattr(story_data, "editor_settings", None):
         editor_settings_value.update(
@@ -233,6 +240,7 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
         num_pages=story_data.num_pages,
         tone=story_data.tone,
         setting=story_data.setting,
+        writing_style=writing_style_value,
         # Added image_style
         image_style=image_style_value,
         # FR13: Added word_to_picture_ratio
@@ -258,6 +266,7 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
     word_to_picture_ratio_value = resolved_values["word_to_picture_ratio"]
     text_density_value = resolved_values["text_density"]
     image_style_value = resolved_values["image_style"]
+    writing_style_value = resolved_values["writing_style"]
     editor_settings_value = dict(schemas.EDITOR_DEFAULTS)
     if getattr(story_data, "editor_settings", None):
         editor_settings_value.update(
@@ -272,6 +281,7 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
         num_pages=story_data.num_pages,
         tone=story_data.tone,
         setting=story_data.setting,
+        writing_style=writing_style_value,
         image_style=image_style_value,
         word_to_picture_ratio=word_to_picture_ratio_value,
         text_density=text_density_value,
