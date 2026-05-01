@@ -285,6 +285,7 @@ def test_save_story_editor_via_api_prefix(
             "font_color": "#ffffff",
             "text_position": "bottom",
             "text_box_opacity": 0.6,
+            "layout_mode": "full-page-overlay",
         },
     )
     db_session.add(story)
@@ -316,6 +317,7 @@ def test_save_story_editor_via_api_prefix(
                 "font_color": "#ffeeaa",
                 "text_position": "top",
                 "text_box_opacity": 0.5,
+                "layout_mode": "horizontal-split",
             },
             "pages": [
                 {
@@ -333,6 +335,7 @@ def test_save_story_editor_via_api_prefix(
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["title"] == "Edited Through API"
+    assert data["editor_settings"]["layout_mode"] == "horizontal-split"
     updated_page = next(
         item for item in data["pages"] if item["id"] == page.id)
     assert updated_page["text"] == "Edited through API"

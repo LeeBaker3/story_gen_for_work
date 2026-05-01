@@ -276,6 +276,29 @@ def test_create_story_pdf_honors_font_family_override(tmp_path) -> None:
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "font-family-story.pdf")
 
 
+def test_create_story_pdf_supports_split_layout_modes(tmp_path) -> None:
+    story = MockPdfStory(
+        id=109,
+        title="Split Layout Story",
+        pages=[MockPdfPage(page_number=1, text="Split layout text.")],
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "layout_mode": "horizontal-split",
+        },
+    )
+
+    horizontal_pdf = create_story_pdf(story)
+    _assert_valid_pdf_bytes(horizontal_pdf, tmp_path, "horizontal-split-story.pdf")
+
+    story.editor_settings = {
+        **EDITOR_DEFAULTS,
+        "layout_mode": "vertical-split",
+    }
+    vertical_pdf = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(vertical_pdf, tmp_path, "vertical-split-story.pdf")
+
+
 def test_create_story_pdf_uses_configured_a4_page_size(tmp_path) -> None:
     story = MockPdfStory(
         id=106,
@@ -329,3 +352,4 @@ def test_effective_page_settings_prefers_page_font_family_override() -> None:
     settings = _effective_page_settings(story, page)
 
     assert settings["font_family"] == "handwritten"
+    assert settings["layout_mode"] == "full-page-overlay"

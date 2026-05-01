@@ -80,6 +80,11 @@ function mountWizardDom() {
               <option value="landscape">Landscape</option>
               <option value="square-storybook">Square Storybook</option>
             </select>
+            <select id="story-layout-mode">
+              <option value="full-page-overlay">Full-page overlay</option>
+              <option value="horizontal-split">Horizontal split</option>
+              <option value="vertical-split">Vertical split</option>
+            </select>
             <select id="story-default-text-position-v"></select>
             <select id="story-default-text-position-h"></select>
             <select id="story-default-font-family"><option value="">Select...</option></select>
@@ -131,6 +136,7 @@ function createGeneratedStoryFixture() {
     text_density: 'Concise (~30-50 words)',
     editor_settings: {
       page_format: 'square-storybook',
+      layout_mode: 'vertical-split',
       text_position: 'top-center',
       font_family: 'classic',
       font_size: 30,
@@ -462,8 +468,10 @@ describe('wizard navigation', () => {
     expect(steps[1].getAttribute('aria-current')).toBe('step');
     expect(steps[1].hasAttribute('aria-disabled')).toBe(false);
     expect(steps[1].disabled).toBe(false);
-    expect(steps[2].getAttribute('aria-disabled')).toBe('true');
-    expect(steps[2].disabled).toBe(true);
+    expect(steps[2].hasAttribute('aria-disabled')).toBe(false);
+    expect(steps[2].disabled).toBe(false);
+    expect(steps[3].hasAttribute('aria-disabled')).toBe(false);
+    expect(steps[3].disabled).toBe(false);
   });
 
   test('future step pills do not activate until they are reachable', () => {
@@ -479,6 +487,38 @@ describe('wizard navigation', () => {
     expect(document.activeElement).toBe(steps[0]);
     fireEvent.click(steps[0]);
 
+    expect(document.getElementById('step-0-basics').style.display).toBe('block');
+    expect(steps[0].getAttribute('aria-current')).toBe('step');
+  });
+
+  test('template-loaded wizard enables later reachable steps while keeping Basics active', () => {
+    const steps = Array.from(document.querySelectorAll('#wizard-steps .wizard-step'));
+
+    fireEvent.click(document.getElementById('wizard-next'));
+    fireEvent.click(document.getElementById('wizard-next'));
+
+    window.__TEST_API__.populateCreateFormWithStoryData(createGeneratedStoryFixture(), false);
+
+    expect(document.getElementById('step-0-basics').style.display).toBe('block');
+    expect(steps[0].getAttribute('aria-current')).toBe('step');
+    expect(document.getElementById('story-layout-mode').value).toBe('vertical-split');
+    expect(steps[1].disabled).toBe(false);
+    expect(steps[2].disabled).toBe(false);
+    expect(steps[3].disabled).toBe(false);
+
+    fireEvent.click(steps[3]);
+
+    expect(document.getElementById('step-3-review').style.display).toBe('block');
+    expect(steps[3].getAttribute('aria-current')).toBe('step');
+
+    document.getElementById('story-outline').value = '';
+    fireEvent.input(document.getElementById('story-outline'), {
+      target: { value: '' },
+    });
+
+    expect(steps[1].disabled).toBe(true);
+    expect(steps[2].disabled).toBe(true);
+    expect(steps[3].disabled).toBe(true);
     expect(document.getElementById('step-0-basics').style.display).toBe('block');
     expect(steps[0].getAttribute('aria-current')).toBe('step');
   });
@@ -527,6 +567,7 @@ describe('wizard navigation', () => {
 
   test('generate request includes wizard editor settings', async () => {
     document.getElementById('story-page-format').value = 'square-storybook';
+    document.getElementById('story-layout-mode').value = 'horizontal-split';
     document.getElementById('story-default-text-position-v').value = 'top';
     document.getElementById('story-default-text-position-h').value = 'center';
     document.getElementById('story-default-font-family').value = 'classic';
@@ -592,6 +633,7 @@ describe('wizard navigation', () => {
     const payload = JSON.parse(requestOptions.body);
     expect(payload.editor_settings).toEqual({
       page_format: 'square-storybook',
+      layout_mode: 'horizontal-split',
       text_position: 'top-center',
       font_family: 'classic',
       font_size: 34,
@@ -784,6 +826,7 @@ describe('wizard navigation', () => {
     document.getElementById('story-setting').value = 'Forest';
     document.getElementById('story-num-pages').value = '7';
     document.getElementById('story-page-format').value = 'a4';
+    document.getElementById('story-layout-mode').value = 'horizontal-split';
     document.getElementById('story-default-text-position-v').value = 'top';
     document.getElementById('story-default-text-position-h').value = 'right';
     document.getElementById('story-default-font-family').value = 'classic';
@@ -838,6 +881,7 @@ describe('wizard navigation', () => {
 
     expect(payload.editor_settings).toEqual({
       page_format: 'a4',
+      layout_mode: 'horizontal-split',
       text_position: 'top-right',
       font_family: 'classic',
       font_size: 32,
@@ -864,6 +908,7 @@ describe('wizard navigation', () => {
     document.getElementById('story-outline').value = 'A fox saves the village';
     document.getElementById('story-num-pages').value = '6';
     document.getElementById('story-page-format').value = 'square-storybook';
+    document.getElementById('story-layout-mode').value = 'vertical-split';
     document.getElementById('story-default-text-position-v').value = 'middle';
     document.getElementById('story-default-text-position-h').value = 'left';
     document.getElementById('story-default-font-family').value = 'classic';
@@ -967,6 +1012,7 @@ describe('wizard navigation', () => {
     expect(payload.character_ids).toEqual([101]);
     expect(payload.editor_settings).toEqual({
       page_format: 'square-storybook',
+      layout_mode: 'vertical-split',
       text_position: 'middle-left',
       font_family: 'classic',
       font_size: 30,

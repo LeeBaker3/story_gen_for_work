@@ -10,7 +10,7 @@ from reportlab.pdfgen import canvas
 
 from .database import Story as StoryModel
 from .logging_config import app_logger, error_logger
-from .schemas import EDITOR_DEFAULTS
+from .schemas import EDITOR_DEFAULTS, LayoutMode
 
 PAGE_MARGIN = 36
 SQUARE_STORYBOOK = (612.0, 612.0)
@@ -46,6 +46,7 @@ FONT_FAMILY_MAP = {
     "dyslexia-friendly": "Helvetica",
     "large print": "Helvetica-Bold",
 }
+VALID_LAYOUT_MODES = {mode.value for mode in LayoutMode}
 
 
 def _resolve_story_editor_settings(story_data: StoryModel) -> Dict[str, Any]:
@@ -92,6 +93,15 @@ def _resolve_page_size(story_data: StoryModel) -> Tuple[float, float]:
     return PAGE_SIZE_MAP.get(page_format, letter)
 
 
+def _normalize_layout_mode(value: Any) -> str:
+    """Return a supported layout mode token."""
+
+    normalized = str(value or EDITOR_DEFAULTS["layout_mode"]).strip().lower()
+    if normalized in VALID_LAYOUT_MODES:
+        return normalized
+    return EDITOR_DEFAULTS["layout_mode"]
+
+
 def _safe_hex_color(value: Any) -> HexColor:
     """Return a valid ReportLab color from a hex input."""
 
@@ -123,6 +133,7 @@ def _resolve_image_path(image_path: str) -> str:
 def _text_box_geometry(
     text_position: str,
     page_size: Tuple[float, float],
+    region: Tuple[float, float, float, float] | None = None,
 ) -> Tuple[float, float, float, float]:
     """Return x, y, width, height for the page overlay text box.
 
@@ -131,7 +142,14 @@ def _text_box_geometry(
     left→middle-left, right→middle-right, center→middle-center.
     """
 
-    page_width, page_height = page_size
+    if region is None:
+        origin_x = 0.0
+        origin_y = 0.0
+        page_width, page_height = page_size
+        margin = PAGE_MARGIN
+    else:
+        origin_x, origin_y, page_width, page_height = region
+        margin = min(PAGE_MARGIN, page_width * 0.08, page_height * 0.08)
 
     position = str(text_position or "bottom-center").strip().lower()
     position = _OLD_POSITION_MAP.get(position, position)
@@ -147,28 +165,87 @@ def _text_box_geometry(
 
     if vertical == "top":
         box_height = page_height * 0.22
-        box_y = page_height - PAGE_MARGIN - box_height
+        box_y = origin_y + page_height - margin - box_height
     elif vertical == "middle":
         box_height = page_height * 0.34
-        box_y = (page_height - box_height) / 2.0
+        box_y = origin_y + (page_height - box_height) / 2.0
     else:
         box_height = page_height * 0.22
-        box_y = PAGE_MARGIN
+        box_y = origin_y + margin
 
     if horizontal == "left":
         box_width = page_width * 0.48
-        box_x = PAGE_MARGIN
+        box_x = origin_x + margin
     elif horizontal == "right":
         box_width = page_width * 0.48
-        box_x = page_width - PAGE_MARGIN - box_width
+        box_x = origin_x + page_width - margin - box_width
     else:
         if vertical == "middle":
             box_width = page_width * 0.65
         else:
-            box_width = page_width - (2 * PAGE_MARGIN)
-        box_x = (page_width - box_width) / 2.0
+            box_width = page_width - (2 * margin)
+        box_x = origin_x + (page_width - box_width) / 2.0
 
     return box_x, box_y, box_width, box_height
+
+
+def _layout_regions(
+    layout_mode: str,
+    page_size: Tuple[float, float],
+) -> Dict[str, Tuple[float, float, float, float]]:
+    """Return image and text regions for the selected page layout preset."""
+
+    page_width, page_height = page_size
+    mode = _normalize_layout_mode(layout_mode)
+
+    if mode == LayoutMode.HORIZONTAL_SPLIT.value:
+        text_height = page_height * 0.38
+        return {
+            "image": (0.0, text_height, page_width, page_height - text_height),
+            "text": (0.0, 0.0, page_width, text_height),
+        }
+
+    if mode == LayoutMode.VERTICAL_SPLIT.value:
+        image_width = page_width * 0.56
+        return {
+            "image": (0.0, 0.0, image_width, page_height),
+            "text": (image_width, 0.0, page_width - image_width, page_height),
+        }
+
+    return {
+        "image": (0.0, 0.0, page_width, page_height),
+        "text": (0.0, 0.0, page_width, page_height),
+    }
+
+
+def _draw_image_cover(
+    pdf: canvas.Canvas,
+    full_image_path: str,
+    region: Tuple[float, float, float, float],
+) -> None:
+    """Draw an image cropped to fill a target region."""
+
+    region_x, region_y, region_width, region_height = region
+
+    image = ImageReader(full_image_path)
+    image_width, image_height = image.getSize()
+    if not image_width or not image_height:
+        raise ValueError("Image has invalid dimensions")
+
+    scale = max(region_width / image_width, region_height / image_height)
+    draw_width = image_width * scale
+    draw_height = image_height * scale
+    draw_x = region_x + (region_width - draw_width) / 2.0
+    draw_y = region_y + (region_height - draw_height) / 2.0
+    pdf.drawImage(
+        image,
+        draw_x,
+        draw_y,
+        width=draw_width,
+        height=draw_height,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
 
 
 def _draw_full_page_image(
@@ -179,26 +256,7 @@ def _draw_full_page_image(
     """Draw an image full-bleed, cropped to fill the entire page."""
 
     page_width, page_height = page_size
-
-    image = ImageReader(full_image_path)
-    image_width, image_height = image.getSize()
-    if not image_width or not image_height:
-        raise ValueError("Image has invalid dimensions")
-
-    scale = max(page_width / image_width, page_height / image_height)
-    draw_width = image_width * scale
-    draw_height = image_height * scale
-    draw_x = (page_width - draw_width) / 2.0
-    draw_y = (page_height - draw_height) / 2.0
-    pdf.drawImage(
-        image,
-        draw_x,
-        draw_y,
-        width=draw_width,
-        height=draw_height,
-        preserveAspectRatio=True,
-        mask="auto",
-    )
+    _draw_image_cover(pdf, full_image_path, (0.0, 0.0, page_width, page_height))
 
 
 def _draw_placeholder_background(
@@ -221,12 +279,14 @@ def _draw_text_overlay(
     settings: Dict[str, Any],
     page_size: Tuple[float, float],
     is_title_page: bool = False,
+    region: Tuple[float, float, float, float] | None = None,
 ) -> None:
     """Draw a readable overlay text box using the current editor settings."""
 
     box_x, box_y, box_width, box_height = _text_box_geometry(
         settings.get("text_position", "bottom"),
         page_size,
+        region=region,
     )
     opacity = settings.get("text_box_opacity", 0.6)
     try:
@@ -305,6 +365,11 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
     else:
         for page in sorted_pages:
             page_number = int(getattr(page, "page_number", 0))
+            page_settings = _effective_page_settings(story_data, page)
+            layout_regions = _layout_regions(
+                page_settings.get("layout_mode"),
+                page_size,
+            )
             full_image_path = None
             image_path = getattr(page, "image_path", None)
             if image_path:
@@ -313,11 +378,11 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
                 except ValueError:
                     full_image_path = None
 
+            _draw_placeholder_background(pdf, page_size)
+
             try:
                 if full_image_path and os.path.exists(full_image_path):
-                    _draw_full_page_image(pdf, full_image_path, page_size)
-                else:
-                    _draw_placeholder_background(pdf, page_size)
+                    _draw_image_cover(pdf, full_image_path, layout_regions["image"])
             except Exception as exc:
                 error_logger.error(
                     "Failed to draw image for story %s page %s: %s",
@@ -326,17 +391,16 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
                     exc,
                     exc_info=True,
                 )
-                _draw_placeholder_background(pdf, page_size)
 
             text_value = getattr(page, "text", None) or getattr(
                 story_data, "title", "")
-            page_settings = _effective_page_settings(story_data, page)
             _draw_text_overlay(
                 pdf,
                 text_value,
                 page_settings,
                 page_size,
                 is_title_page=(page_number == 0),
+                region=layout_regions["text"],
             )
             pdf.showPage()
 

@@ -96,7 +96,13 @@ document.addEventListener("DOMContentLoaded", function () {
         text_position: "bottom-center",
         text_box_opacity: 0.6,
         page_format: "letter",
+        layout_mode: "full-page-overlay",
     };
+    const STORY_EDITOR_LAYOUT_OPTIONS = [
+        { value: "full-page-overlay", label: "Full-page overlay" },
+        { value: "horizontal-split", label: "Horizontal split" },
+        { value: "vertical-split", label: "Vertical split" },
+    ];
     const STORY_EDITOR_FONT_OPTIONS = [
         { value: "storybook", label: "Storybook" },
         { value: "classic", label: "Classic" },
@@ -109,6 +115,33 @@ document.addEventListener("DOMContentLoaded", function () {
     const STORY_EDITOR_TEXT_POSITIONS_H = ["left", "center", "right"];
     const STORY_EDITOR_POSITION_LABELS_V = { top: "Top", middle: "Middle", bottom: "Bottom" };
     const STORY_EDITOR_POSITION_LABELS_H = { left: "Left", center: "Centre", right: "Right" };
+
+    function normalizeLayoutMode(layoutMode) {
+        const normalized = String(layoutMode || STORY_EDITOR_DEFAULTS.layout_mode)
+            .trim()
+            .toLowerCase();
+        if (STORY_EDITOR_LAYOUT_OPTIONS.some((option) => option.value === normalized)) {
+            return normalized;
+        }
+        return STORY_EDITOR_DEFAULTS.layout_mode;
+    }
+
+    function getLayoutModeLabel(layoutMode) {
+        const normalized = normalizeLayoutMode(layoutMode);
+        return STORY_EDITOR_LAYOUT_OPTIONS.find((option) => option.value === normalized)?.label
+            || STORY_EDITOR_LAYOUT_OPTIONS[0].label;
+    }
+
+    function getLayoutModeDescription(layoutMode) {
+        const normalized = normalizeLayoutMode(layoutMode);
+        if (normalized === "horizontal-split") {
+            return "Image panel above with text panel below";
+        }
+        if (normalized === "vertical-split") {
+            return "Image panel on the left with text panel on the right";
+        }
+        return "Full-page image with editable text overlay";
+    }
 
     // Content Areas
     const storyPreviewContent = document.getElementById("story-preview-content");
@@ -430,6 +463,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const stepDots = Array.from(document.querySelectorAll('#wizard-steps .wizard-step'));
     const btnPrev = document.getElementById('wizard-prev');
     const btnNext = document.getElementById('wizard-next');
+    const WIZARD_STEP_COUNT = 4;
 
     const WIZARD_FIELD_ERROR_CONFIG = {
         'story-genre': { errorId: 'story-genre-error' },
@@ -529,12 +563,14 @@ document.addEventListener("DOMContentLoaded", function () {
                             sharedError.textContent = '';
                         }
                     }
+                    updateStepUI();
                     return;
                 }
 
                 const isEmptyNumber =
                     control.id === 'story-num-pages' &&
                     !parseInt(control.value || '0', 10);
+                updateStepUI();
                 if (!control.value || isEmptyNumber) {
                     return;
                 }
@@ -554,14 +590,59 @@ document.addEventListener("DOMContentLoaded", function () {
             .forEach((input) => attachWizardValidationClearHandler(input));
     }
 
+    function isWizardStepSatisfied(stepIdx) {
+        if (stepIdx === 0) {
+            const genre = document.getElementById('story-genre')?.value;
+            const outline = document.getElementById('story-outline')?.value?.trim();
+            return Boolean(genre && outline);
+        }
+
+        if (stepIdx === 1) {
+            const names = Array.from(
+                document.querySelectorAll('#main-characters-fieldset .char-name'),
+            )
+                .map((input) => input.value.trim())
+                .filter(Boolean);
+            return names.length > 0;
+        }
+
+        if (stepIdx === 2) {
+            const numPages = parseInt(
+                document.getElementById('story-num-pages')?.value || '0',
+                10,
+            );
+            const imageStyle = document.getElementById('story-image-style')?.value;
+            const ratio = document.getElementById('story-word-to-picture-ratio')?.value;
+            const density = document.getElementById('story-text-density')?.value;
+            return Boolean(numPages && imageStyle && ratio && density);
+        }
+
+        return true;
+    }
+
+    function getWizardMaxReachableStep() {
+        let maxReachableStep = 0;
+        for (let stepIdx = 0; stepIdx < WIZARD_STEP_COUNT - 1; stepIdx += 1) {
+            if (!isWizardStepSatisfied(stepIdx)) {
+                break;
+            }
+            maxReachableStep = stepIdx + 1;
+        }
+        return maxReachableStep;
+    }
+
     function updateStepUI() {
+        const maxReachableStep = getWizardMaxReachableStep();
+        if (wizardStep > maxReachableStep) {
+            wizardStep = maxReachableStep;
+        }
         // Show only current panel
         stepPanels.forEach((el, i) => {
             if (el) el.style.display = i === wizardStep ? 'block' : 'none';
         });
         // Step indicators
         stepDots.forEach((dot, i) => {
-            const isReachable = i <= wizardStep;
+            const isReachable = i <= maxReachableStep;
             dot.classList.toggle('active', i === wizardStep);
             if (i === wizardStep) {
                 dot.setAttribute('aria-current', 'step');
@@ -689,6 +770,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function goToStep(step) {
         if (step < 0 || step > 3) return;
+        const maxReachableStep = getWizardMaxReachableStep();
+        if (step > maxReachableStep) {
+            return;
+        }
         wizardStep = step;
         updateStepUI();
     }
@@ -1525,6 +1610,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const pageFormat = String(
             editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format,
         ).toLowerCase();
+        const layoutMode = normalizeLayoutMode(editorSettings.layout_mode);
         s.innerHTML = `
             <p><strong>Title:</strong> ${escapeHTML(data.title || '(AI will generate)')}</p>
             <p><strong>Genre:</strong> ${escapeHTML(data.genre || '(not set)')}</p>
@@ -1534,7 +1620,8 @@ document.addEventListener("DOMContentLoaded", function () {
             <p><strong>Pages:</strong> ${escapeHTML(data.num_pages || '(not set)')} | <strong>Style:</strong> ${escapeHTML(data.image_style || '(not set)')}</p>
             <p><strong>Ratio:</strong> ${escapeHTML(data.word_to_picture_ratio || '(not set)')} | <strong>Density:</strong> ${escapeHTML(data.text_density || '(not set)')}</p>
             <p><strong>Page format:</strong> ${escapeHTML(pageFormatLabels[pageFormat] || pageFormat)}</p>
-            <p><strong>Layout:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')} text | <strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
+            <p><strong>Layout mode:</strong> ${escapeHTML(getLayoutModeLabel(layoutMode))} | <strong>Text position:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')}</p>
+            <p><strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
         `;
         review.appendChild(s);
     }
@@ -1624,6 +1711,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Exposed at module scope for reuse (e.g., nav actions, "Use as Template").
     function resetFormAndState() {
         console.log("[resetFormAndState] Attempting to reset form and state.");
+        wizardStep = 0;
         if (storyCreationForm) {
             storyCreationForm.reset();
             console.log("[resetFormAndState] storyCreationForm reset called.");
@@ -1724,6 +1812,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         showSection(storyCreationSection); // Ensure the creation form is visible
+        updateStepUI();
         displayMessage("Form cleared. Ready for a new story.", "info");
         console.log(
             "[resetFormAndState] Form fields and draft state reset. Navigated to story creation section.",
@@ -1791,6 +1880,7 @@ document.addEventListener("DOMContentLoaded", function () {
             syncCharacterDetailsDisclosure(detailsToggle, detailsPanel);
         }
         attachWizardValidationClearHandler(newCharacterEntry.querySelector('.char-name'));
+        updateStepUI();
         // Populate gender dropdown for the newly added character entry
         try { populateDropdown(`char-gender-${characterCount}`, 'genders'); } catch (e) { /* ignore */ }
     }
@@ -1846,10 +1936,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function normalizeStoryEditorSettings(settings) {
-        return {
+        const normalized = {
             ...STORY_EDITOR_DEFAULTS,
             ...(settings || {}),
         };
+        normalized.layout_mode = normalizeLayoutMode(normalized.layout_mode);
+        return normalized;
     }
 
     function normalizePageEditorState(page) {
@@ -1946,9 +2038,43 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
-    function applyEditorPreviewStyles(pageStage, textCard, settings) {
+    function applyEditorPreviewStyles(pageStage, imageSlot, textCard, settings) {
+        const layoutMode = normalizeLayoutMode(settings.layout_mode);
         const positionStyle = getTextPositionStyle(settings.text_position);
+        const { v, h } = parseTextPosition(settings.text_position);
+        const justifyContent = v === "top"
+            ? "flex-start"
+            : v === "middle"
+                ? "center"
+                : "flex-end";
+        const alignItems = h === "left"
+            ? "flex-start"
+            : h === "center"
+                ? "center"
+                : "flex-end";
+        const textAlign = h === "right" ? "right" : h === "center" ? "center" : "left";
+
+        pageStage.dataset.layoutMode = layoutMode;
+        if (imageSlot) {
+            imageSlot.dataset.layoutMode = layoutMode;
+            imageSlot.style.position = "";
+            imageSlot.style.inset = "";
+            imageSlot.style.width = "";
+            imageSlot.style.height = "";
+            imageSlot.style.minHeight = "0";
+            imageSlot.style.overflow = "hidden";
+        }
+
+        pageStage.style.display = "block";
+        pageStage.style.gridTemplateColumns = "";
+        pageStage.style.gridTemplateRows = "";
         pageStage.style.justifyContent = "";
+        pageStage.style.alignItems = "";
+
+        textCard.style.display = "block";
+        textCard.style.alignItems = "";
+        textCard.style.justifyContent = "";
+        textCard.style.textAlign = "left";
         textCard.style.position = positionStyle.position;
         textCard.style.top = positionStyle.top;
         textCard.style.right = positionStyle.right;
@@ -1959,11 +2085,36 @@ document.addEventListener("DOMContentLoaded", function () {
         textCard.style.marginLeft = "0";
         textCard.style.marginRight = "0";
         textCard.style.boxSizing = "border-box";
+        textCard.style.padding = "1rem";
         textCard.style.fontSize = `${Math.max(12, parseInt(settings.font_size, 10) || 28)}px`;
         textCard.style.color = settings.font_color || "#ffffff";
         const opacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
         textCard.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
         textCard.style.fontFamily = "inherit";
+
+        if (layoutMode === "horizontal-split" || layoutMode === "vertical-split") {
+            pageStage.style.display = "grid";
+            pageStage.style.gridTemplateRows = layoutMode === "horizontal-split" ? "1.05fr 0.7fr" : "1fr";
+            pageStage.style.gridTemplateColumns = layoutMode === "vertical-split" ? "1.12fr 0.88fr" : "1fr";
+            if (imageSlot) {
+                imageSlot.style.position = "relative";
+                imageSlot.style.width = "100%";
+                imageSlot.style.height = "100%";
+            }
+            textCard.style.display = "flex";
+            textCard.style.position = "relative";
+            textCard.style.top = "";
+            textCard.style.right = "";
+            textCard.style.bottom = "";
+            textCard.style.left = "";
+            textCard.style.width = "100%";
+            textCard.style.height = "100%";
+            textCard.style.padding = "1.25rem";
+            textCard.style.alignItems = alignItems;
+            textCard.style.justifyContent = justifyContent;
+            textCard.style.textAlign = textAlign;
+            textCard.style.borderRadius = "0";
+        }
     }
 
     /**
@@ -1981,9 +2132,10 @@ document.addEventListener("DOMContentLoaded", function () {
             );
             if (!preview) return;
             const pageStage = preview.querySelector(".story-editor-page-stage");
+            const imageSlot = preview.querySelector(".story-editor-page-image-slot");
             const textCard = preview.querySelector(".story-editor-text-card");
             if (pageStage && textCard) {
-                applyEditorPreviewStyles(pageStage, textCard, pageSettings);
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
             }
             const textContent = preview.querySelector(
                 ".story-editor-text-card-content"
@@ -2161,6 +2313,14 @@ document.addEventListener("DOMContentLoaded", function () {
     function createFontOptions(selectedValue) {
         return STORY_EDITOR_FONT_OPTIONS.map((option) => {
             const selected = option.value === selectedValue ? "selected" : "";
+            return `<option value="${option.value}" ${selected}>${option.label}</option>`;
+        }).join("");
+    }
+
+    function createLayoutModeOptions(selectedValue) {
+        const normalized = normalizeLayoutMode(selectedValue);
+        return STORY_EDITOR_LAYOUT_OPTIONS.map((option) => {
+            const selected = option.value === normalized ? "selected" : "";
             return `<option value="${option.value}" ${selected}>${option.label}</option>`;
         }).join("");
     }
@@ -2405,6 +2565,7 @@ document.addEventListener("DOMContentLoaded", function () {
             message: "Saved",
             showRetry: false,
         };
+        const previewAvailable = storyEditorState.previewAvailable !== false;
         shell.innerHTML = `
             <div class="story-editor-toolbar">
                 <div class="story-editor-title-group">
@@ -2412,6 +2573,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <input id="story-editor-title" class="story-editor-title-input" type="text" value="${escapeHTML(story.title || "Untitled Story")}">
                 </div>
                 <div class="story-editor-toolbar-actions">
+                    ${previewAvailable ? '<button type="button" id="story-editor-preview-button" class="action-button-secondary">Back to Preview</button>' : ''}
                     <span id="story-editor-save-status" class="story-editor-save-status" role="status" aria-live="polite" aria-atomic="true" data-state="${saveStatus.state}">${escapeHTML(saveStatus.message)}</span>
                     <button type="button" id="story-editor-retry-save-button" class="action-button-secondary" style="display:${saveStatus.showRetry ? "inline-flex" : "none"};">Retry save</button>
                     <button type="button" id="story-editor-save-button" class="action-button-primary">Save</button>
@@ -2420,6 +2582,8 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="story-editor-layout">
                 <aside class="story-editor-sidebar">
                     <h3>Document Defaults</h3>
+                    <label class="story-editor-field-label" for="story-editor-layout-mode">Layout Mode</label>
+                    <select id="story-editor-layout-mode" class="story-editor-select">${createLayoutModeOptions(story.editor_settings.layout_mode)}</select>
                     <label class="story-editor-field-label" for="story-editor-font-family">Font</label>
                     <select id="story-editor-font-family" class="story-editor-select">${createFontOptions(story.editor_settings.font_family)}</select>
                     <label class="story-editor-field-label" for="story-editor-font-size">Font Size</label>
@@ -2440,6 +2604,9 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
 
         storyPreviewContent.appendChild(shell);
+        shell.querySelector("#story-editor-preview-button")?.addEventListener("click", () => {
+            renderStoryReadOnlyPreview();
+        });
         const titleInput = shell.querySelector("#story-editor-title");
         titleInput.addEventListener("input", (event) => {
             story.title = event.target.value;
@@ -2449,6 +2616,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         [
+            ["#story-editor-layout-mode", "layout_mode", (value) => normalizeLayoutMode(value)],
             ["#story-editor-font-family", "font_family", (value) => value],
             ["#story-editor-font-size", "font_size", (value) => parseInt(value, 10)],
             ["#story-editor-font-color", "font_color", (value) => value],
@@ -2504,7 +2672,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     <div class="story-editor-page-header">
                         <div>
                             <h3>${parseInt(page.page_number, 10) === 0 ? "Cover Page" : `Page ${page.page_number}`}</h3>
-                            <p class="story-editor-page-subtitle">Full-page image with editable text overlay</p>
+                            <p class="story-editor-page-subtitle">${escapeHTML(getLayoutModeDescription(pageSettings.layout_mode))}</p>
                         </div>
                         <div class="story-editor-page-actions">
                             <button type="button" class="action-button-secondary" data-action="restore-text" data-page-id="${page.id}">Restore Text</button>
@@ -2560,8 +2728,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     </div>
                 `;
                 const pageStage = pageCard.querySelector(".story-editor-page-stage");
+                const imageSlot = pageCard.querySelector(".story-editor-page-image-slot");
                 const textCard = pageCard.querySelector(".story-editor-text-card");
-                applyEditorPreviewStyles(pageStage, textCard, pageSettings);
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
                 pagesContainer.appendChild(pageCard);
                 void hydrateStoryPageImage(story, page);
             });
@@ -2639,8 +2808,96 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function renderStoryReadOnlyPreview() {
+        const story = storyEditorState.story;
+        if (!storyPreviewContent || !story) {
+            console.error("[renderStoryReadOnlyPreview] Story preview content area or story data is missing.");
+            displayMessage("Could not display story preview.", "error");
+            if (exportPdfButton) exportPdfButton.style.display = "none";
+            return;
+        }
+
+        syncStoryEditorImageCache(story);
+
+        currentStoryId = story.id;
+        storyPreviewContent.innerHTML = "";
+
+        const shell = document.createElement("div");
+        shell.className = "story-editor-shell story-editor-shell--preview";
+        shell.innerHTML = `
+            <div class="story-editor-toolbar">
+                <div class="story-editor-title-group">
+                    <span class="story-editor-field-label">Story Title</span>
+                    <h2 class="story-editor-preview-title">${escapeHTML(story.title || "Untitled Story")}</h2>
+                </div>
+                <div class="story-editor-toolbar-actions">
+                    <button type="button" id="story-preview-edit-button" class="action-button-primary">Edit Story</button>
+                </div>
+            </div>
+            <div class="story-editor-layout">
+                <aside class="story-editor-sidebar">
+                    <h3>Story Settings</h3>
+                    <dl class="story-editor-preview-meta">
+                        <div><dt>Layout</dt><dd>${escapeHTML(getLayoutModeLabel(story.editor_settings.layout_mode || STORY_EDITOR_DEFAULTS.layout_mode))}</dd></div>
+                        <div><dt>Font</dt><dd>${escapeHTML(story.editor_settings.font_family || STORY_EDITOR_DEFAULTS.font_family)}</dd></div>
+                        <div><dt>Font Size</dt><dd>${Number(story.editor_settings.font_size || STORY_EDITOR_DEFAULTS.font_size)}px</dd></div>
+                        <div><dt>Font Colour</dt><dd>${escapeHTML(story.editor_settings.font_color || STORY_EDITOR_DEFAULTS.font_color)}</dd></div>
+                        <div><dt>Text Position</dt><dd>${escapeHTML(story.editor_settings.text_position || STORY_EDITOR_DEFAULTS.text_position)}</dd></div>
+                        <div><dt>Text Box Opacity</dt><dd>${Math.round(Number(story.editor_settings.text_box_opacity ?? STORY_EDITOR_DEFAULTS.text_box_opacity) * 100)}%</dd></div>
+                    </dl>
+                </aside>
+                <div class="story-editor-pages" id="story-preview-pages"></div>
+            </div>
+        `;
+
+        storyPreviewContent.appendChild(shell);
+        shell.querySelector("#story-preview-edit-button")?.addEventListener("click", () => {
+            renderStoryEditor();
+        });
+
+        const pagesContainer = shell.querySelector("#story-preview-pages");
+        if (!story.pages || story.pages.length === 0) {
+            pagesContainer.innerHTML = "<p>This story has no pages.</p>";
+        } else {
+            story.pages.forEach((page) => {
+                const pageSettings = getPageEffectiveSettings(story, page);
+                const pageCard = document.createElement("article");
+                pageCard.className = "story-editor-page-card story-editor-page-card--preview";
+                pageCard.innerHTML = `
+                    <div class="story-editor-page-header">
+                        <div>
+                            <h3>${parseInt(page.page_number, 10) === 0 ? "Cover Page" : `Page ${page.page_number}`}</h3>
+                            <p class="story-editor-page-subtitle">${escapeHTML(`${getLayoutModeLabel(pageSettings.layout_mode)} preset preview`)}</p>
+                        </div>
+                    </div>
+                    <div class="story-editor-page-layout">
+                        <div class="story-editor-page-preview" data-page-id="${page.id}">
+                            <div class="story-editor-page-stage">
+                                <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? '<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>' : '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>'}</div>
+                                <div class="story-editor-text-card">
+                                    <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                const pageStage = pageCard.querySelector(".story-editor-page-stage");
+                const imageSlot = pageCard.querySelector(".story-editor-page-image-slot");
+                const textCard = pageCard.querySelector(".story-editor-text-card");
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
+                pagesContainer.appendChild(pageCard);
+                void hydrateStoryPageImage(story, page);
+            });
+        }
+
+        if (exportPdfButton) {
+            exportPdfButton.style.display = story.pages && story.pages.length > 0 ? "inline-block" : "none";
+            exportPdfButton.classList.add("action-button-info");
+        }
+    }
+
     // Function to render the story preview/editor
-    function displayStory(story) {
+    function displayStory(story, options = {}) {
         if (!story) {
             console.error("[displayStory] Story data is missing.");
             displayMessage("Could not display story preview.", "error");
@@ -2649,6 +2906,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         console.log("[displayStory] Story object received:", JSON.parse(JSON.stringify(story)));
         storyEditorState.story = cloneStoryForEditor(story);
+        storyEditorState.previewAvailable = options.previewAvailable !== false;
         storyEditorState.saveStatus = {
             state: "saved",
             message: "Saved",
@@ -2657,7 +2915,11 @@ document.addEventListener("DOMContentLoaded", function () {
         storyEditorState.story.pages.forEach((page) => {
             page.__original = JSON.parse(JSON.stringify(page));
         });
-        renderStoryEditor();
+        if (options.mode === "preview") {
+            renderStoryReadOnlyPreview();
+        } else {
+            renderStoryEditor();
+        }
         storyPreviewContent?.scrollIntoView?.({ behavior: "instant", block: "start" });
     }
 
@@ -3064,7 +3326,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 storyData = await apiRequest(`/api/v1/stories/${storyId}`);
                 if (storyData) {
                     showSection(storyPreviewSection);
-                    displayStory(storyData);
+                    displayStory(storyData, { mode: "preview", previewAvailable: true });
                 } else {
                     displayMessage("Could not load story details.", "error");
                 }
@@ -3318,6 +3580,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const pageFormatVal =
             document.getElementById("story-page-format")?.value
             || STORY_EDITOR_DEFAULTS.page_format;
+        const layoutModeVal = normalizeLayoutMode(
+            document.getElementById("story-layout-mode")?.value,
+        );
         const tpV = document.getElementById("story-default-text-position-v")?.value || "bottom";
         const tpH = document.getElementById("story-default-text-position-h")?.value || "center";
         const textPositionVal = combineTextPosition(tpV, tpH);
@@ -3340,6 +3605,7 @@ document.addEventListener("DOMContentLoaded", function () {
             character_ids: Array.from(characterLibraryState.selectedIds),
             editor_settings: {
                 page_format: pageFormatVal,
+                layout_mode: layoutModeVal,
                 text_position: textPositionVal,
                 font_family: fontFamilyVal,
                 font_size: Number.isFinite(fontSizeVal)
@@ -3601,6 +3867,9 @@ document.addEventListener("DOMContentLoaded", function () {
         window.__TEST_API__.pollForStatus = pollForStoryStatus;
         window.__TEST_API__.setPollingConfig = __setPollingConfig;
         window.__TEST_API__.displayStory = displayStory;
+        window.__TEST_API__.populateCreateFormWithStoryData =
+            populateCreateFormWithStoryData;
+        window.__TEST_API__.viewOrEditStory = viewOrEditStory;
     }
 
 
@@ -3832,6 +4101,12 @@ document.addEventListener("DOMContentLoaded", function () {
             pageFormatEl.value =
                 editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format;
         }
+        const layoutModeEl = document.getElementById("story-layout-mode");
+        if (layoutModeEl) {
+            layoutModeEl.value = normalizeLayoutMode(
+                editorSettings.layout_mode || STORY_EDITOR_DEFAULTS.layout_mode,
+            );
+        }
         const prefillPos = parseTextPosition(
             editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position,
         );
@@ -3928,6 +4203,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         showSection(storyCreationSection); // Ensure the form is visible
+        updateStepUI();
         console.log(
             "[populateCreateFormWithStoryData] Form population complete. currentStoryId:",
             currentStoryId,
@@ -4212,6 +4488,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 const characterEntry = target.closest(".character-entry");
                 if (characterEntry) {
                     characterEntry.remove();
+                    updateStepUI();
                 }
                 return;
             }

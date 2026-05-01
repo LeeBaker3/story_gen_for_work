@@ -98,6 +98,7 @@ function createStoryFixture() {
             font_color: '#ffffff',
             text_position: 'bottom',
             text_box_opacity: 0.6,
+            layout_mode: 'full-page-overlay',
         },
         pages: [
             {
@@ -139,6 +140,15 @@ function createStoryFixture() {
     };
 }
 
+function createDraftFixture() {
+    return {
+        ...createStoryFixture(),
+        id: 654,
+        title: 'Draft Story',
+        is_draft: true,
+    };
+}
+
 function mountEditorDom() {
     document.body.innerHTML = `
     <header>
@@ -160,8 +170,38 @@ function mountEditorDom() {
         <form id="signup-form" style="display:none;"></form>
       </section>
       <section id="story-creation-section" style="display:none;">
-        <form id="story-creation-form"></form>
-        <fieldset id="main-characters-fieldset"></fieldset>
+                <form id="story-creation-form">
+                    <input id="story-title" type="text" />
+                    <select id="story-genre"><option value="">Select...</option><option value="Fantasy">Fantasy</option></select>
+                    <textarea id="story-outline"></textarea>
+                    <input id="story-num-pages" type="number" value="2" />
+                    <input id="story-tone" type="text" />
+                    <input id="story-setting" type="text" />
+                    <select id="story-word-to-picture-ratio"><option value="">Select...</option><option value="One image per page">One image per page</option></select>
+                    <select id="story-text-density"><option value="">Select...</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
+                    <select id="story-image-style"><option value="">Select...</option><option value="Default">Default</option></select>
+                    <select id="story-page-format"><option value="letter">US Letter</option></select>
+                    <select id="story-layout-mode"><option value="full-page-overlay">Full-page overlay</option><option value="horizontal-split">Horizontal split</option><option value="vertical-split">Vertical split</option></select>
+                    <select id="story-default-text-position-v"><option value="bottom">Bottom</option></select>
+                    <select id="story-default-text-position-h"><option value="center">Centre</option></select>
+                    <select id="story-default-font-family"><option value="storybook">Storybook</option></select>
+                    <input id="story-default-font-size" type="number" value="28" />
+                    <input id="story-default-font-color" type="color" value="#ffffff" />
+                    <input id="story-default-text-box-opacity" type="range" min="0" max="1" step="0.05" value="0.6" />
+                </form>
+                <fieldset id="main-characters-fieldset">
+                    <div class="character-entry">
+                        <input id="char-name-1" class="char-name" value="" />
+                        <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                        <div id="char-details-1" class="character-details-fields" style="display:none;">
+                            <input id="char-age-1" class="char-age" value="" />
+                            <select id="char-gender-1"><option value="">Select...</option><option value="female">Female</option></select>
+                            <textarea id="char-physical-appearance-1"></textarea>
+                            <textarea id="char-clothing-style-1"></textarea>
+                            <textarea id="char-key-traits-1"></textarea>
+                        </div>
+                    </div>
+                </fieldset>
         <button type="button" id="add-character-button">Add Another Character</button>
         <button type="button" id="save-draft-button">Save Draft</button>
         <button type="button" id="generate-story-button">Generate Story</button>
@@ -225,6 +265,24 @@ describe('story editor MVP', () => {
             if (value.includes('/api/v1/stories/321/editor') && method === 'PUT') {
                 const body = JSON.parse(options.body);
                 return saveEditorResponse(body);
+            }
+
+            if (value.match(/\/api\/v1\/stories\/321(?:\?|$)/) && method === 'GET') {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => createStoryFixture(),
+                    headers: { get: () => 'application/json' },
+                };
+            }
+
+            if (value.includes('/stories/drafts/654') && method === 'GET') {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => createDraftFixture(),
+                    headers: { get: () => 'application/json' },
+                };
             }
 
             if (value.includes('/api/v1/stories/321/pages/') && method === 'POST') {
@@ -317,6 +375,42 @@ describe('story editor MVP', () => {
         });
 
         expect(document.getElementById('export-pdf-button').style.display).toBe('inline-block');
+    });
+
+    test('finalized stories open in preview first and can toggle into and out of edit mode', async () => {
+        await window.__TEST_API__.viewOrEditStory(321, false);
+
+        await waitFor(() => {
+            expect(document.getElementById('story-preview-edit-button')).not.toBeNull();
+        });
+
+        expect(document.getElementById('story-editor-title')).toBeNull();
+        expect(document.querySelector('.story-editor-page-card--preview')).not.toBeNull();
+
+        fireEvent.click(document.getElementById('story-preview-edit-button'));
+
+        await waitFor(() => {
+            expect(document.getElementById('story-editor-title')).not.toBeNull();
+        });
+
+        expect(document.getElementById('story-editor-preview-button')).not.toBeNull();
+
+        fireEvent.click(document.getElementById('story-editor-preview-button'));
+
+        await waitFor(() => {
+            expect(document.getElementById('story-preview-edit-button')).not.toBeNull();
+        });
+
+        expect(document.getElementById('story-editor-title')).toBeNull();
+    });
+
+    test('draft stories still open directly in the edit flow', async () => {
+        await window.__TEST_API__.viewOrEditStory(654, true);
+
+        expect(document.getElementById('story-creation-section').style.display).toBe('block');
+        expect(document.getElementById('story-preview-section').style.display).toBe('none');
+        expect(document.getElementById('story-title').value).toBe('Draft Story');
+        expect(document.getElementById('generate-story-button').textContent).toBe('Finalize & Generate Story');
     });
 
     test('announces save state through a live region and keeps unsaved status visible', async () => {
@@ -542,6 +636,40 @@ describe('story editor MVP', () => {
         expect(textCard.style.left).toBe('5.882%');
         expect(textCard.style.top).toBe('');
         expect(textCard.style.bottom).toBe('4.545%');
+    });
+
+    test('applies story-level layout mode presets to preview and save payloads', async () => {
+        const story = createStoryFixture();
+        delete story.editor_settings.layout_mode;
+
+        window.__TEST_API__.displayStory(story);
+
+        const layoutSelect = document.getElementById('story-editor-layout-mode');
+        const pageStage = document.querySelector('.story-editor-page-preview[data-page-id="12"] .story-editor-page-stage');
+
+        expect(layoutSelect.value).toBe('full-page-overlay');
+        expect(pageStage.dataset.layoutMode).toBe('full-page-overlay');
+
+        fireEvent.input(layoutSelect, { target: { value: 'vertical-split' } });
+
+        expect(pageStage.dataset.layoutMode).toBe('vertical-split');
+        expect(pageStage.style.gridTemplateColumns).toBe('1.12fr 0.88fr');
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls.length).toBeGreaterThan(0);
+        });
+
+        const latestSaveCall = [...global.fetch.mock.calls]
+            .reverse()
+            .find(([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT');
+        const payload = JSON.parse(latestSaveCall[1].body);
+
+        expect(payload.editor_settings.layout_mode).toBe('vertical-split');
     });
 
     test('applies and saves a per-page text box opacity override', async () => {

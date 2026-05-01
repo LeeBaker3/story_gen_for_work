@@ -115,6 +115,7 @@ def test_story_generation_full_loop_completes_and_exports_pdf(
                 "font_size": 30,
                 "font_color": "#123456",
                 "text_box_opacity": 0.4,
+                "layout_mode": "vertical-split",
             },
         },
     )
@@ -151,6 +152,7 @@ def test_story_generation_full_loop_completes_and_exports_pdf(
         "text_position": "top-center",
         "text_box_opacity": 0.4,
         "page_format": "square-storybook",
+        "layout_mode": "vertical-split",
     }
     assert [page["page_number"] for page in story["pages"]] == [0, 1]
     assert story["pages"][1]["text"] == "Ava finds the hidden lantern."

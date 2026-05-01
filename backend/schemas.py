@@ -56,6 +56,12 @@ class TextDensity(str, Enum):
     STANDARD = "Standard (~60-90 words)"  # ~5-7 lines per page
     DETAILED = "Detailed (~100-150 words)"  # ~8-10+ lines per page
 
+
+class LayoutMode(str, Enum):
+    FULL_PAGE_OVERLAY = "full-page-overlay"
+    HORIZONTAL_SPLIT = "horizontal-split"
+    VERTICAL_SPLIT = "vertical-split"
+
 # Character Detail Schema (New)
 
 
@@ -100,6 +106,7 @@ EDITOR_DEFAULTS: Dict[str, Any] = {
     "text_position": "bottom-center",
     "text_box_opacity": 0.6,
     "page_format": "letter",
+    "layout_mode": LayoutMode.FULL_PAGE_OVERLAY.value,
 }
 
 
@@ -114,6 +121,7 @@ class StoryEditorSettings(BaseModel):
         le=1.0,
     )
     page_format: str = Field(default=EDITOR_DEFAULTS["page_format"])
+    layout_mode: LayoutMode = Field(default=EDITOR_DEFAULTS["layout_mode"])
 
 
 class PageEditorState(BaseModel):
