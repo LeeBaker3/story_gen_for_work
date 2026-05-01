@@ -2068,16 +2068,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 "PUT",
                 payload,
             );
-            storyEditorState.story = cloneStoryForEditor(updatedStory);
-            storyEditorState.story.pages.forEach((page) => {
-                page.__original = JSON.parse(JSON.stringify(page));
-            });
             currentStoryId = updatedStory.id;
-            renderStoryEditor();
-            setStoryEditorSaveStatus(
-                "saved",
-                `Saved ${new Date().toLocaleTimeString()}`,
-            );
+            if (!storyEditorState.saveRequested) {
+                storyEditorState.story = cloneStoryForEditor(updatedStory);
+                storyEditorState.story.pages.forEach((page) => {
+                    page.__original = JSON.parse(JSON.stringify(page));
+                });
+                renderStoryEditor();
+                setStoryEditorSaveStatus(
+                    "saved",
+                    `Saved ${new Date().toLocaleTimeString()}`,
+                );
+            }
             if (toast) displayMessage("Story changes saved.", "success");
         } catch (error) {
             console.error("[persistStoryEditor] Error saving editor state:", error);

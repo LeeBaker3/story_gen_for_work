@@ -2,6 +2,18 @@ import { fireEvent, waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
 let saveEditorResponse;
+let pageActionResponse;
+
+function createDeferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+
+    return { promise, resolve, reject };
+}
 
 function createSavedStory(body) {
     return {
@@ -186,6 +198,7 @@ describe('story editor MVP', () => {
         window.localStorage.setItem('authToken', 'test-token');
         mountEditorDom();
         saveEditorResponse = (body) => createEditorPutResponse(body);
+        pageActionResponse = null;
 
         if (!window.URL.createObjectURL) {
             window.URL.createObjectURL = jest.fn();
@@ -212,6 +225,21 @@ describe('story editor MVP', () => {
             if (value.includes('/api/v1/stories/321/editor') && method === 'PUT') {
                 const body = JSON.parse(options.body);
                 return saveEditorResponse(body);
+            }
+
+            if (value.includes('/api/v1/stories/321/pages/') && method === 'POST') {
+                if (pageActionResponse) {
+                    return pageActionResponse(value, options);
+                }
+
+                const story = createStoryFixture();
+                const pageId = value.includes('/pages/11/') ? 11 : 12;
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => story.pages.find((page) => page.id === pageId),
+                    headers: { get: () => 'application/json' },
+                };
             }
 
             if (value.includes('/api/v1/stories/321/pages/11/image') || value.includes('/api/v1/stories/321/pages/12/image')) {
@@ -350,6 +378,142 @@ describe('story editor MVP', () => {
 
         expect(saveAttempts).toBe(2);
         expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('none');
+        expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    test('replays a queued save after a second edit lands during an in-flight save', async () => {
+        const firstSave = createDeferred();
+        let pendingFirstPayload = null;
+
+        saveEditorResponse = (body) => {
+            if (!pendingFirstPayload) {
+                pendingFirstPayload = body;
+                return firstSave.promise;
+            }
+
+            return createEditorPutResponse(body);
+        };
+
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const titleInput = document.getElementById('story-editor-title');
+        const pageTextareas = document.querySelectorAll('[data-page-field="text"]');
+
+        fireEvent.input(titleInput, { target: { value: 'First queued edit' } });
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls).toHaveLength(1);
+        });
+
+        fireEvent.input(pageTextareas[1], {
+            target: { value: 'Second edit queued behind the first save' },
+        });
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        const saveCallsWhilePending = global.fetch.mock.calls.filter(
+            ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+        );
+        expect(saveCallsWhilePending).toHaveLength(1);
+
+        firstSave.resolve(createEditorPutResponse(pendingFirstPayload));
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls).toHaveLength(2);
+        });
+
+        const replayCall = global.fetch.mock.calls.filter(
+            ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+        )[1];
+        const replayPayload = JSON.parse(replayCall[1].body);
+
+        expect(replayPayload.title).toBe('First queued edit');
+        expect(replayPayload.pages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 12,
+                    text: 'Second edit queued behind the first save',
+                }),
+            ])
+        );
+
+        await waitFor(() => {
+            const saveStatus = document.getElementById('story-editor-save-status');
+            expect(saveStatus.dataset.state).toBe('saved');
+        });
+    });
+
+    test('returns to unsaved and remains editable after a save failure', async () => {
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        let saveAttempts = 0;
+        saveEditorResponse = (body) => {
+            saveAttempts += 1;
+            if (saveAttempts === 1) {
+                return {
+                    ok: false,
+                    status: 500,
+                    json: async () => ({ detail: 'Save exploded' }),
+                    headers: { get: () => 'application/json' },
+                    text: async () => 'Save exploded',
+                };
+            }
+
+            return createEditorPutResponse(body);
+        };
+
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const titleInput = document.getElementById('story-editor-title');
+        fireEvent.input(titleInput, { target: { value: 'Broken save' } });
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveStatus = document.getElementById('story-editor-save-status');
+            expect(saveStatus.dataset.state).toBe('failed');
+        });
+
+        expect(titleInput.disabled).toBe(false);
+        expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('inline-flex');
+
+        fireEvent.input(titleInput, { target: { value: 'Still editable after failure' } });
+
+        const saveStatus = document.getElementById('story-editor-save-status');
+        expect(titleInput.value).toBe('Still editable after failure');
+        expect(saveStatus.textContent).toBe('Unsaved changes');
+        expect(saveStatus.dataset.state).toBe('unsaved');
+        expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('none');
+        expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    test('shows an error message when regenerate image fails', async () => {
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        pageActionResponse = () => ({
+            ok: false,
+            status: 500,
+            json: async () => ({ detail: 'Regenerate exploded' }),
+            headers: { get: () => 'application/json' },
+            text: async () => 'Regenerate exploded',
+        });
+
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const regenerateButton = document.querySelector('[data-action="regen-image"][data-page-id="12"]');
+        fireEvent.click(regenerateButton);
+
+        await waitFor(() => {
+            expect(document.getElementById('api-message').textContent).toBe('Regenerate exploded');
+        });
+
+        expect(document.getElementById('spinner').style.display).toBe('none');
         expect(consoleErrorSpy).toHaveBeenCalled();
     });
 
