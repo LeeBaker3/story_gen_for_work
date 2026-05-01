@@ -145,6 +145,16 @@ def test_get_current_user_invalid_signature(db_session: Session) -> None:
     assert exc_info.value.detail == "Could not validate credentials"
 
 
+def test_get_current_user_malformed_token(db_session: Session) -> None:
+    """Malformed JWT strings should be rejected with 401."""
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(auth.get_current_user(token="not-a-jwt", db=db_session))
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Could not validate credentials"
+
+
 def test_get_current_user_missing_sub(db_session: Session) -> None:
     """Tokens without a subject should be rejected with 401."""
 
