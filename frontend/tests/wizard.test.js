@@ -102,12 +102,79 @@ function mountWizardDom() {
           <div id="generation-progress-bar"></div>
         </div>
       </section>
-      <section id="story-preview-section" style="display:none;"></section>
+      <section id="story-preview-section" style="display:none;">
+        <div id="story-preview-content"></div>
+        <button id="export-pdf-button" style="display:none;">Export PDF</button>
+      </section>
       <section id="browse-stories-section" style="display:none;"></section>
       <section id="characters-section" style="display:none;"></section>
       <section id="message-area"><p id="api-message"></p></section>
       <div id="snackbar" style="display:none;"></div>
+      <div id="toast-container"></div>
+      <div id="spinner" style="display:none;"></div>
+      <div id="adminPanelContainer" style="display:none;"><tbody id="adminUserTableBody"></tbody></div>
     </main>`;
+}
+
+function createGeneratedStoryFixture() {
+  return {
+    id: 321,
+    title: 'Loop Adventure',
+    genre: 'Fantasy',
+    story_outline: 'Ava searches for a lantern.',
+    main_characters: [{ name: 'Ava' }],
+    num_pages: 2,
+    tone: 'Warm',
+    setting: 'Forest',
+    image_style: 'Cartoon',
+    word_to_picture_ratio: 'One image per page',
+    text_density: 'Concise (~30-50 words)',
+    editor_settings: {
+      page_format: 'square-storybook',
+      text_position: 'top-center',
+      font_family: 'classic',
+      font_size: 30,
+      font_color: '#123456',
+      text_box_opacity: 0.4,
+    },
+    pages: [
+      {
+        id: 11,
+        story_id: 321,
+        page_number: 0,
+        text: 'Loop Adventure',
+        image_description: 'A bright cover with Ava.',
+        image_path: 'images/user_1/story_321/cover.png',
+        editor_state: {
+          original_text: 'Loop Adventure',
+          original_image_path: 'images/user_1/story_321/cover.png',
+        },
+        created_at: '2026-05-01T12:00:00Z',
+        updated_at: '2026-05-01T12:00:00Z',
+      },
+      {
+        id: 12,
+        story_id: 321,
+        page_number: 1,
+        text: 'Ava finds the hidden lantern.',
+        image_description: 'Ava in a glowing forest.',
+        image_path: 'images/user_1/story_321/page1.png',
+        editor_state: {
+          original_text: 'Ava finds the hidden lantern.',
+          original_image_path: 'images/user_1/story_321/page1.png',
+        },
+        created_at: '2026-05-01T12:00:00Z',
+        updated_at: '2026-05-01T12:00:00Z',
+      },
+    ],
+    created_at: '2026-05-01T12:00:00Z',
+    updated_at: '2026-05-01T12:00:00Z',
+    owner_id: 1,
+    is_draft: false,
+    generated_at: '2026-05-01T12:00:00Z',
+    is_hidden: false,
+    is_deleted: false,
+  };
 }
 
 describe('wizard navigation', () => {
@@ -115,6 +182,14 @@ describe('wizard navigation', () => {
     // Pretend user is logged in so script shows creation section
     window.localStorage.setItem('authToken', 'test');
     mountWizardDom();
+    if (!window.URL.createObjectURL) {
+      window.URL.createObjectURL = jest.fn();
+    }
+    if (!window.URL.revokeObjectURL) {
+      window.URL.revokeObjectURL = jest.fn();
+    }
+    jest.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:loop-asset');
+    jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
     // Mock dynamic lists to allow selects to have valid options
     global.fetch = jest.fn(async (url) => {
       const u = String(url);
@@ -518,6 +593,167 @@ describe('wizard navigation', () => {
       font_color: '#112233',
       text_box_opacity: 0.4,
     });
+  });
+
+  test('wizard submit completes polling, renders fetched editor, and exports pdf', async () => {
+    jest.useFakeTimers();
+    const story = createGeneratedStoryFixture();
+    let statusCalls = 0;
+
+    try {
+      const fetchMock = global.fetch;
+      fetchMock.mockImplementation(async (url, options = {}) => {
+        const u = String(url);
+        const method = String(options.method || 'GET').toUpperCase();
+
+        if (u.includes('/api/v1/stories/') && method === 'POST') {
+          return {
+            ok: true,
+            status: 202,
+            json: async () => ({ id: 'task-97', story_id: 321, status: 'pending' }),
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/stories/generation-status/task-97')) {
+          statusCalls += 1;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              id: 'task-97',
+              story_id: 321,
+              status: statusCalls === 1 ? 'in_progress' : 'completed',
+              progress: statusCalls === 1 ? 65 : 100,
+              current_step: statusCalls === 1 ? 'generating_page_images' : 'finalizing',
+            }),
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/stories/321/pages/11/image')) {
+          return {
+            ok: true,
+            status: 200,
+            blob: async () => new Blob(['cover-bytes'], { type: 'image/png' }),
+            headers: { get: (name) => (name === 'content-type' ? 'image/png' : null) },
+          };
+        }
+        if (u.includes('/api/v1/stories/321/pages/12/image')) {
+          return {
+            ok: true,
+            status: 200,
+            blob: async () => new Blob(['page-bytes'], { type: 'image/png' }),
+            headers: { get: (name) => (name === 'content-type' ? 'image/png' : null) },
+          };
+        }
+        if (u.includes('/api/v1/stories/321/pdf')) {
+          return {
+            ok: true,
+            status: 200,
+            blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+            headers: {
+              get: (name) => {
+                if (name === 'content-type') return 'application/pdf';
+                if (name === 'content-disposition') return 'attachment; filename=Loop Adventure.pdf';
+                return null;
+              },
+            },
+          };
+        }
+        if (u.includes('/api/v1/stories/321') && method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => story,
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/users/me')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ id: 1, username: 'user@example.com', role: 'user' }),
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genres')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_density')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_positions')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'top', item_label: 'Top' }, { item_value: 'center', item_label: 'Center' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/font_families')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genders')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+        }
+        return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+      });
+
+      window.__TEST_API__.setPollingConfig({
+        baseIntervalMs: 10,
+        maxIntervalMs: 10,
+        maxDurationMs: 200,
+      });
+
+      document.getElementById('story-title').value = 'Loop Request';
+      document.getElementById('story-page-format').value = 'square-storybook';
+      document.getElementById('story-default-text-position-v').value = 'top';
+      document.getElementById('story-default-text-position-h').value = 'center';
+      document.getElementById('story-default-font-family').value = 'classic';
+      document.getElementById('story-default-font-size').value = '30';
+      document.getElementById('story-default-font-color').value = '#123456';
+      document.getElementById('story-default-text-box-opacity').value = '0.4';
+
+      const next = document.getElementById('wizard-next');
+      fireEvent.click(next);
+      fireEvent.click(next);
+      fireEvent.click(next);
+      fireEvent.click(document.getElementById('generate-story-button'));
+
+      await jest.advanceTimersByTimeAsync(50);
+
+      await waitFor(() => {
+        expect(statusCalls).toBeGreaterThanOrEqual(2);
+        expect(document.getElementById('story-preview-section').style.display).toBe('block');
+        expect(document.getElementById('story-editor-title').value).toBe('Loop Adventure');
+      });
+
+      expect(document.querySelectorAll('.story-editor-page-card')).toHaveLength(2);
+      expect(document.querySelectorAll('.story-editor-page-image')).toHaveLength(2);
+      expect(document.querySelector('[data-page-field="text"][data-page-id="12"]').value).toBe(
+        'Ava finds the hidden lantern.'
+      );
+      expect(document.getElementById('export-pdf-button').style.display).toBe('inline-block');
+
+      fireEvent.click(document.getElementById('export-pdf-button'));
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          expect.stringContaining('/api/v1/stories/321/pdf'),
+          expect.objectContaining({
+            method: 'GET',
+            headers: expect.objectContaining({ Authorization: 'Bearer test' }),
+          })
+        );
+      });
+
+      await waitFor(() => {
+        expect(window.URL.createObjectURL).toHaveBeenCalled();
+        expect(document.getElementById('api-message').textContent).toMatch(/pdf exported successfully/i);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('review step summarizes selected page format', () => {
