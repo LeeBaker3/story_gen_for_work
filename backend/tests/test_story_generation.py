@@ -1198,6 +1198,155 @@ async def test_generate_story_as_background_task_cleans_saved_content_on_post_sa
 
 
 @pytest.mark.asyncio
+async def test_generate_story_as_background_task_persists_failed_task_and_story_cleanup(
+    db_session: Session,
+):
+    """A post-save failure should persist failed task state and clean story rows."""
+
+    user = (
+        db_session.query(database.User)
+        .filter(database.User.username == "user@example.com")
+        .first()
+    )
+    assert user is not None
+    user_id = user.id
+
+    story_input = schemas.StoryCreate(
+        title="Retryable Story",
+        genre="Fantasy",
+        story_outline="A generation fails after content is saved.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    story = database.Story(
+        title=story_input.title,
+        genre=story_input.genre,
+        story_outline=story_input.story_outline,
+        main_characters=[
+            character.model_dump(exclude_none=True)
+            for character in story_input.main_characters
+        ],
+        num_pages=story_input.num_pages,
+        image_style=getattr(story_input.image_style, "value", story_input.image_style),
+        word_to_picture_ratio=getattr(
+            story_input.word_to_picture_ratio,
+            "value",
+            story_input.word_to_picture_ratio,
+        ),
+        text_density=getattr(
+            story_input.text_density,
+            "value",
+            story_input.text_density,
+        ),
+        owner_id=user_id,
+        is_draft=False,
+        generated_at=datetime.now(UTC),
+        editor_settings=dict(schemas.EDITOR_DEFAULTS),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+    story_id = story.id
+
+    task = crud.create_story_generation_task(db_session, story_id, user_id)
+    task_id = task.id
+    real_update_task_progress = crud.update_story_generation_task_progress
+
+    def _fail_after_final_progress(db, task_id, progress, current_step):
+        updated_task = real_update_task_progress(
+            db,
+            task_id,
+            progress,
+            current_step,
+        )
+        if progress == 100:
+            raise RuntimeError("final task update failed")
+        return updated_task
+
+    generated_story_content = {
+        "Title": "Generated Title",
+        "Pages": [
+            {
+                "Page_number": 1,
+                "Text": "Generated page text.",
+                "Image_description": "Generated image.",
+                "Characters_in_scene": ["Mina"],
+                "image_url": "images/user_1/story_1/page_1.png",
+            }
+        ],
+    }
+
+    with patch(
+        "backend.story_generation_service.database.get_db",
+        return_value=iter([db_session]),
+    ):
+        with patch(
+            "backend.story_generation_service.os.makedirs",
+            return_value=None,
+        ):
+            with patch(
+                "backend.story_generation_service.ai_services"
+                ".generate_character_reference_image",
+                new=AsyncMock(
+                    return_value={
+                        "name": "Mina",
+                        "reference_image_path": None,
+                    }
+                ),
+            ):
+                with patch(
+                    "backend.story_generation_service.ai_services"
+                    ".generate_story_from_chatgpt",
+                    new=MagicMock(return_value=generated_story_content),
+                ):
+                    with patch(
+                        "backend.story_generation_service.ai_services"
+                        ".generate_image_for_page",
+                        new=AsyncMock(
+                            return_value=(
+                                "images/user_1/story_1/page_1.png"
+                            )
+                        ),
+                    ):
+                        with patch(
+                            "backend.story_generation_service.crud"
+                            ".update_story_generation_task_progress",
+                            side_effect=_fail_after_final_progress,
+                        ):
+                            from backend.story_generation_service import (
+                                generate_story_as_background_task,
+                            )
+
+                            await generate_story_as_background_task(
+                                task_id,
+                                story_id,
+                                user_id,
+                                story_input,
+                            )
+
+    db_session.expire_all()
+
+    persisted_task = crud.get_story_generation_task(db_session, task_id)
+    persisted_story = crud.get_story(db_session, story_id, user_id)
+
+    assert persisted_task is not None
+    assert persisted_task.status == schemas.GenerationTaskStatus.FAILED.value
+    assert persisted_task.error_message == "final task update failed"
+    assert persisted_task.last_error == "final task update failed"
+    assert persisted_task.completed_at is not None
+
+    assert persisted_story is not None
+    assert persisted_story.is_draft is True
+    assert persisted_story.generated_at is None
+    assert persisted_story.title == story_input.title
+    assert persisted_story.pages == []
+
+
+@pytest.mark.asyncio
 async def test_generate_story_as_background_task_uses_wizard_text_position_guidance():
     """Initial page image generation should include wizard text-placement guidance."""
 
