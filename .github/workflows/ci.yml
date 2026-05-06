@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   dependency-scan:
     runs-on: ubuntu-latest
@@ -57,3 +61,36 @@ jobs:
           OPENAI_API_KEY: "dummy-ci-key"
         run: |
           pytest -q
+
+  legacy-status:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, test]
+    steps:
+      - name: Publish legacy commit status
+        uses: actions/github-script@v7
+        env:
+          DEPENDENCY_SCAN_RESULT: ${{ needs.dependency-scan.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        with:
+          script: |
+            const results = [
+              process.env.DEPENDENCY_SCAN_RESULT,
+              process.env.TEST_RESULT,
+            ];
+            const state = results.every((result) => result === 'success')
+              ? 'success'
+              : 'failure';
+            const description = state === 'success'
+              ? 'CI workflow checks passed'
+              : `CI workflow checks did not pass (${results.join(', ')})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state,
+              context: 'legacy/ci',
+              description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
