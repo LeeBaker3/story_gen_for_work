@@ -1,7 +1,34 @@
 import base64
 from unittest.mock import patch, MagicMock, call
 import pytest
+import requests
 from backend import ai_services
+from backend import logging_config
+
+
+def _build_story_input() -> dict:
+    """Return the minimal valid story input for generation tests."""
+
+    return {
+        "title": "Moonlit Rescue",
+        "genre": "Fantasy",
+        "story_outline": "A child helps a lost dragon find its way home.",
+        "main_characters": [
+            {
+                "name": "Mira",
+                "description": "A curious child with a lantern.",
+                "physical_appearance": "short brown hair and bright eyes",
+                "clothing_style": "a blue raincoat",
+                "key_traits": "brave and kind",
+            }
+        ],
+        "num_pages": 2,
+        "tone": "Hopeful",
+        "setting": "A quiet forest village",
+        "image_style": "Watercolor",
+        "word_to_picture_ratio": "One image per page",
+        "text_density": "Concise (~30-50 words)",
+    }
 
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
@@ -36,6 +63,198 @@ def test_generate_image(mock_openai_client, mock_truncate_prompt):
     )
 
     assert result_bytes == fake_image_bytes
+
+
+def test_should_retry_openai_error_excludes_bad_request():
+    """Client-side request errors should not be retried."""
+
+    bad_request = ai_services.openai.BadRequestError(
+        message="blocked",
+        response=MagicMock(request=MagicMock(), status_code=400),
+        body={"error": {"code": "moderation_blocked"}},
+    )
+
+    assert ai_services._should_retry_openai_error(bad_request) is False
+
+
+def test_should_retry_openai_error_retries_transport_failures():
+    """Transport failures should still be retried."""
+
+    assert ai_services._should_retry_openai_error(
+        requests.exceptions.ConnectionError("network")
+    ) is True
+
+
+def test_ai_services_uses_configured_loggers():
+    """ai_services should keep the configured logger instances from logging_config."""
+
+    assert ai_services.error_logger is logging_config.error_logger
+    assert ai_services.warning_logger is logging_config.warning_logger
+
+
+@patch('backend.ai_services._generate_story_text_via_chat_completions')
+@patch('backend.ai_services._generate_story_text_via_responses')
+@patch('backend.ai_services._use_openai_responses_api', return_value=True)
+@patch('backend.ai_services._ensure_client_available')
+def test_generate_story_from_chatgpt_uses_responses_path(
+    mock_ensure_client_available,
+    mock_use_openai_responses_api,
+    mock_generate_via_responses,
+    mock_generate_via_chat_completions,
+):
+    """Story generation should use Responses API when that path is enabled."""
+
+    mock_generate_via_responses.return_value = (
+        '{"Title": "Moonlit Rescue", "Pages": []}'
+    )
+
+    result = ai_services.generate_story_from_chatgpt(_build_story_input())
+
+    assert result == {"Title": "Moonlit Rescue", "Pages": []}
+    mock_generate_via_responses.assert_called_once()
+    mock_generate_via_chat_completions.assert_not_called()
+
+
+@patch('backend.ai_services.client')
+def test_generate_story_text_via_responses_rejects_empty_output(
+    mock_openai_client,
+):
+    """Responses API should fail fast when output_text is empty."""
+
+    mock_openai_client.responses.create.return_value = MagicMock(output_text=" ")
+
+    with pytest.raises(ValueError, match="empty output_text"):
+        ai_services._generate_story_text_via_responses("prompt text")
+
+
+@patch('backend.ai_services._generate_story_text_via_chat_completions')
+@patch('backend.ai_services._generate_story_text_via_responses')
+@patch('backend.ai_services._use_openai_responses_api', return_value=True)
+@patch('backend.ai_services._ensure_client_available')
+def test_generate_story_from_chatgpt_falls_back_to_chat_completions(
+    mock_ensure_client_available,
+    mock_use_openai_responses_api,
+    mock_generate_via_responses,
+    mock_generate_via_chat_completions,
+):
+    """Fallback should use chat completions after a responses failure."""
+
+    mock_generate_via_responses.side_effect = RuntimeError("responses failed")
+    mock_generate_via_chat_completions.return_value = (
+        '{"Title": "Recovered", "Pages": []}'
+    )
+
+    with patch.object(
+        ai_services._settings,
+        'openai_text_enable_fallback',
+        True,
+    ):
+        result = ai_services.generate_story_from_chatgpt(_build_story_input())
+
+    assert result == {"Title": "Recovered", "Pages": []}
+    mock_generate_via_responses.assert_called_once()
+    mock_generate_via_chat_completions.assert_called_once()
+
+
+@patch('backend.ai_services._generate_story_text_via_chat_completions')
+@patch('backend.ai_services._use_openai_responses_api', return_value=False)
+@patch('backend.ai_services._ensure_client_available')
+def test_generate_story_from_chatgpt_raises_json_decode_error(
+    mock_ensure_client_available,
+    mock_use_openai_responses_api,
+    mock_generate_via_chat_completions,
+):
+    """Invalid model JSON should surface the JSON decode error."""
+
+    mock_generate_via_chat_completions.return_value = "not valid json"
+
+    with pytest.raises(__import__('json').JSONDecodeError):
+        ai_services.generate_story_from_chatgpt(_build_story_input())
+
+
+@patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
+@patch('backend.ai_services.client')
+def test_generate_image_returns_none_when_moderation_blocked(
+    mock_openai_client,
+    mock_truncate_prompt,
+):
+    """Moderation-blocked image requests should degrade to a missing image."""
+
+    bad_request = ai_services.openai.BadRequestError(
+        message="blocked",
+        response=MagicMock(request=MagicMock(), status_code=400),
+        body={
+            "error": {
+                "code": "moderation_blocked",
+                "type": "image_generation_user_error",
+                "message": "Rejected by safety system.",
+            }
+        },
+    )
+    mock_openai_client.images.generate.side_effect = bad_request
+
+    assert ai_services.generate_image(prompt="blocked prompt") is None
+    mock_truncate_prompt.assert_called_once_with("blocked prompt")
+
+
+@patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
+@patch('builtins.open')
+@patch('backend.ai_services.os.path.exists', return_value=True)
+@patch('backend.ai_services.client')
+def test_generate_image_uses_edit_for_existing_reference_images(
+    mock_openai_client,
+    mock_path_exists,
+    mock_open,
+    mock_truncate_prompt,
+):
+    """Image generation should use the edit API when references exist."""
+
+    fake_image_bytes = b"edited_image_bytes"
+    b64_encoded_bytes = base64.b64encode(fake_image_bytes).decode('utf-8')
+    mock_open.side_effect = [MagicMock(), MagicMock()]
+
+    mock_edit_response = MagicMock()
+    mock_edit_response.data = [MagicMock(b64_json=b64_encoded_bytes)]
+    mock_openai_client.images.edit.return_value = mock_edit_response
+
+    result = ai_services.generate_image(
+        prompt="Draw Mira in the forest.",
+        reference_image_paths=["/tmp/ref-1.png", "/tmp/ref-2.png"],
+    )
+
+    assert result == fake_image_bytes
+    mock_openai_client.images.edit.assert_called_once()
+    mock_openai_client.images.generate.assert_not_called()
+    edit_kwargs = mock_openai_client.images.edit.call_args.kwargs
+    assert edit_kwargs["prompt"] == "Draw Mira in the forest."
+    assert len(edit_kwargs["image"]) == 2
+
+
+@patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
+@patch('backend.ai_services.os.path.exists', return_value=False)
+@patch('backend.ai_services.client')
+def test_generate_image_falls_back_to_generate_when_references_missing(
+    mock_openai_client,
+    mock_path_exists,
+    mock_truncate_prompt,
+):
+    """Missing reference files should fall back to normal image generation."""
+
+    fake_image_bytes = b"generated_image_bytes"
+    b64_encoded_bytes = base64.b64encode(fake_image_bytes).decode('utf-8')
+
+    mock_generate_response = MagicMock()
+    mock_generate_response.data = [MagicMock(b64_json=b64_encoded_bytes)]
+    mock_openai_client.images.generate.return_value = mock_generate_response
+
+    result = ai_services.generate_image(
+        prompt="Draw Mira in the forest.",
+        reference_image_paths=["/tmp/missing-ref.png"],
+    )
+
+    assert result == fake_image_bytes
+    mock_openai_client.images.edit.assert_not_called()
+    mock_openai_client.images.generate.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -101,6 +101,7 @@ nav {
 .nav-buttons {
     display: flex;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 1rem;
 }
 
@@ -129,7 +130,9 @@ nav button:active {
 
 /* Navigation button style for both <button> and <a> */
 .nav-button {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background-color: #007bff;
     background: linear-gradient(180deg, var(--accent), var(--accent-2));
     border: none;
@@ -139,7 +142,10 @@ nav button:active {
     font-weight: 600;
     color: #fff;
     /* Ensure anchors look like buttons */
-    margin: 0 8px 10px 0;
+    margin: 0;
+    max-width: 100%;
+    text-align: center;
+    white-space: normal;
     text-decoration: none;
     cursor: pointer;
     transition: background 0.2s, color 0.2s, transform 0.2s;
@@ -161,6 +167,33 @@ nav button:active {
 
 .nav-button:active {
     transform: translateY(0);
+}
+
+@media (max-width: 640px) {
+    header {
+        padding: 1rem 0.75rem;
+    }
+
+    nav {
+        margin-top: 0.75rem;
+    }
+
+    .nav-buttons {
+        gap: 0.5rem;
+    }
+
+    .nav-button {
+        flex: 1 1 calc(50% - 0.5rem);
+        min-width: 0;
+        padding: 0.7rem 1rem;
+    }
+}
+
+@media (max-width: 420px) {
+    .nav-button {
+        flex-basis: 100%;
+        width: 100%;
+    }
 }
 
 main {
@@ -306,6 +339,45 @@ label {
     margin-bottom: 0.5rem;
     font-weight: 700;
     color: var(--muted);
+}
+
+.wizard-step-guidance {
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: var(--radius-md);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.wizard-step-guidance-title,
+.wizard-step-guidance-detail {
+    margin: 0;
+}
+
+.wizard-step-guidance-title {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.wizard-step-guidance-detail {
+    margin-top: 0.35rem;
+    color: var(--muted);
+}
+
+.required-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.45rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+    color: #fcd34d;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    vertical-align: middle;
 }
 
 input[type="text"],
@@ -495,6 +567,244 @@ button.action-button-danger:hover,
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
+}
+
+.character-entry>.character-entry-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.character-entry>.character-entry-header .character-entry-title {
+    margin: 0;
+}
+
+.character-entry>.character-entry-header .character-entry-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.character-entry>.character-entry-header .character-entry-actions button {
+    align-self: center;
+}
+
+
+.story-editor-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.story-editor-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: end;
+    flex-wrap: wrap;
+}
+
+.story-editor-title-group {
+    flex: 1 1 360px;
+}
+
+.story-editor-title-input,
+.story-editor-select,
+.story-editor-number,
+.story-editor-textarea {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #1f2431;
+    color: #eef2f7;
+    padding: 0.75rem 0.9rem;
+}
+
+.story-editor-color {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #1f2431;
+}
+
+.story-editor-range {
+    width: 100%;
+}
+
+.story-editor-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.story-editor-save-status {
+    color: #a8b3c7;
+    font-size: 0.95rem;
+}
+
+.story-editor-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    gap: 1.25rem;
+}
+
+.story-editor-sidebar {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    height: fit-content;
+}
+
+.story-editor-pages {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.story-editor-page-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1rem;
+}
+
+.story-editor-page-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: start;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.story-editor-page-header h3 {
+    margin: 0;
+}
+
+.story-editor-page-subtitle,
+.story-editor-help {
+    color: #a8b3c7;
+    margin: 0.35rem 0 0;
+}
+
+.story-editor-page-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.story-editor-page-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.story-editor-page-preview {
+    min-width: 0;
+    background: #141925;
+    border-radius: 14px;
+    padding: 0.75rem;
+}
+
+.story-editor-page-stage {
+    box-sizing: border-box;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 612 / 792;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background: linear-gradient(180deg, #253047, #1b2333);
+}
+
+.story-editor-page-image,
+.story-editor-page-image--placeholder {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.story-editor-page-image--placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #d7e0ef;
+    background: linear-gradient(180deg, #32405f, #202838);
+}
+
+.story-editor-text-card {
+    position: relative;
+    z-index: 1;
+    border-radius: 14px;
+    padding: 1rem;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.story-editor-text-card-content {
+    white-space: pre-wrap;
+    line-height: 1.35;
+}
+
+.story-editor-page-controls {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.story-editor-field-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+    color: #d5deec;
+}
+
+.story-editor-inline-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.story-editor-inline-grid > * {
+    min-width: 0;
+}
+
+.story-editor-page-controls select,
+.story-editor-page-controls input[type="number"],
+.story-editor-page-controls input[type="color"] {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.story-editor-clear-override {
+    align-self: start;
+}
+
+@media (max-width: 960px) {
+
+    .story-editor-layout,
+    .story-editor-page-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .story-editor-inline-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 
@@ -1226,6 +1536,17 @@ main {
     transition: background var(--fast) var(--easing), color var(--fast) var(--easing);
 }
 
+button.wizard-step {
+    appearance: none;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    margin: 0;
+    text-align: inherit;
+}
+
 .wizard-step.completed {
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 90%);
     color: #fff;
@@ -1238,7 +1559,7 @@ main {
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.5);
 }
 
-.wizard-step:not(.active):hover {
+.wizard-step:not(.active):not([aria-disabled="true"]):hover {
     background: var(--surface-2);
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
 }
@@ -1491,6 +1812,23 @@ main {
 .inline-status--error {
     background: linear-gradient(180deg, #3a1f1f, #2b1515);
     border-color: rgba(239, 68, 68, 0.45);
+}
+
+.dropdown-recovery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.dropdown-recovery-status {
+    flex: 1 1 260px;
+    margin: 0;
+}
+
+.dropdown-recovery-retry {
+    flex: 0 0 auto;
 }
 
 /* Tiny spinner for inline status busy state */

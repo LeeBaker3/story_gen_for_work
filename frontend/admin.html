@@ -9,7 +9,7 @@
 </head>
 <body>
     <header>
-        <h1>Story Generator</h1>
+        <p class="header-brand">Story Generator</p>
         <nav>
             <div class="nav-buttons">
                 <a href="/static/index.html" class="nav-button">Create New Story</a>
@@ -22,7 +22,12 @@
     </header>
 
     <main id="admin-main-content">
-        <div id="admin-message-area"></div>
+        <div
+            id="admin-message-area"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+        ></div>
 
         <h1>Admin Panel</h1>
 
@@ -53,6 +58,7 @@
     <div id="snackbar" class="snackbar" role="status" aria-live="polite" style="display:none;"></div>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="/static/admin_script.js?v=20250820.1"></script>
+    <script src="/static/runtime-config.js?v=20260429.1"></script>
+    <script src="/static/admin_script.js?v=20260429.1"></script>
 </body>
 </html>

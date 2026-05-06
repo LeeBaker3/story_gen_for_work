@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
+import shutil
 import os
 import uuid
+from PIL import Image as PILImage
 
 from . import schemas, auth, crud, database, ai_services, storage_paths
 from .settings import get_settings
 from .logging_config import app_logger, error_logger
 
 router = APIRouter(prefix="/characters", tags=["characters"])
+
 
 
 def _ext_from_upload(upload: UploadFile) -> str:
@@ -136,10 +139,40 @@ def list_characters(
         db, current_user.id, q=q, page=page, page_size=page_size)
     list_items = []
     for ch in items:
-        thumb = ch.current_image.file_path if ch.current_image else None
         list_items.append(schemas.CharacterListItem(
-            id=ch.id, name=ch.name, updated_at=ch.updated_at, thumbnail_path=thumb))
+            id=ch.id,
+            name=ch.name,
+            updated_at=ch.updated_at,
+            thumbnail_path=crud.get_public_character_thumbnail_path(ch),
+        ))
     return schemas.PaginatedCharacters(items=list_items, total=total, page=page, page_size=page_size)
+
+
+@router.post(
+    "/backfill-thumbnails",
+    response_model=schemas.CharacterThumbnailBackfillResponse,
+)
+def backfill_character_thumbnails(
+    db: Session = Depends(database.get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+):
+    """Repair missing public character thumbnails for the current user."""
+
+    try:
+        counts = crud.backfill_public_character_thumbnails(db, current_user.id)
+    except Exception as exc:
+        error_logger.error(
+            "Failed to backfill character thumbnails for user %s: %s",
+            current_user.id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred.",
+        ) from exc
+
+    return schemas.CharacterThumbnailBackfillResponse(**counts)
 
 
 @router.get("/{char_id}", response_model=schemas.CharacterOut)
@@ -185,6 +218,15 @@ async def upload_character_photo(
     tmp_path = os.path.join(upload_dir, f"upload_{uuid.uuid4().hex}.tmp")
     try:
         size_bytes = await _write_upload_to_path(photo, tmp_path, settings.max_upload_bytes)
+        try:
+            with PILImage.open(tmp_path) as img:
+                img.verify()
+        except Exception:
+            os.remove(tmp_path)
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Uploaded file is not a valid image.",
+            )
         os.replace(tmp_path, final_path)
     finally:
         # Ensure temp file is cleaned up if anything failed.
@@ -263,11 +305,13 @@ async def regenerate_character_image(char_id: int, payload: schemas.RegenerateIm
         else:
             raise HTTPException(
                 status_code=500, detail="Image generation failed")
+    except HTTPException:
+        raise
     except Exception as e:
         error_logger.error(
             f"Failed to regenerate character image for {ch.id}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Image generation error: {e}")
+            status_code=500, detail="Image generation error")
 
     # Return fresh object
     ch = crud.get_character(db, current_user.id, char_id)

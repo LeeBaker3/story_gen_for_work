@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta  # Add this import
 # Changed from backend.models to backend.database
 # Changed from backend.database to backend.schemas
@@ -19,6 +20,23 @@ from pathlib import Path  # Add pathlib import
 # Add project root to sys.path to allow for absolute imports of backend module
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+os.environ.setdefault("TESTING", "true")
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_rate_limiter_state() -> Generator[None, None, None]:
+    """Clear in-memory rate-limit state between tests when available."""
+
+    limiter = getattr(app.state, "limiter", None)
+    storage = getattr(limiter, "_storage", None)
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
+
+    yield
+
+    if storage is not None and hasattr(storage, "reset"):
+        storage.reset()
 
 
 # Use an in-memory SQLite database for testing, shared across connections

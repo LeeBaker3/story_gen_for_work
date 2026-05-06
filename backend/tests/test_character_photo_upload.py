@@ -2,6 +2,7 @@ import os
 from typing import Tuple
 
 import pytest
+from PIL import Image
 
 from backend import ai_services
 from backend import settings as settings_mod
@@ -42,22 +43,33 @@ def _create_character(client, headers) -> int:
     return int(resp.json()["id"])
 
 
+def _png_bytes() -> bytes:
+    """Return a minimal valid PNG payload for upload tests."""
+
+    from io import BytesIO
+
+    buffer = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def test_upload_character_photo_stores_privately(
     monkeypatch, tmp_path, client, db_session, regular_user_auth_headers
 ):
     _, private_dir = _reset_settings(monkeypatch, tmp_path)
+    image_bytes = _png_bytes()
 
     char_id = _create_character(client, regular_user_auth_headers)
 
     resp = client.post(
         f"/api/v1/characters/{char_id}/photo",
-        files={"photo": ("photo.png", b"abc123", "image/png")},
+        files={"photo": ("photo.png", image_bytes, "image/png")},
         headers=regular_user_auth_headers,
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["character_id"] == char_id
-    assert body["size_bytes"] == 6
+    assert body["size_bytes"] == len(image_bytes)
 
     user_id = _get_regular_user_id(db_session)
     expected_path = os.path.join(
@@ -106,11 +118,34 @@ def test_upload_character_photo_enforces_ownership(
 
     resp = client.post(
         f"/api/v1/characters/{char_id}/photo",
-        files={"photo": ("photo.png", b"abc123", "image/png")},
+        files={"photo": ("photo.png", _png_bytes(), "image/png")},
         headers=admin_auth_headers,
     )
     # Admin user is a different user; endpoint should not expose existence.
     assert resp.status_code == 404
+
+
+def test_upload_character_photo_rejects_invalid_image_bytes(
+    monkeypatch, tmp_path, client, db_session, regular_user_auth_headers
+):
+    _, private_dir = _reset_settings(monkeypatch, tmp_path)
+
+    char_id = _create_character(client, regular_user_auth_headers)
+
+    resp = client.post(
+        f"/api/v1/characters/{char_id}/photo",
+        files={"photo": ("photo.png", b"not-a-real-image", "image/png")},
+        headers=regular_user_auth_headers,
+    )
+    assert resp.status_code == 415, resp.text
+    assert resp.json()["detail"] == "Uploaded file is not a valid image."
+
+    user_id = _get_regular_user_id(db_session)
+    expected_path = os.path.join(
+        private_dir, "uploads", f"user_{user_id}", "characters", str(char_id)
+    )
+    remaining = os.listdir(expected_path) if os.path.isdir(expected_path) else []
+    assert remaining == []
 
 
 def test_generate_from_photo_creates_public_reference_image(
@@ -122,7 +157,7 @@ def test_generate_from_photo_creates_public_reference_image(
 
     upload_resp = client.post(
         f"/api/v1/characters/{char_id}/photo",
-        files={"photo": ("photo.png", b"abc123", "image/png")},
+        files={"photo": ("photo.png", _png_bytes(), "image/png")},
         headers=regular_user_auth_headers,
     )
     assert upload_resp.status_code == 200, upload_resp.text
@@ -157,3 +192,40 @@ def test_generate_from_photo_creates_public_reference_image(
     ref_paths = called[-1][1]
     assert ref_paths and os.path.isabs(ref_paths[0])
     assert ref_paths[0].startswith(private_dir)
+
+
+def test_generate_from_photo_keeps_output_inside_character_directory_for_traversal_name(
+    monkeypatch, tmp_path, client, db_session, regular_user_auth_headers
+):
+    data_dir, _ = _reset_settings(monkeypatch, tmp_path)
+
+    resp = client.post(
+        "/api/v1/characters/",
+        json={"name": "../../cover_story_9999", "generate_image": False},
+        headers=regular_user_auth_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    char_id = int(resp.json()["id"])
+
+    upload_resp = client.post(
+        f"/api/v1/characters/{char_id}/photo",
+        files={"photo": ("photo.png", _png_bytes(), "image/png")},
+        headers=regular_user_auth_headers,
+    )
+    assert upload_resp.status_code == 200, upload_resp.text
+
+    monkeypatch.setattr(ai_services, "generate_image", lambda *args, **kwargs: b"fakepngbytes")
+
+    generate_resp = client.post(
+        f"/api/v1/characters/{char_id}/generate-from-photo",
+        json={"description": "A brave knight", "image_style": "Default"},
+        headers=regular_user_auth_headers,
+    )
+    assert generate_resp.status_code == 200, generate_resp.text
+
+    user_id = _get_regular_user_id(db_session)
+    file_path = generate_resp.json()["current_image"]["file_path"]
+    expected_prefix = f"images/user_{user_id}/characters/{char_id}/"
+    assert file_path.startswith(expected_prefix)
+    assert ".." not in file_path
+    assert os.path.exists(os.path.join(data_dir, file_path))

@@ -51,7 +51,17 @@ describe('characters page search and pagination', () => {
         window.localStorage.setItem('authToken', 't');
 
         const responses = {
-            page1: { total: 3, items: [{ id: 1, name: 'Alpha' }, { id: 2, name: 'Beta' }] },
+          page1: {
+            total: 3,
+            items: [
+              {
+                id: 1,
+                name: 'Alpha',
+                thumbnail_path: 'images/user_1/characters/7/abc.png',
+              },
+              { id: 2, name: 'Beta' },
+            ],
+          },
             page2: { total: 3, items: [{ id: 3, name: 'Gamma' }] },
             searchA: { total: 1, items: [{ id: 1, name: 'Alpha' }] },
         };
@@ -107,4 +117,14 @@ describe('characters page search and pagination', () => {
             expect(pag.innerHTML).toContain('Page');
         });
     });
+
+      test('renders thumbnail images with the API-base-aware static content URL', async () => {
+        await waitFor(() => {
+          const img = document.querySelector('#characters-page-list img');
+          expect(img).toBeTruthy();
+          expect(img.getAttribute('src')).toBe(
+            'http://127.0.0.1:8000/static_content/images/user_1/characters/7/abc.png',
+          );
+        });
+      });
 });

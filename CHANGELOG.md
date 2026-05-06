@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- PRD scope for a user-friendly story editor and basic desktop publishing controls, including MVP boundaries and wizard vs post-generation responsibilities.
+- Prometheus metrics for OpenAI text generation path usage, latency, and error rates.
+
+### Changed
+- Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
+- Story text generation can use the Responses API via `USE_OPENAI_RESPONSES_API`.
+- Optional resilience: `OPENAI_TEXT_ENABLE_FALLBACK` falls back to the other text path on error.
+- Stories now persist optional `writing_style` when supplied through API, import, or template flows; the wizard still does not expose that input on this branch.
+
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.5.0...v0.6.0) (2026-01-05)
 
 

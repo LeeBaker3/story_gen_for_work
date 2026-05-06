@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 
-Updated: 2025-08-21
+Updated: 2026-04-27
 
 ## 1. Purpose
 
@@ -14,7 +14,8 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - Story Creation Wizard
     - Step 1 — Basics: Title (optional; AI if blank), Genre, Outline.
     - Step 2 — Characters: Pick from saved Characters or create new; view/update description; generate/regenerate reference image; select 1+ to include.
-    - Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Writing Style.
+    - Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Page Format, and default text placement/font defaults.
+    - On this branch, Step 3 collects the currently wired generation/editor defaults only. It does not yet expose separate wizard inputs for writing style, image fill behavior, cover/title placement preference, or readability treatment.
     - Step 4 — Review: Summary and confirm.
     - Polish: sticky glass header, animated progress bar (reduced-motion fallback), toasts, and inline modal status feedback (no hidden snackbars).
     - Characters page: search, pagination, selection, modal-based image regenerate with disabled buttons and inline status while busy.
@@ -22,10 +23,14 @@ The Story Generator Web App allows users to generate custom illustrated stories 
     - Saved characters with thumbnails; create/update; regenerate image (new version becomes current); optional duplicate/save-as-new.
 - Story Preview Page
     - Title page with cover image; per-page text + image; navigation; edit title/page text; regenerate content; export PDF.
+- Story Editor / Basic Desktop Publishing
+    - A user-friendly post-generation editor that gives basic users desktop publishing control without requiring professional design knowledge.
+    - Users can edit story text, choose page-level text placement, set document typography defaults, override individual pages, regenerate page images, and export the edited layout to PDF.
+    - Controls should favor simple presets, swatches, sliders, and templates over unrestricted freeform editing.
 - Authentication
     - Secure login/session; admin role; signup confirmation (double password with client-side validation); forgot password (planned).
 - Admin Panel
-    - Manage dynamic lists (genres, image styles) used by forms; user management; content moderation; monitoring (logs, basic stats); diagnostics endpoint for safe configuration checks.
+    - Manage dynamic lists (genres, image styles, text positions, font families) used by forms; user management; content moderation; monitoring (logs, basic stats); diagnostics endpoint for safe configuration checks.
 
 ### 2.2 Frontend
 - HTML/CSS/JS (vanilla) with semantic HTML, scoped queries, and ES6 modules.
@@ -42,6 +47,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - Users: username, hashed_password, email, role, is_active.
 - Stories: title, outline, genre, image_style, word_to_picture_ratio, text_density, main_characters JSON, is_draft, generated_at, timestamps.
 - Pages: story_id, page_number, text, image_description, image_path.
+- Story layout/editor state (planned): document style defaults, page format, cover layout, image fit/crop settings, text placement defaults, text-box style defaults, original generated content, edited content, and page-level layout/style overrides.
 - DynamicList: list_name, list_label, description.
 - DynamicListItem: list_name, item_value, item_label, is_active, sort_order, additional_config.
 - StoryGenerationTask: id, story_id, user_id, status, progress, current_step, error_message.
@@ -84,11 +90,81 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - FR-STORY-10: Save draft and resume.
 - FR-STORY-11: Reusable Characters (implemented).
 - FR-STORY-12: Wizard reliability (step sync, init, template fix).
+- FR-STORY-13: Pre-generation layout preferences. The wizard must collect the currently supported pre-generation layout choices that are wired through this branch, including page format and default text placement, and pass them into story/editor settings consistently.
+- FR-STORY-14: Post-generation story editor. Users must be able to edit the generated title and page text after story creation without regenerating the whole story.
+- FR-STORY-15: Basic desktop publishing controls. Users must be able to apply document-wide typography and layout defaults, then override key settings page by page.
+- FR-STORY-16: Edited PDF export. PDF export must use the edited text, selected image placement, typography settings, and page-level overrides rather than only the original generated content.
+
+### 3.4.1 Story Editor / Basic Desktop Publishing Scope
+
+The editor should be designed for basic users who want storybook layout control, not for professional desktop publishing. The product should keep the workflow approachable by offering opinionated presets and safe defaults.
+
+#### MVP Scope
+
+- Open an existing generated story in an Edit Story view.
+- Edit story title and per-page story text.
+- Preserve the original AI-generated title, page text, image description, and image path so users can restore original content.
+- Use full-page images by default, with a generated image filling the page.
+- Choose a document-wide default text placement: top, bottom, left, right, or center.
+- Override text placement on an individual page.
+- Set document-wide font family, font size, text colour, and text-box background opacity.
+- Override font size, text colour, and text-box background opacity on an individual page.
+- Provide curated, readable font choices rather than unrestricted font entry.
+- Regenerate a single page image, using the page text placement as prompt context.
+- Restore original page text or original page image.
+- Save editor changes automatically and provide a visible manual Save action.
+- Export the edited story to PDF with layout matching the editor preview as closely as practical.
+
+The following editor controls remain future work on this branch and should not be treated as already implemented MVP behavior: text alignment control, readability treatment selection, curated colour swatches beyond the base picker, contrast warnings, and text-fit warnings.
+
+#### Wizard Responsibilities Before Generation
+
+The wizard should collect only choices that materially influence story/image generation or establish sensible document defaults:
+
+- Page format: square storybook, portrait, landscape, A4, or US Letter.
+- Default text placement: top, bottom, left, right, or center.
+- Default font category: storybook, classic, modern, handwritten, dyslexia-friendly, or large print.
+- Default text density and word-to-picture ratio, already present, should remain generation inputs.
+- Review step should summarize these layout choices before generation.
+
+The following wizard controls remain future work on this branch and should not be treated as already implemented inputs: writing style, image fill/contain behavior, cover/title placement preference, and explicit readability treatment selection.
+
+Stories now persist optional `writing_style` when it is supplied through API, import, or template flows, but that field remains future wizard work on this branch.
+
+These wizard settings should be included in image prompt construction. For example, if the user selects bottom text placement, page image prompts should request important visual detail away from the lower text-safe area where possible.
+
+#### Post-Generation Editor Responsibilities
+
+The editor should handle choices that users naturally make after seeing the generated story and images:
+
+- Edit page text and title.
+- Select or change text placement per page.
+- Adjust font size, colour, and text-box opacity.
+- Change document defaults and apply them to all pages.
+- Clear page-specific overrides and return a page to document defaults.
+- Regenerate one page image while preserving the rest of the story.
+- Regenerate one page's text in a future phase.
+- Reorder, duplicate, add, delete, split, or merge pages in a future phase.
+- Preview the exported PDF before download in a future phase.
+
+#### Future Enhancements Beyond MVP
+
+- Page thumbnails with drag-and-drop reordering.
+- Add, delete, duplicate, split, and merge pages.
+- Image focal point controls for crop/fill behavior.
+- Image brightness overlay and blur-behind-text options.
+- Cover page editor with subtitle and author controls.
+- Template gallery: Picture Book, Early Reader, Classic Storybook, Comic Caption, Poster Style, and Dyslexia Friendly.
+- Undo/redo for recent editing actions.
+- Lightweight revision history beyond original/current content.
+- Export selected pages, cover only, or images only.
+- Download editable story layout JSON for advanced backup/debugging.
 
 ### 3.5 AI Model Integration
 - FR-AI-01: JSON output includes Title, Page, Image_description.
 - FR-AI-02: Defaults to gpt-4.1-mini (text) and gpt-image-1 (image); configurable.
 - FR-AI-03: Optional style mapping flag to adjust API style/prompts; future admin UI may manage.
+- FR-AI-04: Development and test environments should be able to switch, via configuration, to a local OpenAI-compatible model/provider while production defaults remain unchanged. (Backlog #106)
 
 ### 3.6 Administration
 - FR-ADM-01/02/03/04: Admin role, user management, moderation, monitoring.
@@ -105,6 +181,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 ## 4. Deployment & Environment
 - Runs locally: FastAPI, SQLite, HTML/CSS/JS, filesystem for images/logs.
 - Configuration via root `.env`; `backend/settings.py` centralizes defaults.
+- Future configuration should support a local OpenAI-compatible endpoint for development and testing while preserving hosted OpenAI defaults in production.
 - Static mounts `/static` (frontend) and `/static_content` (data) on by default in dev; off in tests by default.
 - Admin diagnostics at `/api/v1/admin/monitoring/config` for safe verification.
 

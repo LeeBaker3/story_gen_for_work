@@ -60,7 +60,7 @@ describe('wizard character library search debounce', () => {
       const u = String(url);
       if (u.includes('/api/v1/dynamic-lists/')) {
         // Return simple arrays for any list
-        return { ok: true, status: 200, json: async () => ([{ value: 'fantasy', label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
+        return { ok: true, status: 200, json: async () => ([{ item_value: 'fantasy', item_label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
       }
       if (u.match(/\/api\/v1\/characters\/?\?page=/)) {
         const qs = u.split('?')[1] || '';
@@ -81,6 +81,7 @@ describe('wizard character library search debounce', () => {
     document.dispatchEvent(new Event('DOMContentLoaded'));
     // Enter the create story flow
     document.getElementById('nav-create-story').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Fill required basics so Next is allowed
     const genre = document.getElementById('story-genre');

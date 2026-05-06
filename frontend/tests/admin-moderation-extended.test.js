@@ -56,7 +56,10 @@ function installModerationMock({ stories = [], userRole = 'admin', hideFail = fa
         }
 
         if (url.includes('/api/v1/admin/moderation/stories') && (!opts.method || opts.method === 'GET')) {
-            return new Response(JSON.stringify(currentStories), { status: 200 });
+            return new Response(
+                JSON.stringify({ total: currentStories.length, items: currentStories }),
+                { status: 200 }
+            );
         }
 
         const hideMatch = url.match(/\/api\/v1\/admin\/moderation\/stories\/(\d+)\/hide$/);

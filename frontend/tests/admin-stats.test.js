@@ -99,6 +99,25 @@ test('renders admin stats cards with expected values', async () => {
   expect(content).toContain('1.67');
 });
 
+test('keeps the admin message area as a persistent polite status region', async () => {
+  installApiMock({ statsResponse: baseStats });
+  await loadAdminScript();
+
+  const messageArea = document.getElementById('admin-message-area');
+
+  expect(messageArea.getAttribute('role')).toBe('status');
+  expect(messageArea.getAttribute('aria-live')).toBe('polite');
+  expect(messageArea.getAttribute('aria-atomic')).toBe('true');
+
+  clickAdminStatsNav();
+
+  await waitFor(() => {
+    expect(messageArea.getAttribute('role')).toBe('status');
+    expect(messageArea.getAttribute('aria-live')).toBe('polite');
+    expect(messageArea.getAttribute('aria-atomic')).toBe('true');
+  });
+});
+
 test('refresh button triggers fetch again', async () => {
   installApiMock({ statsResponse: baseStats });
   await loadAdminScript();

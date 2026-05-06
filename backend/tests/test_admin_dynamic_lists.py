@@ -1,4 +1,5 @@
 import pytest
+from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session  # Added for type hinting
 from backend.main import app
@@ -50,6 +51,10 @@ def ensure_dynamic_list_exists(client: TestClient, list_name: str, admin_token: 
     elif response.status_code != 200:
         raise Exception(
             f"Failed to check/ensure dynamic list \'{list_name}\' exists: {response.text}")
+
+
+def unique_test_name(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex[:8]}"
 
 # 1. Admin can create a new dynamic list item
 
@@ -368,7 +373,7 @@ def test_cannot_create_duplicate_item_value_in_list(client: TestClient, admin_to
 
 
 def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
-    list_name = "test_list_for_get_all"
+    list_name = unique_test_name("test_list_for_get_all")
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
     # Create a couple of items
@@ -384,15 +389,14 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
                               "Authorization": f"Bearer {admin_token}"})
     assert response_all.status_code == 200
     items = response_all.json()
-    # GTE because other tests might use the same list if not isolated
-    assert len(items) >= 3
+    assert [item["item_value"] for item in items] == ["val1", "val2", "val3"]
 
     # Get only active items
     response_active = client.get(
         f"/api/v1/admin/dynamic-lists/{list_name}/items?only_active=true", headers={"Authorization": f"Bearer {admin_token}"})
     assert response_active.status_code == 200
     active_items = response_active.json()
-    assert len(active_items) >= 2  # val2 is inactive
+    assert [item["item_value"] for item in active_items] == ["val1", "val3"]
     for item in active_items:
         assert item["is_active"] is True
 
@@ -401,9 +405,72 @@ def test_admin_get_all_items_for_list(client: TestClient, admin_token: str):
         f"/api/v1/admin/dynamic-lists/{list_name}/items?only_active=false", headers={"Authorization": f"Bearer {admin_token}"})
     assert response_inactive.status_code == 200
     inactive_items = response_inactive.json()
-    assert len(inactive_items) >= 1  # val2 is inactive
+    assert [item["item_value"] for item in inactive_items] == ["val2"]
     for item in inactive_items:
         assert item["is_active"] is False
+
+
+def test_admin_delete_dynamic_list_returns_conflict_when_item_is_in_use(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+):
+    list_name = "genres"
+    item_value_in_use = schemas.StoryGenre.HORROR.value
+    ensure_dynamic_list_exists(client, list_name, admin_token)
+
+    create_response = client.post(
+        f"/api/v1/admin/dynamic-lists/{list_name}/items",
+        json={
+            "list_name": list_name,
+            "item_value": item_value_in_use,
+            "item_label": "Horror",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert create_response.status_code in (201, 400)
+
+    items_response = client.get(
+        f"/api/v1/admin/dynamic-lists/{list_name}/items",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert items_response.status_code == 200
+    item = next(
+        entry for entry in items_response.json()
+        if entry["item_value"] == item_value_in_use
+    )
+
+    admin_user = crud.get_user_by_username(db_session, "admin@example.com")
+    assert admin_user is not None
+
+    story = crud.create_story_db_entry(
+        db_session,
+        schemas.StoryCreate(
+            title="List Delete Conflict Story",
+            genre=item_value_in_use,
+            story_outline="An outline.",
+            main_characters=[],
+            num_pages=1,
+            image_style=schemas.ImageStyle.DEFAULT,
+            word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+            text_density=schemas.TextDensity.CONCISE,
+        ),
+        admin_user.id,
+        title="List Delete Conflict Story",
+    )
+
+    delete_response = client.delete(
+        f"/api/v1/admin/dynamic-lists/{list_name}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert delete_response.status_code == 409
+    assert delete_response.json()["detail"] == (
+        f"Cannot delete list '{list_name}'. Item '{item['item_label']}' "
+        f"(ID: {item['id']}) is currently in use."
+    )
+
+    crud.delete_story_db_entry(db_session, story.id)
 
 # 9. Admin can get a specific item by ID
 
@@ -827,9 +894,11 @@ def test_admin_cannot_create_duplicate_dynamic_list(client: TestClient, admin_to
 
 def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     # Create a couple of lists to ensure there's something to fetch
-    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": "list_alpha_label", "list_label": "Alpha Label",
+    alpha_name = unique_test_name("list_alpha_label")
+    beta_name = unique_test_name("list_beta_label")
+    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": alpha_name, "list_label": "Alpha Label",
                 "description": "Alpha"}, headers={"Authorization": f"Bearer {admin_token}"})
-    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": "list_beta_label", "list_label": "Beta Label",
+    client.post("/api/v1/admin/dynamic-lists/", json={"list_name": beta_name, "list_label": "Beta Label",
                 "description": "Beta"}, headers={"Authorization": f"Bearer {admin_token}"})
 
     response = client.get("/api/v1/admin/dynamic-lists/",
@@ -838,34 +907,11 @@ def test_admin_get_all_dynamic_lists(client: TestClient, admin_token: str):
     data = response.json()
     assert isinstance(data, list)
     fetched_lists = {lst["list_name"]: lst for lst in data}
-    assert "list_alpha_label" in fetched_lists
-    assert fetched_lists["list_alpha_label"]["list_label"] == "Alpha Label"
-    assert "list_beta_label" in fetched_lists
-    assert fetched_lists["list_beta_label"]["list_label"] == "Beta Label"
-
-    list_names_fetched = [lst["list_name"] for lst in data]
-    # Check sorting by list_name (as per crud.get_dynamic_lists)
-    if len(data) >= 2 and "list_alpha_label" in list_names_fetched and "list_beta_label" in list_names_fetched:
-        # This assertion depends on the exact list names and their alphabetical order
-        # Adjust if list_names are different or sorting changes
-        sorted_test_list_names = sorted(
-            ["list_alpha_label", "list_beta_label"])
-        # Find the indices of our test lists in the fetched data
-        idx_alpha = -1
-        idx_beta = -1
-        for i, lst in enumerate(data):
-            if lst["list_name"] == "list_alpha_label":
-                idx_alpha = i
-            elif lst["list_name"] == "list_beta_label":
-                idx_beta = i
-
-        # Only assert order if both are found and their expected order is known
-        if idx_alpha != -1 and idx_beta != -1:
-            # if alpha comes before beta
-            if "list_alpha_label" == sorted_test_list_names[0]:
-                assert idx_alpha < idx_beta
-            else:
-                assert idx_beta < idx_alpha
+    assert data == [
+        fetched_lists[name] for name in sorted([alpha_name, beta_name])
+    ]
+    assert fetched_lists[alpha_name]["list_label"] == "Alpha Label"
+    assert fetched_lists[beta_name]["list_label"] == "Beta Label"
 
 
 def test_admin_get_specific_dynamic_list(client: TestClient, admin_token: str):

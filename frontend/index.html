@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Story Generator</title>
-    <link rel="stylesheet" href="/static/style.css?v=20250820">
+    <link rel="stylesheet" href="/static/style.css?v=20260424.1">
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <!-- <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png"> -->
     <!-- <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png"> -->
@@ -71,67 +71,82 @@
             <h2>Create a New Story</h2>
             <!-- Phase 3 Wizard: Step indicators (basic skeleton) -->
             <div id="wizard-steps" class="wizard-steps" aria-label="Story creation steps">
-                <div class="wizard-step" data-step="0">Basics</div>
-                <div class="wizard-step" data-step="1">Characters</div>
-                <div class="wizard-step" data-step="2">Options</div>
-                <div class="wizard-step" data-step="3">Review</div>
+                <button type="button" class="wizard-step" data-step="0" aria-current="step">Basics</button>
+                <button type="button" class="wizard-step" data-step="1" aria-disabled="true">Characters</button>
+                <button type="button" class="wizard-step" data-step="2" aria-disabled="true">Options</button>
+                <button type="button" class="wizard-step" data-step="3" aria-disabled="true">Review</button>
             </div>
             <form id="story-creation-form" class="modern-form">
                 <!-- Step 0: Basics -->
                 <div id="step-0-basics" class="wizard-step-panel">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Complete the required fields to unlock the next step.</p>
+                        <p class="wizard-step-guidance-detail">Fields marked <span class="required-badge">Required</span> must be completed. The story title is optional.</p>
+                    </div>
                     <div>
-                        <label for="story-title">Story Title (Optional):</label>
+                        <label for="story-title">Story Title</label>
                         <input type="text" id="story-title" name="title" placeholder="Enter your story title or leave blank for AI to generate">
                     </div>
                     <div>
-                        <label for="story-genre">Genre:</label>
-                        <select id="story-genre" name="genre" required>
+                        <label for="story-genre">Genre <span class="required-badge">Required</span></label>
+                        <select id="story-genre" name="genre" required aria-describedby="story-genre-error">
                             <!-- Options will be populated dynamically -->
                         </select>
+                        <div class="dropdown-recovery">
+                            <div id="story-genre-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+                            <button type="button" id="story-genre-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-genre" style="display:none;">Retry loading genres</button>
+                        </div>
+                        <div id="story-genre-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                     <div>
-                        <label for="story-outline">Story Outline:</label>
-                        <textarea id="story-outline" name="story_outline" rows="4" required></textarea>
+                        <label for="story-outline">Story Outline <span class="required-badge">Required</span></label>
+                        <textarea id="story-outline" name="story_outline" rows="4" required aria-describedby="story-outline-error"></textarea>
+                        <div id="story-outline-error" class="field-error" role="alert" aria-live="polite"></div>
                     </div>
                 </div>
 
                 <!-- Step 1: Characters -->
                 <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Add at least one named character to continue.</p>
+                        <p class="wizard-step-guidance-detail">Only character names are required. Details you reveal under each character are optional.</p>
+                    </div>
                     <fieldset id="main-characters-fieldset" class="modern-fieldset">
                         <legend>Main Characters (at least 1)</legend>
                         <div class="character-entry">
                             <div>
-                                <label for="char-name-1">Name:</label>
-                                <input type="text" id="char-name-1" name="char_name_1" class="char-name" required>
+                                <label for="char-name-1">Name <span class="required-badge">Required</span></label>
+                                <input type="text" id="char-name-1" name="char_name_1" class="char-name" required aria-describedby="main-characters-error">
                             </div>
                             <!-- Collapsible section for character details -->
-                            <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1">Show Details</button>
+                            <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
                             <div id="char-details-1" class="character-details-fields" style="display:none;">
                                 <div>
-                                    <label for="char-age-1">Age (optional):</label>
+                                    <label for="char-age-1">Age</label>
                                     <input type="number" id="char-age-1" name="char_age_1" class="char-age" placeholder="e.g., 30">
                                 </div>
                                 <div>
-                                    <label for="char-gender-1">Gender (optional):</label>
+                                    <label for="char-gender-1">Gender</label>
                                     <select id="char-gender-1" name="char_gender_1" class="char-gender">
                                         <!-- Options populated dynamically -->
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="char-physical-appearance-1">Physical Appearance (optional):</label>
+                                    <label for="char-physical-appearance-1">Physical Appearance</label>
                                     <textarea id="char-physical-appearance-1" name="char_physical_appearance_1" class="char-physical-appearance" rows="3" placeholder="e.g., tall, brown hair, blue eyes, athletic build"></textarea>
                                 </div>
                                 <div>
-                                    <label for="char-clothing-style-1">Clothing Style (optional):</label>
+                                    <label for="char-clothing-style-1">Clothing Style</label>
                                     <input type="text" id="char-clothing-style-1" name="char_clothing_style_1" class="char-clothing-style" placeholder="e.g., casual, formal, bohemian">
                                 </div>
                                 <div>
-                                    <label for="char-key-traits-1">Key Personality Traits (optional):</label>
+                                    <label for="char-key-traits-1">Key Personality Traits</label>
                                     <textarea id="char-key-traits-1" name="char_key_traits_1" class="char-key-traits" rows="3" placeholder="e.g., brave, curious, kind"></textarea>
                                 </div>
                             </div>
                         </div>
                     </fieldset>
+                    <div id="main-characters-error" class="field-error" role="alert" aria-live="polite"></div>
                     <button type="button" id="add-character-button" class="action-button-info">Add Another Character</button>
                     <!-- Show character library in this step -->
                     <div id="character-library-panel" style="display:none;" aria-label="Character library">
@@ -159,40 +174,103 @@
 
                 <!-- Step 2: Options -->
                 <div id="step-2-options" class="wizard-step-panel" style="display:none;">
-                    <div>
-                        <label for="story-num-pages">Number of Pages:</label>
-                        <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required>
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Choose the required story options before review.</p>
+                        <p class="wizard-step-guidance-detail">Page count, image style, word-to-picture ratio, and text density are required. Layout and typography settings are optional refinements.</p>
                     </div>
                     <div>
-                        <label for="story-tone">Tone (optional):</label>
+                        <label for="story-num-pages">Number of Pages <span class="required-badge">Required</span></label>
+                        <input type="number" id="story-num-pages" name="num_pages" min="1" max="20" value="5" required aria-describedby="story-num-pages-error">
+                        <div id="story-num-pages-error" class="field-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <div>
+                        <label for="story-tone">Tone</label>
                         <input type="text" id="story-tone" name="tone" placeholder="e.g., humorous, serious, whimsical, dark">
                     </div>
                     <div>
-                        <label for="story-setting">Setting (optional):</label>
+                        <label for="story-setting">Setting</label>
                         <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
                     </div>
                     <div>
-                        <label for="story-image-style">Image Style:</label>
-                        <select id="story-image-style" name="image_style" required>
+                        <label for="story-image-style">Image Style <span class="required-badge">Required</span></label>
+                        <select id="story-image-style" name="image_style" required aria-describedby="story-image-style-error">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                        <div class="dropdown-recovery">
+                            <div id="story-image-style-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
+                            <button type="button" id="story-image-style-retry" class="action-button-secondary dropdown-recovery-retry" aria-controls="story-image-style" style="display:none;">Retry loading image styles</button>
+                        </div>
+                        <div id="story-image-style-error" class="field-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <div>
+                        <label for="story-word-to-picture-ratio">Word-to-Picture Ratio <span class="required-badge">Required</span></label>
+                        <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required aria-describedby="story-word-to-picture-ratio-error">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                        <div id="story-word-to-picture-ratio-error" class="field-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <div>
+                        <label for="story-text-density">Text Density <span class="required-badge">Required</span></label>
+                        <select id="story-text-density" name="text_density" required aria-describedby="story-text-density-error">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                        <div id="story-text-density-error" class="field-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <div>
+                        <label for="story-page-format">Page Format:</label>
+                        <select id="story-page-format" name="page_format">
+                            <option value="letter" selected>US Letter</option>
+                            <option value="a4">A4</option>
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                            <option value="square-storybook">Square Storybook</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-layout-mode">Layout Mode:</label>
+                        <select id="story-layout-mode" name="layout_mode">
+                            <option value="full-page-overlay" selected>Full-page overlay</option>
+                            <option value="horizontal-split">Horizontal split</option>
+                            <option value="vertical-split">Vertical split</option>
+                        </select>
+                    </div>
+                    <div>
+                            <label>Default Text Placement:</label>
+                            <div style="display:flex; gap:0.5rem; align-items:center;">
+                                <select id="story-default-text-position-v" name="default_text_position_v" aria-label="Vertical text placement">
+                                    <!-- Populated by JS -->
+                                </select>
+                                <select id="story-default-text-position-h" name="default_text_position_h" aria-label="Horizontal text placement">
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+                    </div>
+                    <div>
+                        <label for="story-default-font-family">Default Font Family:</label>
+                        <select id="story-default-font-family" name="default_font_family">
                             <!-- Options will be populated dynamically -->
                         </select>
                     </div>
                     <div>
-                        <label for="story-word-to-picture-ratio">Word-to-Picture Ratio:</label>
-                        <select id="story-word-to-picture-ratio" name="word_to_picture_ratio" required>
-                            <!-- Options will be populated dynamically -->
-                        </select>
+                        <label for="story-default-font-size">Default Font Size:</label>
+                        <input type="number" id="story-default-font-size" name="default_font_size" min="16" max="56" value="28">
                     </div>
                     <div>
-                        <label for="story-text-density">Text Density:</label>
-                        <select id="story-text-density" name="text_density" required>
-                            <!-- Options will be populated dynamically -->
-                        </select>
+                        <label for="story-default-font-color">Default Font Color:</label>
+                        <input type="color" id="story-default-font-color" name="default_font_color" value="#ffffff">
+                    </div>
+                    <div>
+                        <label for="story-default-text-box-opacity">Text Box Opacity:</label>
+                        <input type="range" id="story-default-text-box-opacity" name="default_text_box_opacity" min="0" max="1" step="0.1" value="0.6">
                     </div>
                 </div>
 
                 <!-- Step 3: Review -->
                 <div id="step-3-review" class="wizard-step-panel" style="display:none;">
+                    <div class="wizard-step-guidance" aria-live="polite">
+                        <p class="wizard-step-guidance-title">Review the story setup before generating.</p>
+                        <p class="wizard-step-guidance-detail">Use Back to revise any section, then choose Generate Story when everything looks complete.</p>
+                    </div>
                     <h3>Review</h3>
                     <div id="review-container"></div>
                 </div>
@@ -407,6 +485,7 @@
         <p>&copy; 2025 Story Generator</p>
     </footer>
 
-    <script src="/static/script.js?v=20250820.3"></script>
+    <script src="/static/runtime-config.js?v=20260429.1"></script>
+    <script src="/static/script.js?v=20260429.1"></script>
 </body>
 </html>

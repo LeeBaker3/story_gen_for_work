@@ -4,16 +4,79 @@ import uuid
 from datetime import datetime
 import time
 from sqlalchemy.orm import Session
+from tenacity import RetryError
 from . import crud, schemas, database, ai_services
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
-from .metrics import PAGE_IMAGE_RETRIES_TOTAL, observe_story_generation
+from .metrics import (
+    PAGE_IMAGE_FAILURES_TOTAL,
+    PAGE_IMAGE_RETRIES_TOTAL,
+    observe_story_generation,
+)
+
+
+def _text_position_guidance(text_position: str) -> str:
+    """Return prompt guidance to leave readable space for overlaid text."""
+
+    old_map = {
+        "top": "top-center",
+        "bottom": "bottom-center",
+        "left": "middle-left",
+        "right": "middle-right",
+        "center": "middle-center",
+    }
+    normalized = str(text_position or "bottom-center").strip().lower()
+    normalized = old_map.get(normalized, normalized)
+    parts = normalized.split("-", 1)
+    vertical = parts[0] if len(parts) >= 1 else "bottom"
+    horizontal = parts[1] if len(parts) == 2 else "center"
+    if vertical not in {"top", "middle", "bottom"}:
+        vertical = "bottom"
+    if horizontal not in {"left", "center", "right"}:
+        horizontal = "center"
+
+    if vertical == "middle" and horizontal == "center":
+        return (
+            "Keep the central area visually calm and uncluttered so story text "
+            "can be placed there clearly."
+        )
+    area = f"{vertical} {horizontal}" if horizontal != "center" else vertical
+    return (
+        f"Leave clear, readable visual space in the {area} area of the "
+        "composition for overlaid story text."
+    )
+
+
+def _format_task_error_message(error: Exception) -> str:
+    """Return the most useful error message for a failed generation task."""
+
+    if isinstance(error, RetryError):
+        retry_cause = error.last_attempt.exception()
+        if retry_cause is not None:
+            return str(retry_cause)
+    return str(error)
+
+
+def _restore_failed_story_shell(
+    failed_story,
+    story_input: schemas.StoryCreate,
+) -> None:
+    """Restore the pre-generation story shell after a failed generation."""
+
+    failed_story.is_draft = True
+    if hasattr(failed_story, 'generated_at'):
+        failed_story.generated_at = None
+    failed_story.title = story_input.title or "[AI Title Pending...]"
+
+    if hasattr(failed_story, 'pages'):
+        failed_story.pages = []
 
 
 async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
     db: Session = next(database.get_db())
     _settings = get_settings()
+    telemetry_enabled = bool(getattr(_settings, 'enable_telemetry', False))
     start_time = time.perf_counter()
     try:
         app_logger.info(
@@ -34,6 +97,19 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
 
         character_details_map = {}
         for character_input in story_input.main_characters:
+            existing_reference_path = getattr(
+                character_input, 'reference_image_path', None)
+            if existing_reference_path:
+                app_logger.info(
+                    "Reusing saved reference image for character '%s': %s",
+                    character_input.name,
+                    existing_reference_path,
+                )
+                character_details_map[character_input.name] = (
+                    character_input.model_dump(exclude_none=True)
+                )
+                continue
+
             # Build file paths for saving each character reference via helper
             char_image_save_path_on_disk, char_image_path_for_db = character_ref_paths(
                 user_id, story_id, character_input.name or "character"
@@ -48,7 +124,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             if char_details and char_details.get('reference_image_path'):
                 character_details_map[character_input.name] = char_details
 
-        app_logger.info(
+        app_logger.debug(
             f"Completed character image generation for task_id: {task_id}. Details: {character_details_map}")
 
         # Upsert generated/merged character details into user's library for reuse
@@ -75,13 +151,19 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         story_content_input['main_characters'] = list(
             character_details_map.values())
 
-        story_content = ai_services.generate_story_from_chatgpt(
-            story_content_input)
+        story_content = await asyncio.to_thread(
+            ai_services.generate_story_from_chatgpt,
+            story_content_input,
+        )
         # Some tests may mock this as an async function; await if coroutine
         if asyncio.iscoroutine(story_content):
             story_content = await story_content
         app_logger.info(
             f"Completed story content generation for task_id: {task_id}")
+        editor_settings = story_content_input.get('editor_settings') or {}
+        text_position_guidance = _text_position_guidance(
+            editor_settings.get('text_position', 'bottom')
+        )
 
         # Step 3: Generate Page Images
         crud.update_story_generation_task_progress(
@@ -89,6 +171,8 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         # Ensure base dir exists (already ensured above) for per-page images
 
         failed_pages = 0
+        retry_counts_by_page: dict[str, int] = {}
+        total_retries = 0
         if 'Pages' in story_content:
             for i, page in enumerate(story_content['Pages']):
                 progress = 60 + int((i + 1) / len(story_content['Pages']) * 35)
@@ -133,9 +217,21 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 page_image_url = None
                 for attempt in range(attempts):
                     if attempt > 0:
-                        PAGE_IMAGE_RETRIES_TOTAL.inc()
+                        if telemetry_enabled:
+                            PAGE_IMAGE_RETRIES_TOTAL.inc()
+                            retry_counts_by_page[str(page_num_int)] = (
+                                retry_counts_by_page.get(str(page_num_int), 0) + 1
+                            )
+                            total_retries += 1
+                            crud.update_story_generation_task(
+                                db,
+                                task_id,
+                                retry_counts_by_page=retry_counts_by_page,
+                                total_retries=total_retries,
+                                failed_pages_count=failed_pages,
+                            )
                     page_image_url = await ai_services.generate_image_for_page(
-                        page_content=image_description,
+                        page_content=f"{image_description}. {text_position_guidance}",
                         style_reference=image_style,
                         characters_in_scene=characters_in_scene,
                         db=db,
@@ -161,6 +257,15 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 page['image_url'] = page_image_url
                 if not page_image_url:
                     failed_pages += 1
+                    if telemetry_enabled:
+                        PAGE_IMAGE_FAILURES_TOTAL.inc()
+                        crud.update_story_generation_task(
+                            db,
+                            task_id,
+                            retry_counts_by_page=retry_counts_by_page,
+                            total_retries=total_retries,
+                            failed_pages_count=failed_pages,
+                        )
 
         app_logger.info(
             f"Completed page image generation for task_id: {task_id}")
@@ -201,11 +306,20 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 f"Failed bulk upsert of characters for story {story_id}: {e}")
 
         # Final Step: Update task status to COMPLETED (even if some images failed; text is generated)
+        completion_update_kwargs = {
+            'status': schemas.GenerationTaskStatus.COMPLETED,
+            'current_step': schemas.GenerationTaskStep.FINALIZING,
+        }
+        if telemetry_enabled:
+            completion_update_kwargs.update(
+                retry_counts_by_page=retry_counts_by_page,
+                total_retries=total_retries,
+                failed_pages_count=failed_pages,
+            )
         crud.update_story_generation_task(
             db,
             task_id,
-            status=schemas.GenerationTaskStatus.COMPLETED,
-            current_step=schemas.GenerationTaskStep.FINALIZING,
+            **completion_update_kwargs,
         )
         crud.update_story_generation_task_progress(
             db, task_id, 100, schemas.GenerationTaskStep.FINALIZING)
@@ -227,13 +341,37 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
     except Exception as e:
         error_logger.error(
             f"Error during background story generation for task_id {task_id}: {e}", exc_info=True)
-        crud.update_story_generation_task(
-            db,
-            task_id,
-            status=schemas.GenerationTaskStatus.FAILED,
-            error_message=str(e),
-            current_step=schemas.GenerationTaskStep.FINALIZING,
-        )
+        try:
+            db.rollback()
+        except Exception:
+            error_logger.warning(
+                "Rollback failed while handling story generation failure for "
+                "task_id %s",
+                task_id,
+                exc_info=True,
+            )
+
+        error_message = _format_task_error_message(e)
+
+        try:
+            crud.update_story_generation_task(
+                db,
+                task_id,
+                status=schemas.GenerationTaskStatus.FAILED,
+                error_message=error_message,
+                current_step=schemas.GenerationTaskStep.FINALIZING,
+            )
+
+            failed_story = crud.get_story(db, story_id, user_id)
+            if failed_story is not None:
+                _restore_failed_story_shell(failed_story, story_input)
+                db.commit()
+        except Exception:
+            error_logger.error(
+                "Failed to persist failure cleanup for task_id %s",
+                task_id,
+                exc_info=True,
+            )
 
         observe_story_generation(
             status="failed",
@@ -241,3 +379,6 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         )
     finally:
         db.close()
+
+
+run_story_generation = generate_story_as_background_task

@@ -1,4 +1,5 @@
 import pytest
+from tenacity import RetryError
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, ANY, call, AsyncMock
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from backend.main import app
 from backend import schemas, crud, auth, database
 import uuid
 from datetime import datetime, UTC
+from types import SimpleNamespace
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +67,7 @@ def mock_dependencies(db_session_mock, current_user_mock):
     app.dependency_overrides = {}
 
 
-def test_create_story_generation_task_successfully(client, db_session_mock, story_create_input_mock, current_user_mock):
+def test_create_story_generation_task_successfully(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that POST /stories/ successfully creates a generation task.
     """
@@ -87,23 +89,28 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         updated_at=now
     )
     # No existing story
-    crud.get_story_by_title_and_owner = MagicMock(return_value=None)
-    crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner",
+                        MagicMock(return_value=None))
+    monkeypatch.setattr(crud, "create_story_db_entry",
+                        MagicMock(return_value=mock_story_db))
     # FastAPI response_model validation will call model_validate and expects attributes accessible.
     # Ensure refresh is a no-op that leaves timestamps intact.
     db_session_mock.refresh = MagicMock()
 
     # Mock the CRUD function for creating the task
-    crud.create_story_generation_task = MagicMock(return_value=schemas.StoryGenerationTask(
+    monkeypatch.setattr(crud, "create_story_generation_task", MagicMock(return_value=schemas.StoryGenerationTask(
         id=mock_task_id,
         story_id=mock_story_id,
         user_id=current_user_mock.id,
         status=schemas.GenerationTaskStatus.PENDING,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC)
-    ))
+    )))
 
-    with patch('backend.public_router.generate_story_as_background_task') as mock_background_task:
+    with patch(
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task"
+    ) as mock_background_task:
         response = client.post(
             "/api/v1/stories/",
             json=story_create_input_mock,
@@ -118,13 +125,98 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         mock_background_task.assert_called_once()
 
 
-def test_create_story_with_existing_title_fails(client, db_session_mock, story_create_input_mock, current_user_mock):
+def test_create_story_generation_logs_only_metadata(
+    client,
+    db_session_mock,
+    current_user_mock,
+    monkeypatch,
+):
+    """Story creation INFO logs should exclude full payload fields."""
+
+    mock_task_id = str(uuid.uuid4())
+    mock_story_id = 8
+    now = datetime.now(UTC)
+    story_payload = {
+        "title": "Privacy Story",
+        "genre": "Fantasy",
+        "story_outline": "Hidden outline that must not appear in INFO logs.",
+        "main_characters": [
+            {
+                "name": "Hidden Hero",
+                "description": "Sensitive backstory",
+                "reference_image_path": "private_data/uploads/hero.png",
+            }
+        ],
+        "num_pages": 2,
+        "draft_id": 77,
+        "image_style": "Default",
+        "word_to_picture_ratio": "One image per page",
+        "text_density": "Standard (~60-90 words)",
+    }
+
+    mock_story_db = schemas.Story(
+        id=mock_story_id,
+        owner_id=current_user_mock.id,
+        title=story_payload["title"],
+        is_draft=False,
+        genre=story_payload["genre"],
+        story_outline=story_payload["story_outline"],
+        main_characters=story_payload["main_characters"],
+        num_pages=story_payload["num_pages"],
+        created_at=now,
+        updated_at=now,
+    )
+
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner", MagicMock(return_value=None))
+    monkeypatch.setattr(crud, "create_story_db_entry", MagicMock(return_value=mock_story_db))
+    monkeypatch.setattr(
+        crud,
+        "create_story_generation_task",
+        MagicMock(
+            return_value=schemas.StoryGenerationTask(
+                id=mock_task_id,
+                story_id=mock_story_id,
+                user_id=current_user_mock.id,
+                status=schemas.GenerationTaskStatus.PENDING,
+                created_at=now,
+                updated_at=now,
+            )
+        ),
+    )
+    db_session_mock.refresh = MagicMock()
+
+    with patch("backend.public_router.app_logger.info") as mock_info:
+        with patch(
+            "backend.public_router.story_generation_service"
+            ".generate_story_as_background_task"
+        ):
+            response = client.post(
+                "/api/v1/stories/",
+                json=story_payload,
+                headers={"X-Token": "testtoken"},
+            )
+
+    assert response.status_code == 202
+    first_log_args = mock_info.call_args_list[0].args
+    rendered_log = " ".join(str(arg) for arg in first_log_args)
+    assert "Hidden outline that must not appear" not in rendered_log
+    assert "Sensitive backstory" not in rendered_log
+    assert "private_data/uploads/hero.png" not in rendered_log
+    assert "genre" in rendered_log
+    assert "num_pages" in rendered_log
+    assert "draft_id" in rendered_log
+
+
+def test_create_story_with_existing_title_fails(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that creating a story with an existing title for the same user fails.
     """
     # Mock that a story with the same title already exists for this user
-    crud.get_story_by_title_and_owner = MagicMock(
-        return_value=MagicMock(spec=database.Story))
+    monkeypatch.setattr(
+        crud,
+        "get_story_by_title_and_owner",
+        MagicMock(return_value=MagicMock(spec=database.Story)),
+    )
 
     response = client.post(
         "/api/v1/stories/",
@@ -136,9 +228,10 @@ def test_create_story_with_existing_title_fails(client, db_session_mock, story_c
     assert "already exists" in response.json()["detail"]
 
 
-def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock):
+def test_story_creation_with_character_ids_merges_characters(client, db_session_mock, current_user_mock, monkeypatch):
     """Ensure that when character_ids are provided, existing character data is merged with new main_characters without duplication and reference image paths are preserved."""
     mock_story_id = 42
+    mock_task_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
     existing_character_obj = MagicMock()
@@ -165,7 +258,8 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
         "text_density": "Concise (~30-50 words)"
     }
 
-    crud.get_story_by_title_and_owner = MagicMock(return_value=None)
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner",
+                        MagicMock(return_value=None))
 
     class FakeStory:
         def __init__(self):
@@ -185,38 +279,142 @@ def test_story_creation_with_character_ids_merges_characters(client, db_session_
             self.pages = []
 
     mock_story_db = FakeStory()
-    crud.create_story_db_entry = MagicMock(return_value=mock_story_db)
+    create_story_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "create_story_db_entry", create_story_entry)
+
+    monkeypatch.setattr(
+        crud,
+        "create_story_generation_task",
+        MagicMock(
+            return_value=schemas.StoryGenerationTask(
+                id=mock_task_id,
+                story_id=mock_story_id,
+                user_id=current_user_mock.id,
+                status=schemas.GenerationTaskStatus.PENDING,
+                created_at=now,
+                updated_at=now,
+            )
+        ),
+    )
 
     def _update_story_title(db, story_id, new_title):
         mock_story_db.title = new_title
         mock_story_db.updated_at = datetime.now(UTC)
         return mock_story_db
-    crud.update_story_title = MagicMock(side_effect=_update_story_title)
+    monkeypatch.setattr(crud, "update_story_title",
+                        MagicMock(side_effect=_update_story_title))
 
     filter_mock = MagicMock()
     filter_mock.filter.return_value = filter_mock
     filter_mock.all.return_value = [existing_character_obj]
     db_session_mock.query.return_value = filter_mock
 
-    # NOTE: The synchronous story creation with character merge logic lives at root /stories/ (not /api/v1) in main.py.
-    with patch("backend.ai_services.generate_story_from_chatgpt", return_value={"Title": "Merged Story Final", "Pages": []}):
+    with patch(
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task"
+    ):
         response = client.post(
-            "/stories/",
-            json={"story_input": incoming_payload},
+            "/api/v1/stories/",
+            json=incoming_payload,
             headers={"X-Token": "testtoken"}
         )
-    assert response.status_code in (200, 201), response.text
-    data = response.json()
-    assert data["title"] == "Merged Story Final"
-    returned_names = {c["name"] for c in data.get("main_characters", [])}
+
+    assert response.status_code == 202, response.text
+    assert response.json()["story_id"] == mock_story_id
+
+    story_input_arg = create_story_entry.call_args.args[1]
+    returned_names = {c.name for c in story_input_arg.main_characters}
     assert {"ExistingHero", "NewCompanion"}.issubset(returned_names)
-    existing_entry = next((c for c in data.get(
-        "main_characters", []) if c["name"] == "ExistingHero"), {})
-    assert existing_entry.get(
-        "reference_image_path") == "images/user_1/characters/7/img.png"
+    existing_entry = next(
+        character
+        for character in story_input_arg.main_characters
+        if character.name == "ExistingHero"
+    )
+    assert (
+        existing_entry.reference_image_path
+        == "images/user_1/characters/7/img.png"
+    )
 
 
-def test_get_story_status(client, db_session_mock):
+def test_public_story_creation_merges_selected_character_reference_paths(
+    client,
+    db_session_mock,
+    story_create_input_mock,
+    current_user_mock,
+    monkeypatch,
+):
+    """The live /api/v1 story route should reuse saved character reference images."""
+
+    mock_task_id = str(uuid.uuid4())
+    mock_story_id = 101
+    now = datetime.now(UTC)
+
+    existing_character_obj = MagicMock()
+    existing_character_obj.id = 7
+    existing_character_obj.user_id = current_user_mock.id
+    existing_character_obj.name = "Async Knight"
+    existing_character_obj.description = "Brave reused hero"
+    existing_character_obj.age = 9
+    existing_character_obj.gender = "female"
+    existing_character_obj.clothing_style = "silver armor"
+    existing_character_obj.key_traits = "fearless"
+    existing_character_obj.current_image = MagicMock(
+        file_path="images/user_1/characters/7/img.png"
+    )
+
+    filter_mock = MagicMock()
+    filter_mock.filter.return_value = filter_mock
+    filter_mock.all.return_value = [existing_character_obj]
+    db_session_mock.query.return_value = filter_mock
+
+    mock_story_db = schemas.Story(
+        id=mock_story_id,
+        owner_id=current_user_mock.id,
+        title="[Placeholder]",
+        is_draft=False,
+        genre=story_create_input_mock["genre"],
+        story_outline=story_create_input_mock["story_outline"],
+        main_characters=story_create_input_mock["main_characters"],
+        num_pages=story_create_input_mock["num_pages"],
+        created_at=now,
+        updated_at=now,
+    )
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner",
+                        MagicMock(return_value=None))
+    create_story_entry = MagicMock(return_value=mock_story_db)
+    monkeypatch.setattr(crud, "create_story_db_entry", create_story_entry)
+    monkeypatch.setattr(crud, "create_story_generation_task", MagicMock(return_value=schemas.StoryGenerationTask(
+        id=mock_task_id,
+        story_id=mock_story_id,
+        user_id=current_user_mock.id,
+        status=schemas.GenerationTaskStatus.PENDING,
+        created_at=now,
+        updated_at=now,
+    )))
+
+    response = client.post(
+        "/api/v1/stories/",
+        json={
+            **story_create_input_mock,
+            "character_ids": [existing_character_obj.id],
+        },
+        headers={"X-Token": "testtoken"},
+    )
+
+    assert response.status_code == 202, response.text
+    story_input_arg = create_story_entry.call_args.args[1]
+    merged_character = next(
+        character
+        for character in story_input_arg.main_characters
+        if character.name == "Async Knight"
+    )
+    assert (
+        merged_character.reference_image_path
+        == "images/user_1/characters/7/img.png"
+    )
+
+
+def test_get_story_status(client, db_session_mock, monkeypatch):
     """
     Test polling the generation status of a task.
     """
@@ -232,7 +430,8 @@ def test_get_story_status(client, db_session_mock):
         updated_at=datetime.now(UTC)
     )
 
-    crud.get_story_generation_task = MagicMock(return_value=mock_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=mock_task))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -242,14 +441,50 @@ def test_get_story_status(client, db_session_mock):
     assert response_data["status"] == "in_progress"
     assert response_data["progress"] == 50
     assert response_data["current_step"] == "generating_page_images"
+    assert response_data["attempts"] == 0
 
 
-def test_get_story_status_not_found(client, db_session_mock):
+def test_get_story_status_includes_telemetry_fields_when_enabled(client, db_session_mock, monkeypatch):
+    """Telemetry fields should be serialized on the generation status payload when present."""
+
+    mock_task_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    mock_task = schemas.StoryGenerationTask(
+        id=mock_task_id,
+        story_id=1,
+        user_id=1,
+        status=schemas.GenerationTaskStatus.IN_PROGRESS,
+        progress=50,
+        current_step=schemas.GenerationTaskStep.GENERATING_PAGE_IMAGES,
+        retry_counts_by_page={"1": 2, "3": 1},
+        total_retries=3,
+        failed_pages_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+
+    monkeypatch.setattr(
+        crud,
+        "get_story_generation_task",
+        MagicMock(return_value=mock_task),
+    )
+
+    response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
+
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["retry_counts_by_page"] == {"1": 2, "3": 1}
+    assert response_data["total_retries"] == 3
+    assert response_data["failed_pages_count"] == 1
+
+
+def test_get_story_status_not_found(client, db_session_mock, monkeypatch):
     """
     Test polling for a task that does not exist.
     """
     mock_task_id = str(uuid.uuid4())
-    crud.get_story_generation_task = MagicMock(return_value=None)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=None))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -257,7 +492,7 @@ def test_get_story_status_not_found(client, db_session_mock):
     assert response.json()["detail"] == "Task not found"
 
 
-def test_get_story_status_unauthorized(client, db_session_mock, current_user_mock):
+def test_get_story_status_unauthorized(client, db_session_mock, current_user_mock, monkeypatch):
     """
     Test that a user cannot poll for a task that belongs to another user.
     """
@@ -273,7 +508,8 @@ def test_get_story_status_unauthorized(client, db_session_mock, current_user_moc
         updated_at=datetime.now(UTC)
     )
 
-    crud.get_story_generation_task = MagicMock(return_value=mock_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=mock_task))
 
     response = client.get(f"/api/v1/stories/generation-status/{mock_task_id}")
 
@@ -281,7 +517,7 @@ def test_get_story_status_unauthorized(client, db_session_mock, current_user_moc
     assert response.json()["detail"] == "Not authorized to view this task"
 
 
-def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mock):
+def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mock, monkeypatch):
     """Validate that task lifecycle updates populate started_at, completed_at, duration_ms and attempts."""
     mock_task_id = str(uuid.uuid4())
     now = datetime.now(UTC)
@@ -297,10 +533,15 @@ def test_task_tracking_fields_lifecycle(client, db_session_mock, current_user_mo
         updated_at=now,
     )
     # Simulate DB returning evolving object reference
-    crud.get_story_generation_task = MagicMock(return_value=base_task)
+    monkeypatch.setattr(crud, "get_story_generation_task",
+                        MagicMock(return_value=base_task))
     # Move to in_progress
-    crud.update_story_generation_task = MagicMock(
-        side_effect=lambda db, task_id, **kwargs: _apply_updates(base_task, **kwargs))
+    monkeypatch.setattr(
+        crud,
+        "update_story_generation_task",
+        MagicMock(side_effect=lambda db, task_id, **
+                  kwargs: _apply_updates(base_task, **kwargs)),
+    )
 
     # Transition to in_progress
     crud.update_story_generation_task(
@@ -357,6 +598,17 @@ def _apply_updates(task_obj, status=None, progress=None, current_step=None, erro
         task_obj.last_error = error_message
     task_obj.updated_at = now_ts
     return task_obj
+
+
+def test_format_task_error_message_unwraps_retry_error():
+    """RetryError should expose the last underlying exception."""
+
+    from backend.story_generation_service import _format_task_error_message
+
+    retry_error = RetryError(MagicMock(exception=MagicMock(
+        return_value=ValueError("moderation_blocked"))))
+
+    assert _format_task_error_message(retry_error) == "moderation_blocked"
 
 
 @pytest.mark.asyncio
@@ -432,9 +684,17 @@ async def test_generate_story_as_background_task_passes_correct_references():
 
                 # Assert
                 # Check that generate_image_for_page was called with the correct arguments for each page
+                text_guidance = (
+                    ". Leave clear, readable visual space in the bottom area "
+                    "of the composition for overlaid story text."
+                )
                 expected_calls = [
                     call(
-                        page_content="A vibrant image of Captain Eva and Robot X-1 on the bridge of a starship, looking out at a nebula.",
+                        page_content=(
+                            "A vibrant image of Captain Eva and Robot X-1 on "
+                            "the bridge of a starship, looking out at a "
+                            f"nebula.{text_guidance}"
+                        ),
                         style_reference="Sci-Fi Concept Art",
                         db=db_session_mock,
                         user_id=user_id,
@@ -447,7 +707,10 @@ async def test_generate_story_as_background_task_passes_correct_references():
                         image_path_for_db=ANY,
                     ),
                     call(
-                        page_content="The mysterious Alien Zorp emerging from a shadowy corner of the cargo bay.",
+                        page_content=(
+                            "The mysterious Alien Zorp emerging from a shadowy "
+                            f"corner of the cargo bay.{text_guidance}"
+                        ),
                         style_reference="Sci-Fi Concept Art",
                         db=db_session_mock,
                         user_id=user_id,
@@ -462,3 +725,676 @@ async def test_generate_story_as_background_task_passes_correct_references():
                 ]
                 mock_ai_services.generate_image_for_page.assert_has_calls(
                     expected_calls, any_order=True)
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_skips_existing_reference_images():
+    """Saved reference images should be reused instead of regenerated."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-reuse"
+    story_id = 2
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Reused Characters",
+        genre="Fantasy",
+        story_outline="A reused hero goes on an adventure.",
+        main_characters=[
+            schemas.CharacterDetail(
+                name="Captain Eva",
+                description="Brave leader",
+                reference_image_path="images/user_1/characters/7/img.png",
+            )
+        ],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock()
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                    "Title": "Reused Characters",
+                    "Pages": []
+                })
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(task_id, story_id, user_id, story_input)
+
+                mock_ai_services.generate_character_reference_image.assert_not_called()
+                story_content_input = mock_ai_services.generate_story_from_chatgpt.call_args.args[
+                    0]
+                assert story_content_input['main_characters'][0]['reference_image_path'] == (
+                    "images/user_1/characters/7/img.png"
+                )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_tolerates_missing_page_images():
+    """A missing page image should not fail the background story task."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-456"
+    story_id = 9
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Blocked Image Story",
+        genre="Fantasy",
+        story_outline="A calm walk through the forest.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                    "Title": "Blocked Image Story",
+                    "Pages": [
+                        {
+                            "Page_number": 1,
+                            "Text": "Mina walks through the forest.",
+                            "Image_description": "Mina walking through the forest.",
+                            "Characters_in_scene": ["Mina"],
+                        }
+                    ],
+                })
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value=None)
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input)
+
+                mock_crud.update_story_with_generated_content.assert_called_once_with(
+                    db_session_mock,
+                    story_id,
+                    {
+                        "Title": "Blocked Image Story",
+                        "Pages": [
+                            {
+                                "Page_number": 1,
+                                "Text": "Mina walks through the forest.",
+                                "Image_description": "Mina walking through the forest.",
+                                "Characters_in_scene": ["Mina"],
+                                "image_url": None,
+                            }
+                        ],
+                    },
+                )
+                mock_crud.update_story_generation_task.assert_any_call(
+                    db_session_mock,
+                    task_id,
+                    status=schemas.GenerationTaskStatus.COMPLETED,
+                    current_step=schemas.GenerationTaskStep.FINALIZING,
+                )
+                mock_crud.update_story_generation_task.assert_any_call(
+                    db_session_mock,
+                    task_id,
+                    error_message="Completed with 1 page image(s) missing due to generation failures.",
+                )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_collects_telemetry_when_enabled():
+    """Telemetry-enabled generation should persist retry/failure counts and increment counters."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-telemetry-on"
+    story_id = 12
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Telemetry Story",
+        genre="Fantasy",
+        story_outline="A story with retried image generation.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.get_settings', return_value=SimpleNamespace(enable_telemetry=True, retry_max_attempts=2, retry_backoff_base=0.0)):
+            with patch('backend.story_generation_service.asyncio.sleep', new=AsyncMock()) as mock_sleep:
+                with patch('backend.story_generation_service.PAGE_IMAGE_RETRIES_TOTAL') as mock_retry_counter:
+                    with patch('backend.story_generation_service.PAGE_IMAGE_FAILURES_TOTAL') as mock_failure_counter:
+                        with patch('backend.story_generation_service.crud') as mock_crud:
+                            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                                mock_ai_services.generate_character_reference_image = AsyncMock(
+                                    return_value={"name": "Mina", "reference_image_path": None}
+                                )
+                                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                                    "Title": "Telemetry Story",
+                                    "Pages": [
+                                        {
+                                            "Page_number": 1,
+                                            "Text": "Mina walks through the forest.",
+                                            "Image_description": "Mina walking through the forest.",
+                                            "Characters_in_scene": ["Mina"],
+                                        }
+                                    ],
+                                })
+                                mock_ai_services.generate_image_for_page = AsyncMock(
+                                    side_effect=[None, None]
+                                )
+
+                                from backend.story_generation_service import generate_story_as_background_task
+
+                                await generate_story_as_background_task(
+                                    task_id, story_id, user_id, story_input)
+
+                                mock_sleep.assert_awaited_once()
+                                mock_retry_counter.inc.assert_called_once_with()
+                                mock_failure_counter.inc.assert_called_once_with()
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=0,
+                                )
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=1,
+                                )
+                                mock_crud.update_story_generation_task.assert_any_call(
+                                    db_session_mock,
+                                    task_id,
+                                    status=schemas.GenerationTaskStatus.COMPLETED,
+                                    current_step=schemas.GenerationTaskStep.FINALIZING,
+                                    retry_counts_by_page={"1": 1},
+                                    total_retries=1,
+                                    failed_pages_count=1,
+                                )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_skips_telemetry_updates_when_disabled():
+    """Telemetry-disabled generation should not emit retry/failure telemetry updates."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-telemetry-off"
+    story_id = 13
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="No Telemetry Story",
+        genre="Fantasy",
+        story_outline="A story without telemetry tracking.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.get_settings', return_value=SimpleNamespace(enable_telemetry=False, retry_max_attempts=2, retry_backoff_base=0.0)):
+            with patch('backend.story_generation_service.asyncio.sleep', new=AsyncMock()):
+                with patch('backend.story_generation_service.PAGE_IMAGE_RETRIES_TOTAL') as mock_retry_counter:
+                    with patch('backend.story_generation_service.PAGE_IMAGE_FAILURES_TOTAL') as mock_failure_counter:
+                        with patch('backend.story_generation_service.crud') as mock_crud:
+                            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                                mock_ai_services.generate_character_reference_image = AsyncMock(
+                                    return_value={"name": "Mina", "reference_image_path": None}
+                                )
+                                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                                    "Title": "No Telemetry Story",
+                                    "Pages": [
+                                        {
+                                            "Page_number": 1,
+                                            "Text": "Mina walks through the forest.",
+                                            "Image_description": "Mina walking through the forest.",
+                                            "Characters_in_scene": ["Mina"],
+                                        }
+                                    ],
+                                })
+                                mock_ai_services.generate_image_for_page = AsyncMock(
+                                    side_effect=[None, None]
+                                )
+
+                                from backend.story_generation_service import generate_story_as_background_task
+
+                                await generate_story_as_background_task(
+                                    task_id, story_id, user_id, story_input)
+
+                                mock_retry_counter.inc.assert_not_called()
+                                mock_failure_counter.inc.assert_not_called()
+                                telemetry_calls = [
+                                    call
+                                    for call in mock_crud.update_story_generation_task.call_args_list
+                                    if any(
+                                        key in call.kwargs
+                                        for key in (
+                                            "retry_counts_by_page",
+                                            "total_retries",
+                                            "failed_pages_count",
+                                        )
+                                    )
+                                ]
+                                assert telemetry_calls == []
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_offloads_sync_story_generation():
+    """Story text generation should be moved off the event loop thread."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-offload"
+    story_id = 11
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Offloaded Story",
+        genre="Fantasy",
+        story_outline="A story generated off the loop.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = MagicMock(
+                    return_value={
+                        "Title": "Offloaded Story",
+                        "Pages": [],
+                    }
+                )
+                mock_ai_services.generate_image_for_page = AsyncMock()
+
+                with patch(
+                    'backend.story_generation_service.asyncio.to_thread',
+                    new=AsyncMock(
+                        side_effect=lambda func, *args, **kwargs: func(
+                            *args, **kwargs
+                        )
+                    ),
+                ) as mock_to_thread:
+                    from backend.story_generation_service import generate_story_as_background_task
+
+                    await generate_story_as_background_task(
+                        task_id, story_id, user_id, story_input
+                    )
+
+                story_content_input = mock_ai_services.generate_story_from_chatgpt.call_args.args[
+                    0
+                ]
+                mock_to_thread.assert_awaited_once_with(
+                    mock_ai_services.generate_story_from_chatgpt,
+                    story_content_input,
+                )
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_marks_failed_story_as_draft():
+    """A failed generation should leave the story as a draft for retry."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-failure-cleanup"
+    story_id = 12
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Broken Story",
+        genre="Fantasy",
+        story_outline="A generation that fails halfway.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    failed_story = MagicMock()
+    failed_story.is_draft = False
+    failed_story.generated_at = datetime.now(UTC)
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = MagicMock(
+                    side_effect=RuntimeError("text generation failed")
+                )
+                mock_crud.get_story.return_value = failed_story
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input
+                )
+
+                mock_crud.update_story_generation_task.assert_any_call(
+                    db_session_mock,
+                    task_id,
+                    status=schemas.GenerationTaskStatus.FAILED,
+                    error_message="text generation failed",
+                    current_step=schemas.GenerationTaskStep.FINALIZING,
+                )
+                mock_crud.get_story.assert_called_once_with(
+                    db_session_mock,
+                    story_id,
+                    user_id,
+                )
+                assert failed_story.is_draft is True
+                assert failed_story.generated_at is None
+                db_session_mock.rollback.assert_called_once()
+                db_session_mock.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_cleans_saved_content_on_post_save_failure():
+    """A failure after saving generated content should restore the story shell."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-post-save-failure"
+    story_id = 14
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="",
+        genre="Fantasy",
+        story_outline="A generation fails after saving content.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    failed_story = MagicMock()
+    failed_story.is_draft = False
+    failed_story.generated_at = datetime.now(UTC)
+    failed_story.title = "[AI Title Pending...]"
+    failed_story.pages = []
+
+    saved_story_content = {
+        "Title": "Generated Title",
+        "Pages": [
+            {
+                "Page_number": 1,
+                "Text": "Generated page text.",
+                "Image_description": "Generated image.",
+                "Characters_in_scene": ["Mina"],
+                "image_url": "images/user_1/story_14/page_1.png",
+            }
+        ],
+    }
+
+    def _persist_generated_content(_db, _story_id, story_content):
+        failed_story.title = story_content["Title"]
+        failed_story.pages = list(story_content["Pages"])
+        failed_story.generated_at = datetime.now(UTC)
+        return failed_story
+
+    def _update_progress(_db, _task_id, progress, _step):
+        if progress == 100:
+            raise RuntimeError("final task update failed")
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(
+                    return_value=saved_story_content
+                )
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value="images/user_1/story_14/page_1.png"
+                )
+                mock_crud.update_story_with_generated_content.side_effect = (
+                    _persist_generated_content
+                )
+                mock_crud.update_story_generation_task_progress.side_effect = (
+                    _update_progress
+                )
+                mock_crud.get_story.return_value = failed_story
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input
+                )
+
+                assert failed_story.is_draft is True
+                assert failed_story.generated_at is None
+                assert failed_story.title == "[AI Title Pending...]"
+                assert failed_story.pages == []
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_persists_failed_task_and_story_cleanup(
+    db_session: Session,
+):
+    """A post-save failure should persist failed task state and clean story rows."""
+
+    user = (
+        db_session.query(database.User)
+        .filter(database.User.username == "user@example.com")
+        .first()
+    )
+    assert user is not None
+    user_id = user.id
+
+    story_input = schemas.StoryCreate(
+        title="Retryable Story",
+        genre="Fantasy",
+        story_outline="A generation fails after content is saved.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+    )
+
+    story = database.Story(
+        title=story_input.title,
+        genre=story_input.genre,
+        story_outline=story_input.story_outline,
+        main_characters=[
+            character.model_dump(exclude_none=True)
+            for character in story_input.main_characters
+        ],
+        num_pages=story_input.num_pages,
+        image_style=getattr(story_input.image_style, "value", story_input.image_style),
+        word_to_picture_ratio=getattr(
+            story_input.word_to_picture_ratio,
+            "value",
+            story_input.word_to_picture_ratio,
+        ),
+        text_density=getattr(
+            story_input.text_density,
+            "value",
+            story_input.text_density,
+        ),
+        owner_id=user_id,
+        is_draft=False,
+        generated_at=datetime.now(UTC),
+        editor_settings=dict(schemas.EDITOR_DEFAULTS),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+    story_id = story.id
+
+    task = crud.create_story_generation_task(db_session, story_id, user_id)
+    task_id = task.id
+    real_update_task_progress = crud.update_story_generation_task_progress
+
+    def _fail_after_final_progress(db, task_id, progress, current_step):
+        updated_task = real_update_task_progress(
+            db,
+            task_id,
+            progress,
+            current_step,
+        )
+        if progress == 100:
+            raise RuntimeError("final task update failed")
+        return updated_task
+
+    generated_story_content = {
+        "Title": "Generated Title",
+        "Pages": [
+            {
+                "Page_number": 1,
+                "Text": "Generated page text.",
+                "Image_description": "Generated image.",
+                "Characters_in_scene": ["Mina"],
+                "image_url": "images/user_1/story_1/page_1.png",
+            }
+        ],
+    }
+
+    with patch(
+        "backend.story_generation_service.database.get_db",
+        return_value=iter([db_session]),
+    ):
+        with patch(
+            "backend.story_generation_service.os.makedirs",
+            return_value=None,
+        ):
+            with patch(
+                "backend.story_generation_service.ai_services"
+                ".generate_character_reference_image",
+                new=AsyncMock(
+                    return_value={
+                        "name": "Mina",
+                        "reference_image_path": None,
+                    }
+                ),
+            ):
+                with patch(
+                    "backend.story_generation_service.ai_services"
+                    ".generate_story_from_chatgpt",
+                    new=MagicMock(return_value=generated_story_content),
+                ):
+                    with patch(
+                        "backend.story_generation_service.ai_services"
+                        ".generate_image_for_page",
+                        new=AsyncMock(
+                            return_value=(
+                                "images/user_1/story_1/page_1.png"
+                            )
+                        ),
+                    ):
+                        with patch(
+                            "backend.story_generation_service.crud"
+                            ".update_story_generation_task_progress",
+                            side_effect=_fail_after_final_progress,
+                        ):
+                            from backend.story_generation_service import (
+                                generate_story_as_background_task,
+                            )
+
+                            await generate_story_as_background_task(
+                                task_id,
+                                story_id,
+                                user_id,
+                                story_input,
+                            )
+
+    db_session.expire_all()
+
+    persisted_task = crud.get_story_generation_task(db_session, task_id)
+    persisted_story = crud.get_story(db_session, story_id, user_id)
+
+    assert persisted_task is not None
+    assert persisted_task.status == schemas.GenerationTaskStatus.FAILED.value
+    assert persisted_task.error_message == "final task update failed"
+    assert persisted_task.last_error == "final task update failed"
+    assert persisted_task.completed_at is not None
+
+    assert persisted_story is not None
+    assert persisted_story.is_draft is True
+    assert persisted_story.generated_at is None
+    assert persisted_story.title == story_input.title
+    assert persisted_story.pages == []
+
+
+@pytest.mark.asyncio
+async def test_generate_story_as_background_task_uses_wizard_text_position_guidance():
+    """Initial page image generation should include wizard text-placement guidance."""
+
+    db_session_mock = MagicMock(spec=Session)
+    task_id = "test-task-layout-guidance"
+    story_id = 10
+    user_id = 1
+    story_input = schemas.StoryCreate(
+        title="Guided Layout Story",
+        genre="Fantasy",
+        story_outline="A ship sails through a storm.",
+        main_characters=[schemas.CharacterDetail(name="Mina")],
+        num_pages=1,
+        image_style=schemas.ImageStyle.DEFAULT,
+        word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
+        text_density=schemas.TextDensity.STANDARD,
+        editor_settings=schemas.StoryEditorSettings(text_position="top"),
+    )
+
+    with patch('backend.story_generation_service.database.get_db') as mock_get_db:
+        mock_get_db.return_value = iter([db_session_mock])
+
+        with patch('backend.story_generation_service.crud') as mock_crud:
+            with patch('backend.story_generation_service.ai_services') as mock_ai_services:
+                mock_ai_services.generate_character_reference_image = AsyncMock(
+                    return_value={"name": "Mina", "reference_image_path": None}
+                )
+                mock_ai_services.generate_story_from_chatgpt = AsyncMock(return_value={
+                    "Title": "Guided Layout Story",
+                    "Pages": [
+                        {
+                            "Page_number": 1,
+                            "Text": "Mina sails through the storm.",
+                            "Image_description": "A ship in rough seas.",
+                            "Characters_in_scene": ["Mina"],
+                        }
+                    ],
+                })
+                mock_ai_services.generate_image_for_page = AsyncMock(
+                    return_value="images/user_1/story_10/page_1.png"
+                )
+
+                from backend.story_generation_service import generate_story_as_background_task
+
+                await generate_story_as_background_task(
+                    task_id, story_id, user_id, story_input)
+
+                page_content = mock_ai_services.generate_image_for_page.await_args.kwargs[
+                    "page_content"
+                ]
+                assert "top area" in page_content.lower()

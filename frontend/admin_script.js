@@ -1,15 +1,34 @@
 // Admin Panel Client-Side Logic - admin_script.js
 console.log("admin_script.js loaded");
 
-// Determine API_BASE_URL (same as main script.js)
-let API_BASE_URL;
-if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    API_BASE_URL = "http://127.0.0.1:8000"; // Local development
-} else {
-    API_BASE_URL = "https://story-gen-for-work.onrender.com"; // Deployed environment
+function resolveApiBaseUrl() {
+    if (typeof window.resolveStoryGeneratorApiBaseUrl === "function") {
+        return window.resolveStoryGeneratorApiBaseUrl();
+    }
+
+    if (
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+    ) {
+        return "http://127.0.0.1:8000";
+    }
+
+    return window.location.origin.replace(/\/$/, "");
 }
 
+// Determine API_BASE_URL (same as main script.js)
+let API_BASE_URL = resolveApiBaseUrl();
+
 document.addEventListener("DOMContentLoaded", function () {
+    const DIALOG_FOCUSABLE_SELECTOR = [
+        'button:not([disabled])',
+        '[href]',
+        'input:not([type="hidden"]):not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])'
+    ].join(', ');
+
     const navLogout = document.getElementById("nav-logout");
     if (navLogout) {
         navLogout.addEventListener("click", () => {
@@ -21,6 +40,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminMessageArea = document.getElementById("admin-message-area");
     const adminViewPanel = document.getElementById("admin-view-panel");
     const adminSidebarLinks = document.querySelectorAll("#admin-sidebar ul li a");
+    let adminDialogSequence = 0;
+
+    ensureAdminStatusRegion(adminMessageArea);
 
     const authToken = localStorage.getItem("authToken");
 
@@ -42,6 +64,209 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     let currentAdminUser = null;
+
+    function getDialogFocusableElements(dialog) {
+        return Array.from(dialog.querySelectorAll(DIALOG_FOCUSABLE_SELECTOR)).filter(
+            (element) => !element.disabled && element.getAttribute('aria-hidden') !== 'true'
+        );
+    }
+
+    function closeAdminDialog(target, options = {}) {
+        const { restoreFocus = true } = options;
+        const dialog = typeof target === 'string'
+            ? document.getElementById(target)
+            : target;
+
+        if (!dialog) {
+            return;
+        }
+
+        const dialogState = dialog.__adminDialogState || {};
+        if (dialogState.onKeydown) {
+            dialog.removeEventListener('keydown', dialogState.onKeydown);
+        }
+
+        const closeResult = dialogState.closeResult;
+        const onClose = dialogState.onClose;
+
+        dialog.remove();
+
+        if (
+            restoreFocus
+            && dialogState.triggerElement
+            && typeof dialogState.triggerElement.focus === 'function'
+            && document.contains(dialogState.triggerElement)
+        ) {
+            dialogState.triggerElement.focus();
+        }
+
+        if (typeof onClose === 'function') {
+            onClose(closeResult);
+        }
+    }
+
+    function initializeAdminDialog(modalId, options = {}) {
+        const { triggerElement = null, initialFocusSelector = null } = options;
+        const dialog = document.getElementById(modalId);
+
+        if (!dialog) {
+            return { close: () => {} };
+        }
+
+        const titleElement = dialog.querySelector('h2');
+        if (titleElement && !titleElement.id) {
+            titleElement.id = `${modalId}-title`;
+        }
+
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        if (titleElement?.id) {
+            dialog.setAttribute('aria-labelledby', titleElement.id);
+        }
+        dialog.tabIndex = -1;
+
+        const onKeydown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeAdminDialog(dialog);
+                return;
+            }
+
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const focusableElements = getDialogFocusableElements(dialog);
+            if (focusableElements.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+            }
+
+            const firstElement = focusableElements[0];
+            const lastElement = focusableElements[focusableElements.length - 1];
+            const activeElement = document.activeElement;
+
+            if (event.shiftKey && (activeElement === firstElement || activeElement === dialog)) {
+                event.preventDefault();
+                lastElement.focus();
+                return;
+            }
+
+            if (!event.shiftKey && activeElement === lastElement) {
+                event.preventDefault();
+                firstElement.focus();
+            }
+        };
+
+        dialog.addEventListener('keydown', onKeydown);
+        dialog.__adminDialogState = {
+            onKeydown,
+            triggerElement,
+        };
+
+        dialog.querySelectorAll('[data-dialog-close="true"]').forEach((button) => {
+            button.addEventListener('click', () => closeAdminDialog(dialog));
+        });
+
+        const initialFocusElement = initialFocusSelector
+            ? dialog.querySelector(initialFocusSelector)
+            : null;
+        const fallbackFocusElement = getDialogFocusableElements(dialog)[0];
+        (initialFocusElement || fallbackFocusElement || dialog).focus();
+
+        return {
+            close: (closeOptions = {}) => closeAdminDialog(dialog, closeOptions),
+        };
+    }
+
+    function showAdminActionDialog(options = {}) {
+        const {
+            title,
+            message,
+            triggerElement = null,
+            confirmText = 'Confirm',
+            cancelText = 'Cancel',
+            confirmClass = 'admin-button-danger',
+            showCancel = true,
+            defaultResult = false,
+            descriptionHtml = null,
+        } = options;
+
+        adminDialogSequence += 1;
+        const modalId = `adminActionDialog-${adminDialogSequence}`;
+        const descriptionId = `${modalId}-description`;
+        const confirmButtonId = `${modalId}-confirm`;
+        const cancelButtonId = `${modalId}-cancel`;
+        const bodyHtml = descriptionHtml
+            || `<p id="${descriptionId}">${escapeHTML(message || '')}</p>`;
+
+        const modalHTML = `
+            <div id="${modalId}" class="modal" style="display:block;">
+                <div class="modal-content">
+                    <button type="button" class="close-button" data-dialog-close="true" aria-label="Close dialog">&times;</button>
+                    <h2 id="${modalId}-title">${escapeHTML(title || 'Confirm action')}</h2>
+                    <div class="admin-form">${bodyHtml}</div>
+                    <div class="modal-actions">
+                        ${showCancel ? `<button type="button" id="${cancelButtonId}" class="admin-button-secondary" data-dialog-close="true">${escapeHTML(cancelText)}</button>` : ''}
+                        <button type="button" id="${confirmButtonId}" class="${confirmClass}">${escapeHTML(confirmText)}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const dialog = document.getElementById(modalId);
+        const descriptionElement = dialog.querySelector(`#${descriptionId}`);
+        if (descriptionElement) {
+            dialog.setAttribute('aria-describedby', descriptionId);
+        }
+
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: showCancel
+                ? `#${cancelButtonId}`
+                : `#${confirmButtonId}`,
+        });
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const settle = (result) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                resolve(result);
+            };
+
+            dialog.__adminDialogState = {
+                ...dialog.__adminDialogState,
+                closeResult: defaultResult,
+                onClose: (result) => settle(result ?? defaultResult),
+            };
+
+            const confirmButton = document.getElementById(confirmButtonId);
+            confirmButton?.addEventListener('click', () => {
+                dialog.__adminDialogState.closeResult = true;
+                dialogController.close();
+            });
+        });
+    }
+
+    function confirmAdminAction(options = {}) {
+        return showAdminActionDialog(options);
+    }
+
+    function showAdminNoticeDialog(options = {}) {
+        return showAdminActionDialog({
+            ...options,
+            confirmText: options.confirmText || 'Close',
+            confirmClass: options.confirmClass || 'admin-button-secondary',
+            showCancel: false,
+            defaultResult: true,
+        });
+    }
+
     async function checkAdminRole() {
         try {
             const user = await apiRequest("/api/v1/users/me/");
@@ -158,19 +383,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
         container.querySelectorAll('.user-edit-details-btn').forEach(button => {
             button.addEventListener('click', (event) => {
-                const userId = parseInt(event.target.dataset.userId);
-                showEditUserDetailsModal(userId);
+                const triggerButton = event.currentTarget;
+                const userId = parseInt(triggerButton.dataset.userId, 10);
+                showEditUserDetailsModal(userId, triggerButton);
             });
         });
 
         container.querySelectorAll('.user-delete-btn').forEach(button => {
             button.addEventListener('click', async (event) => {
-                const userId = parseInt(event.target.dataset.userId);
+                const triggerButton = event.currentTarget;
+                const userId = parseInt(triggerButton.dataset.userId, 10);
                 if (currentAdminUser && currentAdminUser.id === userId) {
                     displayAdminMessage("You cannot delete your own account.", "error");
                     return;
                 }
-                const confirmed = confirm(`Delete user ID ${userId}? This will deactivate and mark the user as deleted.`);
+                const confirmed = await confirmAdminAction({
+                    title: `Delete user ${userId}?`,
+                    message: 'This will deactivate the account and mark it as deleted.',
+                    triggerElement: triggerButton,
+                    confirmText: 'Delete user',
+                });
                 if (!confirmed) return;
                 try {
                     await apiRequest(`/api/v1/admin/management/users/${userId}`, 'DELETE');
@@ -187,11 +419,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // --- MODAL for User Details Edit ---
-    async function showEditUserDetailsModal(userId) {
+    async function showEditUserDetailsModal(userId, triggerElement = null) {
         const modalId = 'editUserDetailsModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         let currentUserData;
@@ -225,8 +457,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id=\"${modalId}\" class=\"modal\" style=\"display:block;\">
                 <div class=\"modal-content\">
-                    <span class=\"close-button\" onclick=\"document.getElementById(\'${modalId}\').remove();\">&times;</span>
-                    <h2>Edit User Details: ${escapeHTML(username)} (ID: ${userId})</h2>
+                    <button type=\"button\" class=\"close-button\" data-dialog-close=\"true\" aria-label=\"Close dialog\">&times;</button>
+                    <h2 id=\"${modalId}-title\">Edit User Details: ${escapeHTML(username)} (ID: ${userId})</h2>
                     <form id=\"editUserDetailsForm\" class=\"admin-form\">
                         <input type=\"hidden\" name=\"user_id\" value=\"${userId}\">
                         <div class=\"form-group\">
@@ -250,7 +482,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         </div>
                         <div class=\"modal-actions\">
                             <button type=\"submit\" class=\"admin-button-success\">Save Changes</button>
-                            <button type=\"button\" class=\"admin-button-secondary\" onclick=\"document.getElementById('${modalId}').remove();\">Cancel</button>
+                            <button type=\"button\" class=\"admin-button-secondary\" data-dialog-close=\"true\">Cancel</button>
                         </div>
                     </form>
                 </div>
@@ -258,6 +490,10 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#edit_username',
+        });
         const form = document.getElementById('editUserDetailsForm');
         form.onsubmit = async (e) => {
             e.preventDefault();
@@ -275,7 +511,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (Object.keys(payload).length === 0) {
                 displayAdminMessage("No changes detected.", "info");
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 return;
             }
 
@@ -310,16 +546,17 @@ document.addEventListener("DOMContentLoaded", function () {
         setupDynamicContentTabs();
         await populateListsForManagement();
         await populateListSelectorForItems();
-        // Indicate the section is ready
         displayAdminMessage("Dynamic content loaded.", "success");
 
-        document.getElementById('add-new-list-btn').addEventListener('click', () => showAddEditDynamicListModal());
+        document.getElementById('add-new-list-btn').addEventListener('click', (event) => {
+            showAddEditDynamicListModal(null, event.currentTarget);
+        });
 
         const addNewItemBtn = document.getElementById('add-new-item-btn');
         addNewItemBtn.addEventListener('click', () => {
             const selectedList = document.getElementById('select-list-for-items').value;
             if (selectedList) {
-                showAddEditDynamicListItemModal(null, selectedList);
+                showAddEditDynamicListItemModal(null, selectedList, addNewItemBtn);
             } else {
                 displayAdminMessage('Please select a list first.', 'warning');
             }
@@ -348,7 +585,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const targetTab = link.dataset.tab;
                 tabContents.forEach(content => {
-                    // Corrected ID matching: e.g., targetTab 'manage-lists' -> content.id 'dynamic-content-lists-view'
                     if (content.id === `dynamic-content-${targetTab.replace('manage-', '')}-view`) {
                         content.classList.add('active');
                     } else {
@@ -407,8 +643,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById('moderation-table-container');
         container.innerHTML = '<p>Loading stories...</p>';
         try {
-            const items = await apiRequest(`/api/v1/admin/moderation/stories?${params.toString()}`, 'GET');
-            renderModerationTable(items);
+            const data = await apiRequest(`/api/v1/admin/moderation/stories?${params.toString()}`, 'GET');
+            renderModerationTable(data.items ?? []);
         } catch (err) {
             console.error('Failed to load stories:', err);
             container.innerHTML = '<p class="error-message">Failed to load stories.</p>';
@@ -473,8 +709,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         container.querySelectorAll('.story-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                const sid = parseInt(e.target.dataset.storyId);
-                const confirmed = confirm(`Delete story ${sid}? This will mark it as deleted.`);
+                const triggerButton = e.currentTarget;
+                const sid = parseInt(triggerButton.dataset.storyId, 10);
+                const confirmed = await confirmAdminAction({
+                    title: `Delete story ${sid}?`,
+                    message: 'This will soft-delete the story and remove it from the moderation list.',
+                    triggerElement: triggerButton,
+                    confirmText: 'Delete story',
+                });
                 if (!confirmed) return;
                 try {
                     await apiRequest(`/api/v1/admin/moderation/stories/${sid}`, 'DELETE');
@@ -625,6 +867,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const filterInvert = document.getElementById("filter-invert");
         const applyFilterBtn = document.getElementById("apply-filter-button");
         const clearFilterBtn = document.getElementById("clear-filter-button");
+        let rawLogContent = "";
 
         // Timers must be declared before any checks to avoid TDZ errors
         let statsTimer = null;
@@ -786,6 +1029,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const file = document.getElementById("log-file-select").value;
             const tail = Math.max(10, Math.min(5000, parseInt(document.getElementById("log-tail-lines").value || "1000", 10)));
             if (!file) {
+                rawLogContent = "";
                 document.getElementById("log-content").textContent = "Select a log file to view.";
                 return;
             }
@@ -801,11 +1045,13 @@ document.addEventListener("DOMContentLoaded", function () {
                     throw new Error(txt || `HTTP ${response.status}`);
                 }
                 const text = await response.text();
-                document.getElementById("log-content").textContent = text || "(no content)";
+                rawLogContent = text || "(no content)";
+                document.getElementById("log-content").textContent = rawLogContent;
                 applyLogFilter();
                 if (document.getElementById("follow-tail").checked) maybeScrollLogToBottom();
             } catch (error) {
                 console.error("Failed to fetch log content:", error);
+                rawLogContent = "";
                 document.getElementById("log-content").textContent = `Error loading log: ${error.message}`;
                 displayAdminMessage("Failed to load log content: " + error.message, "error");
             }
@@ -831,14 +1077,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function applyLogFilter() {
-            const raw = document.getElementById('log-content').textContent || '';
             const query = filterInput.value;
             if (!query) {
-                // Show raw
-                document.getElementById('log-content').textContent = raw;
+                document.getElementById('log-content').textContent = rawLogContent;
                 return;
             }
-            let lines = raw.split(/\n/);
+            let lines = rawLogContent.split(/\n/);
             let matcher;
             if (filterRegex.checked) {
                 try {
@@ -954,9 +1198,9 @@ document.addEventListener("DOMContentLoaded", function () {
             // Add event listeners for the new "Edit" buttons
             container.querySelectorAll('.edit-dynamic-list-item-btn').forEach(button => {
                 button.addEventListener('click', (e) => {
-                    const itemId = parseInt(e.target.dataset.itemId);
-                    // This function now handles edit, delete, and active status within the modal
-                    window.adminScript.showAddEditDynamicListItemModal(itemId);
+                    const triggerButton = e.currentTarget;
+                    const itemId = parseInt(triggerButton.dataset.itemId, 10);
+                    window.adminScript.showAddEditDynamicListItemModal(itemId, null, triggerButton);
                 });
             });
 
@@ -968,7 +1212,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // MODAL for Dynamic List (Add/Edit/Delete)
-    function showAddEditDynamicListModal(listName = null) {
+    function showAddEditDynamicListModal(listName = null, triggerElement = null) {
         const isEdit = listName !== null;
         let currentDescription = '';
         let currentListLabel = ''; // Added for list_label
@@ -976,7 +1220,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const modalId = 'dynamicListModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         // Modal message area
@@ -985,8 +1229,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
-                    <span class="close-button" onclick="document.getElementById('${modalId}').remove();">&times;</span>
-                    <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List</h2>
+                    <button type="button" class="close-button" data-dialog-close="true" aria-label="Close dialog">&times;</button>
+                    <h2 id="${modalId}-title">${isEdit ? 'Edit' : 'Add'} Dynamic List</h2>
                     <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListForm" class="admin-form">
                         <div class="form-group">
@@ -1004,13 +1248,17 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="modal-actions">
                             <button type="submit" id="saveDynamicListButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create List'}</button>
                             ${isEdit ? `<button type="button" id="deleteDynamicListButton" class="admin-button-danger">Delete List</button>` : ''}
-                            <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" onclick="document.getElementById('${modalId}').remove();">Cancel</button>
+                            <button type="button" id="cancelDynamicListModalButton" class="admin-button-secondary" data-dialog-close="true">Cancel</button>
                         </div>
                     </form>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#dl_list_name:not([readonly]), #dl_list_label, #dl_description, #saveDynamicListButton',
+        });
 
         const form = document.getElementById('dynamicListForm');
         const descriptionTextarea = document.getElementById('dl_description');
@@ -1037,11 +1285,17 @@ document.addEventListener("DOMContentLoaded", function () {
             const deleteButton = document.getElementById('deleteDynamicListButton');
             if (deleteButton) { // Ensure delete button exists (it should in edit mode)
                 deleteButton.addEventListener('click', async () => {
-                    if (!confirm(`Are you sure you want to delete the list \"${escapeHTML(listName)}\" and all its items? This cannot be undone.`)) return;
+                    const confirmed = await confirmAdminAction({
+                        title: `Delete list '${listName}'?`,
+                        message: 'This will permanently remove the list and all of its items.',
+                        triggerElement: deleteButton,
+                        confirmText: 'Delete list',
+                    });
+                    if (!confirmed) return;
                     try {
                         await apiRequest(`/api/v1/admin/dynamic-lists/${listName}`, 'DELETE');
                         displayAdminMessage(`List '${escapeHTML(listName)}' deleted successfully.`, 'success'); // Global message
-                        document.getElementById(modalId).remove();
+                        dialogController.close();
                         await populateListsForManagement();
                         await populateListSelectorForItems(); // Refresh selector in items tab
                         // Clear items view if the deleted list was selected
@@ -1081,7 +1335,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     await apiRequest("/api/v1/admin/dynamic-lists/", 'POST', data);
                     displayAdminMessage(`List '${escapeHTML(data.list_name)}' created.`, 'success'); // Global message
                 }
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 await populateListsForManagement();
                 await populateListSelectorForItems(); // Refresh selector in items tab
             } catch (error) {
@@ -1096,7 +1350,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // MODAL for Dynamic List Item (Add/Edit)
-    async function showAddEditDynamicListItemModal(itemId = null, listNameForNewItem = null) {
+    async function showAddEditDynamicListItemModal(itemId = null, listNameForNewItem = null, triggerElement = null) {
         const isEdit = itemId !== null;
         let itemData = null;
         let currentListName = listNameForNewItem;
@@ -1105,7 +1359,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const modalId = 'dynamicListItemModal';
         const existingModal = document.getElementById(modalId);
         if (existingModal) {
-            existingModal.remove();
+            closeAdminDialog(existingModal, { restoreFocus: false });
         }
 
         if (isEdit) {
@@ -1119,7 +1373,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 // Fetch in-use status for the item being edited
                 const usageInfo = await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path
-                itemInUseDetails = usageInfo.is_in_use ? usageInfo.details : [];
+                itemInUseDetails = usageInfo.is_in_use && Array.isArray(usageInfo.details)
+                    ? usageInfo.details
+                    : [];
 
             } catch (error) {
                 displayAdminMessage("Error fetching item details: " + error.message, "error", modalId);
@@ -1140,6 +1396,28 @@ document.addEventListener("DOMContentLoaded", function () {
 
         let imageStyleSpecificHTML = '';
 
+        const itemIsInUse = itemInUseDetails.length > 0;
+        const itemUsageStatusId = `${modalId}-usage-status`;
+        const itemUsageDetailsHtml = !isEdit
+            ? ''
+            : itemIsInUse
+                ? `
+                        <div id="${itemUsageStatusId}" class="form-group" role="status" aria-live="polite">
+                            <label>Usage Status:</label>
+                            <p>This item is currently in use and cannot be deleted.</p>
+                            <p><strong>Referenced by:</strong></p>
+                            <ul>
+                                ${itemInUseDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `
+                : `
+                        <div id="${itemUsageStatusId}" class="form-group" role="status" aria-live="polite">
+                            <label>Usage Status:</label>
+                            <p>This item is not currently referenced and can be deleted.</p>
+                        </div>
+                    `;
+
 
         // Modal message area
         const modalMessageId = `${modalId}-message-area`;
@@ -1147,11 +1425,12 @@ document.addEventListener("DOMContentLoaded", function () {
         let modalHTML = `
             <div id="${modalId}" class="modal" style="display:block;">
                 <div class="modal-content">
-                    <span class="close-button" onclick="document.getElementById(\'${modalId}\').remove();">&times;</span>
-                    <h2>${isEdit ? 'Edit' : 'Add'} Dynamic List Item (for List: ${escapeHTML(currentListName)})</h2>
+                    <button type="button" class="close-button" data-dialog-close="true" aria-label="Close dialog">&times;</button>
+                    <h2 id="${modalId}-title">${isEdit ? 'Edit' : 'Add'} Dynamic List Item (for List: ${escapeHTML(currentListName)})</h2>
                     <div id="${modalMessageId}" class="admin-message" style="display:none; margin-bottom:15px;"></div>
                     <form id="dynamicListItemForm" class="admin-form">
                         <input type="hidden" id="item_list_name" name="item_list_name" value="${escapeHTML(currentListName)}">
+                        ${itemUsageDetailsHtml}
                         <div class="form-group">
                             <label for="item_value">Item Value (unique within list):</label>
                             <input type="text" id="item_value" name="item_value" value="${escapeHTML(itemValue)}" required class="admin-form-control">
@@ -1174,14 +1453,18 @@ document.addEventListener("DOMContentLoaded", function () {
                         </div>
                         <div class="modal-actions">
                             <button type="submit" id="saveDynamicListItemButton" class="admin-button-success">${isEdit ? 'Save Changes' : 'Create Item'}</button>
-                            ${isEdit ? `<button type="button" id="deleteDynamicListItemButton" class="admin-button-danger">Delete Item</button>` : ''}
-                            <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" onclick="document.getElementById(\\'${modalId}\\').remove();">Cancel</button>
+                            ${isEdit ? `<button type="button" id="deleteDynamicListItemButton" class="admin-button-danger" ${itemIsInUse ? `disabled aria-disabled="true" aria-describedby="${itemUsageStatusId}" title="This item is currently in use and cannot be deleted."` : ''}>Delete Item</button>` : ''}
+                            <button type="button" id="cancelDynamicListItemModalButton" class="admin-button-secondary" data-dialog-close="true">Cancel</button>
                         </div>
                     </form>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const dialogController = initializeAdminDialog(modalId, {
+            triggerElement,
+            initialFocusSelector: '#item_value',
+        });
 
         const form = document.getElementById('dynamicListItemForm');
         form.onsubmit = async (e) => {
@@ -1222,7 +1505,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     await apiRequest(`/api/v1/admin/dynamic-lists/${data.list_name}/items`, 'POST', data);
                     displayAdminMessage(`New item created in list '${data.list_name}'.`, 'success'); // Global message
                 }
-                document.getElementById(modalId).remove();
+                dialogController.close();
                 await loadItemsForSelectedList(currentListName);
             } catch (error) {
                 console.error("Error saving dynamic list item:", error);
@@ -1239,16 +1522,29 @@ document.addEventListener("DOMContentLoaded", function () {
             deleteButton.addEventListener('click', async () => {
                 // Use itemInUseDetails fetched when modal opened
                 if (itemInUseDetails.length > 0) {
-                    alert(`Cannot delete item ID ${itemId}. It is currently in use: ${itemInUseDetails.join(', ')}`);
+                    await showAdminNoticeDialog({
+                        title: `Cannot delete item ${itemId}`,
+                        triggerElement: deleteButton,
+                        descriptionHtml: `
+                            <p id="dynamic-list-item-delete-blocked">This item is currently in use and cannot be deleted.</p>
+                            <p><strong>In use by:</strong> ${escapeHTML(itemInUseDetails.join(', '))}</p>
+                        `,
+                    });
                     return;
                 }
 
-                if (!confirm(`Are you sure you want to delete item ID ${itemId} ('${escapeHTML(itemValue)}')? This cannot be undone.`)) return;
+                const confirmed = await confirmAdminAction({
+                    title: `Delete item ${itemId}?`,
+                    message: `This will permanently remove '${itemValue}' from ${currentListName}.`,
+                    triggerElement: deleteButton,
+                    confirmText: 'Delete item',
+                });
+                if (!confirmed) return;
 
                 try {
                     await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path
                     displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success'); // Global message
-                    document.getElementById(modalId).remove();
+                    dialogController.close();
                     await loadItemsForSelectedList(currentListName);
                 } catch (error) {
                     console.error("Error deleting item:", error);
@@ -1372,7 +1668,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 await apiRequest(`/api/v1/admin/management/users/${userId}`, 'PUT', payload);
                 displayAdminMessage(`User ${userId} ${updateType} updated successfully.`, 'success');
                 if (updateType === 'details' && document.getElementById(modalId)) {
-                    document.getElementById(modalId).remove();
+                    closeAdminDialog(modalId);
                 }
                 await loadUserManagement(); // Refresh the user table
             } catch (error) {
@@ -1410,13 +1706,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         },
-        editDynamicList: async (listName) => { // This function is now effectively an alias for the modal
-            showAddEditDynamicListModal(listName);
+        editDynamicList: async (listName, triggerElement = null) => { // This function is now effectively an alias for the modal
+            showAddEditDynamicListModal(listName, triggerElement);
         },
         // Exposing the new modal function for adding/editing items
-        showAddEditDynamicListItemModal: async (itemId = null, listNameForNewItem = null) => {
+        showAddEditDynamicListItemModal: async (itemId = null, listNameForNewItem = null, triggerElement = null) => {
             // This is the primary function now for adding AND editing dynamic list items via modal
-            showAddEditDynamicListItemModal(itemId, listNameForNewItem);
+            showAddEditDynamicListItemModal(itemId, listNameForNewItem, triggerElement);
         },
         deleteDynamicList: async (listName) => {
             // This function is effectively replaced by the modal's delete button logic.
@@ -1439,11 +1735,22 @@ document.addEventListener("DOMContentLoaded", function () {
             try {
                 const usageInfo = await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}/in-use`, "GET"); // Corrected path for safety, though deprecated
                 if (usageInfo.is_in_use) {
-                    alert(`Cannot delete item ID ${itemId}. It is currently in use: ${usageInfo.details.join(', ')}`);
+                    await showAdminNoticeDialog({
+                        title: `Cannot delete item ${itemId}`,
+                        descriptionHtml: `
+                            <p id="direct-dynamic-list-item-delete-blocked">This item is currently in use and cannot be deleted.</p>
+                            <p><strong>In use by:</strong> ${escapeHTML(usageInfo.details.join(', '))}</p>
+                        `,
+                    });
                     return;
                 }
 
-                if (!confirm(`Are you sure you want to delete item ID ${itemId}? This cannot be undone.`)) return;
+                const confirmed = await confirmAdminAction({
+                    title: `Delete item ${itemId}?`,
+                    message: `This will permanently remove the item from ${listName}.`,
+                    confirmText: 'Delete item',
+                });
+                if (!confirmed) return;
 
                 await apiRequest(`/api/v1/admin/dynamic-lists/items/${itemId}`, 'DELETE'); // Corrected path for safety, though deprecated
                 displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success');
@@ -1513,6 +1820,7 @@ function displayAdminMessage(message, type = 'info', modalId = null, { toast = f
     if (modalId) messageArea = document.getElementById(`${modalId}-message-area`);
     if (!messageArea) messageArea = document.getElementById('admin-message-area');
     if (messageArea) {
+        ensureAdminStatusRegion(messageArea);
         messageArea.textContent = message || '';
         messageArea.className = 'admin-message';
         if (type) messageArea.classList.add(type);
@@ -1541,4 +1849,14 @@ function displayAdminMessage(message, type = 'info', modalId = null, { toast = f
             node.addEventListener('click', () => { clearTimeout(t); if (node.parentNode) node.parentNode.removeChild(node); });
         }
     }
+}
+
+function ensureAdminStatusRegion(messageArea) {
+    if (!messageArea) {
+        return;
+    }
+
+    messageArea.setAttribute('role', 'status');
+    messageArea.setAttribute('aria-live', 'polite');
+    messageArea.setAttribute('aria-atomic', 'true');
 }

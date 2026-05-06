@@ -50,11 +50,16 @@ def get_admin_stats(db: Session = Depends(get_db)):
         StoryGenerationTask.created_at >= since_24h)
     tasks_last_24h = tasks_24h_q.count()
     tasks_completed_last_24h = tasks_24h_q.filter(
-        StoryGenerationTask.status == 'completed').count()
+        StoryGenerationTask.status
+        == schemas.GenerationTaskStatus.COMPLETED.value).count()
     tasks_failed_last_24h = tasks_24h_q.filter(
-        StoryGenerationTask.status == 'failed').count()
+        StoryGenerationTask.status
+        == schemas.GenerationTaskStatus.FAILED.value).count()
     tasks_in_progress = db.query(StoryGenerationTask).filter(
-        StoryGenerationTask.status.in_(['pending', 'in_progress'])).count()
+        StoryGenerationTask.status.in_([
+            schemas.GenerationTaskStatus.PENDING.value,
+            schemas.GenerationTaskStatus.IN_PROGRESS.value,
+        ])).count()
 
     # Precise avg duration (prefer duration_ms; fallback to updated_at-created_at)
     durations = []
@@ -62,7 +67,8 @@ def get_admin_stats(db: Session = Depends(get_db)):
     completed_tasks = []
     if tasks_completed_last_24h:
         completed_tasks = tasks_24h_q.filter(
-            StoryGenerationTask.status == 'completed').all()
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.COMPLETED.value).all()
         for t in completed_tasks:
             try:
                 # Prefer explicit duration_ms
@@ -437,7 +443,10 @@ def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db),
 
 # --- Admin Content Moderation ---
 
-@admin_router.get("/moderation/stories", response_model=List[schemas.Story])
+@admin_router.get(
+    "/moderation/stories",
+    response_model=schemas.PaginatedStories,
+)
 def admin_list_stories(
     page: int = 1,
     page_size: int = 20,
@@ -448,7 +457,7 @@ def admin_list_stories(
     include_hidden: bool = False,
     include_deleted: bool = False,
     db: Session = Depends(get_db)
-):
+) -> dict:
     total, items = crud.list_stories_admin(
         db,
         page=page,
@@ -474,8 +483,12 @@ def admin_list_stories(
         except Exception:
             # Non-fatal: leave value as-is
             pass
-    # For now return just items; a future enhancement can return a paginated envelope
-    return items
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema

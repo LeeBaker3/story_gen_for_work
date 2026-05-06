@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum, text  # Added Boolean and text
+from sqlalchemy import CheckConstraint, create_engine, Column, Integer, String, Text, ForeignKey, JSON, DateTime, Boolean, UniqueConstraint, Enum, text  # Added Boolean and text
 # Import declarative_base from sqlalchemy.orm
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
@@ -58,6 +58,7 @@ class Story(Base):
     num_pages = Column(Integer, nullable=False, default=0)
     tone = Column(String, nullable=True)
     setting = Column(String, nullable=True)
+    writing_style = Column(String, nullable=True)
     # FR14: Added image_style column
     image_style = Column(String, nullable=True, default="Default")
     # FR13: Added word_to_picture_ratio column
@@ -70,7 +71,7 @@ class Story(Base):
         # Align default with schemas.TextDensity.CONCISE.value
         default="Concise (~30-50 words)",
     )
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     # Represents draft creation or story generation time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
@@ -82,6 +83,7 @@ class Story(Base):
     # Admin moderation flags
     is_hidden = Column(Boolean, default=False, nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    editor_settings = Column(JSON, nullable=True)
 
     owner = relationship("User", back_populates="stories")
     pages = relationship("Page", back_populates="story",
@@ -91,11 +93,12 @@ class Story(Base):
 class Page(Base):
     __tablename__ = "pages"
     id = Column(Integer, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey("stories.id"))
+    story_id = Column(Integer, ForeignKey("stories.id"), index=True)
     page_number = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     image_description = Column(Text, nullable=True)  # Prompt for DALL-E
     image_path = Column(String, nullable=True)  # Path to locally stored image
+    editor_state = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
@@ -143,11 +146,17 @@ class DynamicListItem(Base):
 
 class StoryGenerationTask(Base):
     __tablename__ = 'story_generation_tasks'
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'completed', 'failed')",
+            name="ck_story_generation_task_status",
+        ),
+    )
 
     id = Column(String, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    status = Column(String, nullable=False, default='PENDING')
+    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    status = Column(String, nullable=False, default='pending', index=True)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
@@ -162,6 +171,9 @@ class StoryGenerationTask(Base):
     duration_ms = Column(Integer, nullable=True)
     # Persist last encountered error across retries
     last_error = Column(Text, nullable=True)
+    retry_counts_by_page = Column(JSON, nullable=True)
+    total_retries = Column(Integer, nullable=True)
+    failed_pages_count = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         onupdate=func.now(), server_default=func.now())
@@ -244,6 +256,8 @@ def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
     _ensure_story_generation_task_new_columns()
     _ensure_soft_delete_and_moderation_columns()
+    _ensure_story_metadata_columns()
+    _ensure_story_editor_columns()
 
 
 def _ensure_story_generation_task_new_columns():
@@ -260,6 +274,9 @@ def _ensure_story_generation_task_new_columns():
         "completed_at": "TIMESTAMP NULL",
         "duration_ms": "INTEGER NULL",
         "last_error": "TEXT NULL",
+        "retry_counts_by_page": "JSON NULL",
+        "total_retries": "INTEGER NULL",
+        "failed_pages_count": "INTEGER NULL",
     }
     with engine.connect() as conn:
         try:
@@ -316,4 +333,70 @@ def _ensure_soft_delete_and_moderation_columns():
                             pass
             except Exception:
                 # Non-fatal in dev/test
+                pass
+
+
+def _ensure_story_metadata_columns():
+    """Idempotently add newer story metadata columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "stories": {
+            "writing_style": "TEXT NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}"
+                                )
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+
+def _ensure_story_editor_columns():
+    """Idempotently add story/page editor columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "stories": {
+            "editor_settings": "JSON NULL",
+        },
+        "pages": {
+            "editor_state": "JSON NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
+                            )
+                        except Exception:
+                            pass
+            except Exception:
                 pass

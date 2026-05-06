@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.orm import Session
 from backend import crud, schemas
@@ -28,6 +30,7 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
         num_pages=5,
         tone="Epic",
         setting="Medieval kingdom",
+        writing_style="Playful",
         image_style=schemas.ImageStyle.FANTASY_ART,
         word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
         text_density=schemas.TextDensity.STANDARD
@@ -42,11 +45,37 @@ def test_create_story_db_entry(db_session: Session, test_user: User):
     assert db_story.owner_id == test_user.id
     assert db_story.genre == schemas.StoryGenre.FANTASY.value
     assert db_story.num_pages == 5
+    assert db_story.writing_style == "Playful"
     assert len(db_story.main_characters) == 1
     assert db_story.main_characters[0]['name'] == "Hero"
     assert isinstance(db_story, Story)
     assert db_story.is_draft is False
     assert db_story.generated_at is not None
+
+
+def test_story_request_schemas_exclude_generated_at():
+    assert "generated_at" not in schemas.StoryBase.model_fields
+    assert "generated_at" not in schemas.StoryCreate.model_fields
+
+
+def test_story_response_schema_includes_generated_at():
+    generated_at = datetime.now(UTC)
+
+    story = schemas.Story(
+        id=1,
+        owner_id=1,
+        title="The Dragon Slayer",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="A quest to defeat a dragon.",
+        main_characters=[],
+        num_pages=5,
+        pages=[],
+        generated_at=generated_at,
+        created_at=generated_at,
+        updated_at=generated_at,
+    )
+
+    assert story.generated_at == generated_at
 
 # Test Get Story by ID
 
@@ -139,6 +168,129 @@ def test_update_story_title(db_session: Session, test_user: User):
     refetched_story = crud.get_story(
         db=db_session, story_id=story.id, user_id=test_user.id)
     assert refetched_story.title == new_title
+
+
+def test_save_story_editor_persists_defaults_and_page_overrides(
+    db_session: Session,
+    test_user: User,
+):
+    story_data = schemas.StoryBase(
+        title="Editable Story",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="Editable outline",
+        main_characters=[],
+        num_pages=2,
+    )
+    story = crud.create_story_db_entry(
+        db=db_session,
+        story_data=story_data,
+        user_id=test_user.id,
+        title="Editable Story",
+        is_draft=False,
+    )
+    crud.update_story_with_generated_content(
+        db_session,
+        story.id,
+        {
+            "Title": "Editable Story",
+            "Pages": [
+                {"Page_number": 0, "Text": "Editable Story", "Image_description": "cover",
+                    "image_url": "images/user_1/story_1/cover.png"},
+                {"Page_number": 1, "Text": "Original page text", "Image_description": "page",
+                    "image_url": "images/user_1/story_1/page1.png"},
+            ],
+        },
+    )
+    db_session.refresh(story)
+    page = next(item for item in story.pages if item.page_number == 1)
+
+    updated_story = crud.save_story_editor(
+        db=db_session,
+        story_id=story.id,
+        user_id=test_user.id,
+        editor_update=schemas.StoryEditorUpdate(
+            title="Edited Story",
+            editor_settings=schemas.StoryEditorSettings(
+                font_family="classic",
+                font_size=30,
+                font_color="#ffeeaa",
+                text_position="top",
+                text_box_opacity=0.4,
+            ),
+            pages=[
+                schemas.StoryEditorPageUpdate(
+                    id=page.id,
+                    text="Edited page text",
+                    editor_state=schemas.PageEditorState(
+                        text_position="left",
+                        font_family="handwritten",
+                        font_size=22,
+                        font_color="#112233",
+                        text_box_opacity=0.35,
+                    ),
+                )
+            ],
+        ),
+    )
+
+    assert updated_story is not None
+    assert updated_story.title == "Edited Story"
+    assert updated_story.editor_settings["font_family"] == "classic"
+    db_session.refresh(page)
+    assert page.text == "Edited page text"
+    assert page.editor_state["text_position"] == "left"
+    assert page.editor_state["font_family"] == "handwritten"
+    assert page.editor_state["font_color"] == "#112233"
+    assert page.editor_state["text_box_opacity"] == 0.35
+    assert page.editor_state["original_text"] == "Original page text"
+    effective_settings = crud.get_effective_page_editor_settings(updated_story, page)
+    assert effective_settings["font_family"] == "handwritten"
+
+
+def test_restore_page_text_uses_original_generated_text(
+    db_session: Session,
+    test_user: User,
+):
+    story_data = schemas.StoryBase(
+        title="Restore Text",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="Restore outline",
+        main_characters=[],
+        num_pages=1,
+    )
+    story = crud.create_story_db_entry(
+        db=db_session,
+        story_data=story_data,
+        user_id=test_user.id,
+        title="Restore Text",
+        is_draft=False,
+    )
+    crud.update_story_with_generated_content(
+        db_session,
+        story.id,
+        {
+            "Title": "Restore Text",
+            "Pages": [
+                {"Page_number": 1, "Text": "Generated text", "Image_description": "page",
+                    "image_url": "images/user_1/story_1/page1.png"},
+            ],
+        },
+    )
+    db_session.refresh(story)
+    page = story.pages[0]
+    page.text = "Edited text"
+    page.editor_state = crud.get_page_editor_state(page)
+    db_session.commit()
+
+    restored = crud.restore_page_text(
+        db=db_session,
+        story_id=story.id,
+        page_id=page.id,
+        user_id=test_user.id,
+    )
+
+    assert restored is not None
+    assert restored.text == "Generated text"
 
 
 def test_update_story_title_non_existent(db_session: Session):
@@ -270,6 +422,7 @@ def test_create_story_draft(db_session: Session, test_user: User):
         story_outline="A detective solves a case.",
         main_characters=[schemas.CharacterDetail(name="Detective X")],
         num_pages=3,
+        writing_style="Detective Noir",
         # Changed to a valid style, NOIR was added to schema
         image_style=schemas.ImageStyle.NOIR
     )
@@ -282,12 +435,14 @@ def test_create_story_draft(db_session: Session, test_user: User):
     assert db_draft.is_draft is True
     assert db_draft.generated_at is None  # Drafts are not generated yet
     assert db_draft.genre == schemas.StoryGenre.MYSTERY.value
+    assert db_draft.writing_style == "Detective Noir"
 
 
 def test_update_story_draft(db_session: Session, test_user: User):
     # First, create a draft
     initial_draft_data = schemas.StoryCreate(
-        title="Space Draft v1", genre="Sci-Fi", story_outline="Initial outline", main_characters=[], num_pages=1)
+        title="Space Draft v1", genre="Sci-Fi", story_outline="Initial outline", main_characters=[], num_pages=1,
+        writing_style="Sparse")
     # initial_title = "Space Draft v1" # Title is in initial_draft_data
     draft_story = crud.create_story_draft(
         db=db_session, story_data=initial_draft_data, user_id=test_user.id)
@@ -300,7 +455,8 @@ def test_update_story_draft(db_session: Session, test_user: User):
         main_characters=[schemas.CharacterDetail(
             name="Action Hero")],  # Added character
         num_pages=2,  # Changed num_pages
-        tone="Exciting"
+        tone="Exciting",
+        writing_style="Cinematic"
     )
     # updated_title = "Action Draft v2" # Title is in updated_draft_data
 
@@ -317,6 +473,7 @@ def test_update_story_draft(db_session: Session, test_user: User):
     assert updated_db_draft.main_characters[0]['name'] == "Action Hero"
     assert updated_db_draft.num_pages == 2
     assert updated_db_draft.tone == "Exciting"
+    assert updated_db_draft.writing_style == "Cinematic"
     assert updated_db_draft.is_draft is True  # Still a draft
     assert updated_db_draft.generated_at is None
 

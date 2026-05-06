@@ -46,7 +46,9 @@ def test_moderation_list_hide_delete_flow(client, db_session, admin_auth_headers
     resp = client.get("/api/v1/admin/moderation/stories",
                       headers=admin_auth_headers)
     assert resp.status_code == 200
-    items: List[dict] = resp.json()
+    payload = resp.json()
+    assert payload["total"] >= 2
+    items: List[dict] = payload["items"]
     assert any(it["id"] == s1.id for it in items)
     assert any(it["id"] == s2.id for it in items)
 
@@ -60,14 +62,14 @@ def test_moderation_list_hide_delete_flow(client, db_session, admin_auth_headers
     resp = client.get("/api/v1/admin/moderation/stories",
                       headers=admin_auth_headers)
     assert resp.status_code == 200
-    ids = [it["id"] for it in resp.json()]
+    ids = [it["id"] for it in resp.json()["items"]]
     assert s1.id not in ids
 
     # List with include_hidden should include s1
     resp = client.get(
         "/api/v1/admin/moderation/stories?include_hidden=true", headers=admin_auth_headers)
     assert resp.status_code == 200
-    ids = [it["id"] for it in resp.json()]
+    ids = [it["id"] for it in resp.json()["items"]]
     assert s1.id in ids
 
     # Soft delete s2
@@ -79,14 +81,14 @@ def test_moderation_list_hide_delete_flow(client, db_session, admin_auth_headers
     resp = client.get("/api/v1/admin/moderation/stories",
                       headers=admin_auth_headers)
     assert resp.status_code == 200
-    ids = [it["id"] for it in resp.json()]
+    ids = [it["id"] for it in resp.json()["items"]]
     assert s2.id not in ids
 
     # Listing with include_deleted includes s2
     resp = client.get(
         "/api/v1/admin/moderation/stories?include_deleted=true", headers=admin_auth_headers)
     assert resp.status_code == 200
-    ids = [it["id"] for it in resp.json()]
+    ids = [it["id"] for it in resp.json()["items"]]
     assert s2.id in ids
 
 
@@ -121,3 +123,66 @@ def test_admin_soft_delete_user_endpoint(client, db_session, admin_auth_headers)
     resp = client.delete(
         f"/api/v1/admin/management/users/{admin_user.id}", headers=admin_auth_headers)
     assert resp.status_code == 403
+
+
+def test_moderation_list_returns_empty_paginated_envelope(
+    client,
+    admin_auth_headers,
+):
+    """Test that the admin moderation list returns an empty envelope with totals."""
+
+    response = client.get(
+        "/api/v1/admin/moderation/stories",
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 20,
+    }
+
+
+def test_moderation_list_returns_total_and_paginated_items(
+    client,
+    db_session,
+    admin_auth_headers,
+):
+    """Test that the admin moderation list preserves total across pagination."""
+
+    regular_user: User = db_session.query(User).filter(
+        User.username == "user@example.com"
+    ).first()
+
+    first_story = _make_story(db_session, regular_user.id, title="Story One")
+    second_story = _make_story(db_session, regular_user.id, title="Story Two")
+
+    response = client.get(
+        "/api/v1/admin/moderation/stories",
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["page"] == 1
+    assert payload["page_size"] == 20
+    assert len(payload["items"]) == 2
+    assert {item["id"] for item in payload["items"]} == {
+        first_story.id,
+        second_story.id,
+    }
+
+    paginated_response = client.get(
+        "/api/v1/admin/moderation/stories?page_size=1",
+        headers=admin_auth_headers,
+    )
+
+    assert paginated_response.status_code == 200
+    paginated_payload = paginated_response.json()
+    assert paginated_payload["total"] == 2
+    assert paginated_payload["page"] == 1
+    assert paginated_payload["page_size"] == 1
+    assert len(paginated_payload["items"]) == 1

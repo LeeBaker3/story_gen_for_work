@@ -47,6 +47,27 @@ def test_update_nonexistent_user_details_returns_404(client: TestClient):
     assert response.status_code == 404
 
 
+def test_admin_update_user_rejects_invalid_role(
+    client: TestClient,
+    db_session: Session,
+):
+    token = get_token(client, "admin@example.com", "adminpassword")
+
+    user_to_update = crud.get_user_by_username(db_session, "user@example.com")
+    assert user_to_update is not None
+
+    response = client.put(
+        f"/api/v1/admin/management/users/{user_to_update.id}",
+        json={"role": "superadmin"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Invalid role. Must be 'user' or 'admin'."
+    }
+
+
 def test_non_admin_cannot_update_user_details(client: TestClient, db_session: Session):
     token = get_token(client, "user@example.com", "userpassword")
 
@@ -60,3 +81,45 @@ def test_non_admin_cannot_update_user_details(client: TestClient, db_session: Se
         headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 403
+
+
+def test_admin_cannot_deactivate_their_own_account(
+    client: TestClient,
+    db_session: Session,
+):
+    token = get_token(client, "admin@example.com", "adminpassword")
+
+    admin_user = crud.get_user_by_username(db_session, "admin@example.com")
+    assert admin_user is not None
+
+    response = client.put(
+        f"/api/v1/admin/management/users/{admin_user.id}",
+        json={"is_active": False},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Admins cannot deactivate their own account."
+    }
+
+
+def test_admin_cannot_change_their_own_role(
+    client: TestClient,
+    db_session: Session,
+):
+    token = get_token(client, "admin@example.com", "adminpassword")
+
+    admin_user = crud.get_user_by_username(db_session, "admin@example.com")
+    assert admin_user is not None
+
+    response = client.put(
+        f"/api/v1/admin/management/users/{admin_user.id}",
+        json={"role": "user"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Admins cannot change their own role."
+    }

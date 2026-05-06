@@ -1,12 +1,19 @@
-let API_BASE_URL;
-if (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-) {
-    API_BASE_URL = "http://127.0.0.1:8000"; // Local development
-} else {
-    API_BASE_URL = "https://story-gen-for-work.onrender.com"; // Deployed environment
+function resolveApiBaseUrl() {
+    if (typeof window.resolveStoryGeneratorApiBaseUrl === "function") {
+        return window.resolveStoryGeneratorApiBaseUrl();
+    }
+
+    if (
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+    ) {
+        return "http://127.0.0.1:8000";
+    }
+
+    return window.location.origin.replace(/\/$/, "");
 }
+
+let API_BASE_URL = resolveApiBaseUrl();
 
 function staticContentUrl(path) {
     if (!path) return "";
@@ -69,6 +76,72 @@ document.addEventListener("DOMContentLoaded", function () {
     // State variables for draft editing
     let currentStoryId = null;
     let currentStoryIsDraft = false;
+    const storyEditorState = {
+        story: null,
+        autosaveTimer: null,
+        isSaving: false,
+        saveRequested: false,
+        saveStatus: {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        },
+        pageImageObjectUrls: new Map(),
+        pageImageFetches: new Map(),
+    };
+    const STORY_EDITOR_DEFAULTS = {
+        font_family: "storybook",
+        font_size: 28,
+        font_color: "#ffffff",
+        text_position: "bottom-center",
+        text_box_opacity: 0.6,
+        page_format: "letter",
+        layout_mode: "full-page-overlay",
+    };
+    const STORY_EDITOR_LAYOUT_OPTIONS = [
+        { value: "full-page-overlay", label: "Full-page overlay" },
+        { value: "horizontal-split", label: "Horizontal split" },
+        { value: "vertical-split", label: "Vertical split" },
+    ];
+    const STORY_EDITOR_FONT_OPTIONS = [
+        { value: "storybook", label: "Storybook" },
+        { value: "classic", label: "Classic" },
+        { value: "modern", label: "Modern" },
+        { value: "handwritten", label: "Handwritten" },
+        { value: "dyslexia-friendly", label: "Dyslexia-friendly" },
+        { value: "large print", label: "Large print" },
+    ];
+    const STORY_EDITOR_TEXT_POSITIONS_V = ["top", "middle", "bottom"];
+    const STORY_EDITOR_TEXT_POSITIONS_H = ["left", "center", "right"];
+    const STORY_EDITOR_POSITION_LABELS_V = { top: "Top", middle: "Middle", bottom: "Bottom" };
+    const STORY_EDITOR_POSITION_LABELS_H = { left: "Left", center: "Centre", right: "Right" };
+
+    function normalizeLayoutMode(layoutMode) {
+        const normalized = String(layoutMode || STORY_EDITOR_DEFAULTS.layout_mode)
+            .trim()
+            .toLowerCase();
+        if (STORY_EDITOR_LAYOUT_OPTIONS.some((option) => option.value === normalized)) {
+            return normalized;
+        }
+        return STORY_EDITOR_DEFAULTS.layout_mode;
+    }
+
+    function getLayoutModeLabel(layoutMode) {
+        const normalized = normalizeLayoutMode(layoutMode);
+        return STORY_EDITOR_LAYOUT_OPTIONS.find((option) => option.value === normalized)?.label
+            || STORY_EDITOR_LAYOUT_OPTIONS[0].label;
+    }
+
+    function getLayoutModeDescription(layoutMode) {
+        const normalized = normalizeLayoutMode(layoutMode);
+        if (normalized === "horizontal-split") {
+            return "Image panel above with text panel below";
+        }
+        if (normalized === "vertical-split") {
+            return "Image panel on the left with text panel on the right";
+        }
+        return "Full-page image with editable text overlay";
+    }
 
     // Content Areas
     const storyPreviewContent = document.getElementById("story-preview-content");
@@ -111,6 +184,17 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    function syncCharacterDetailsDisclosure(toggleButton, detailsDiv) {
+        if (!(toggleButton instanceof HTMLElement) || !(detailsDiv instanceof HTMLElement)) {
+            return;
+        }
+
+        toggleButton.setAttribute("aria-controls", detailsDiv.id);
+        const isExpanded = window.getComputedStyle(detailsDiv).display !== "none";
+        toggleButton.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+        toggleButton.textContent = isExpanded ? "Hide Details" : "Show Details";
+    }
+
     // Simple HTML escape to prevent accidental HTML injection in names
     function escapeHTML(str) {
         if (str == null) return '';
@@ -126,12 +210,162 @@ document.addEventListener("DOMContentLoaded", function () {
     const spinner = document.getElementById("spinner");
 
     // --- DYNAMIC DROPDOWN POPULATION ---
-    async function populateDropdown(selectElementId, listName) {
+    const DROPDOWN_RECOVERY_CONFIG = {
+        "story-genre": {
+            listName: "genres",
+            label: "genres",
+            statusId: "story-genre-recovery",
+            retryId: "story-genre-retry",
+        },
+        "story-image-style": {
+            listName: "image_styles",
+            label: "image styles",
+            statusId: "story-image-style-recovery",
+            retryId: "story-image-style-retry",
+        },
+    };
+
+    function syncDropdownRecoveryDescribedBy(
+        selectElement,
+        statusElement,
+        isVisible,
+    ) {
+        if (!selectElement || !statusElement || !statusElement.id) {
+            return;
+        }
+
+        if (selectElement.dataset.baseDescribedby === undefined) {
+            selectElement.dataset.baseDescribedby =
+                selectElement.getAttribute("aria-describedby") || "";
+        }
+
+        const describedByIds = selectElement.dataset.baseDescribedby
+            .split(/\s+/)
+            .filter(Boolean)
+            .filter((id) => id !== statusElement.id);
+
+        if (isVisible) {
+            describedByIds.push(statusElement.id);
+        }
+
+        if (describedByIds.length > 0) {
+            selectElement.setAttribute(
+                "aria-describedby",
+                describedByIds.join(" "),
+            );
+            return;
+        }
+
+        selectElement.removeAttribute("aria-describedby");
+    }
+
+    function getDropdownRecoveryElements(selectElementId) {
         const selectElement = document.getElementById(selectElementId);
+        const config = DROPDOWN_RECOVERY_CONFIG[selectElementId] || {};
+
+        if (!selectElement) {
+            return { config, selectElement: null, statusElement: null, retryButton: null };
+        }
+
+        let statusElement = config.statusId
+            ? document.getElementById(config.statusId)
+            : null;
+
+        if (!statusElement) {
+            const generatedStatusId = `${selectElementId}-load-status`;
+            statusElement = document.getElementById(generatedStatusId);
+            if (!statusElement) {
+                statusElement = document.createElement("div");
+                statusElement.id = generatedStatusId;
+                statusElement.className =
+                    "inline-status inline-status--error dropdown-recovery-status";
+                statusElement.setAttribute("role", "status");
+                statusElement.setAttribute("aria-live", "polite");
+                statusElement.setAttribute("aria-atomic", "true");
+                statusElement.style.display = "none";
+                selectElement.insertAdjacentElement("afterend", statusElement);
+            }
+        }
+
+        const retryButton = config.retryId
+            ? document.getElementById(config.retryId)
+            : null;
+
+        return { config, selectElement, statusElement, retryButton };
+    }
+
+    function setDropdownRecoveryState(
+        selectElementId,
+        { message = "", showRetry = false, isLoading = false } = {},
+    ) {
+        const { selectElement, statusElement, retryButton } =
+            getDropdownRecoveryElements(selectElementId);
+
+        if (!selectElement) {
+            return;
+        }
+
+        if (isLoading) {
+            selectElement.setAttribute("aria-busy", "true");
+        } else {
+            selectElement.removeAttribute("aria-busy");
+        }
+
+        if (statusElement) {
+            const hasMessage = Boolean(message);
+            statusElement.textContent = message;
+            statusElement.style.display = hasMessage ? "block" : "none";
+            syncDropdownRecoveryDescribedBy(
+                selectElement,
+                statusElement,
+                hasMessage,
+            );
+        }
+
+        if (retryButton) {
+            retryButton.style.display = showRetry ? "inline-flex" : "none";
+            retryButton.disabled = isLoading;
+        }
+    }
+
+    function buildDropdownRecoveryMessage(listName) {
+        const config = Object.values(DROPDOWN_RECOVERY_CONFIG).find(
+            (item) => item.listName === listName,
+        );
+        const label = config?.label || listName.replace(/_/g, " ");
+        return `We couldn't load ${label} right now. Try again.`;
+    }
+
+    function initializeDropdownRetryButtons() {
+        Object.entries(DROPDOWN_RECOVERY_CONFIG).forEach(
+            ([selectElementId, config]) => {
+                const retryButton = config.retryId
+                    ? document.getElementById(config.retryId)
+                    : null;
+                if (!retryButton || retryButton.dataset.dropdownRetryBound === "true") {
+                    return;
+                }
+
+                retryButton.addEventListener("click", async () => {
+                    await populateDropdown(selectElementId, config.listName);
+                });
+                retryButton.dataset.dropdownRetryBound = "true";
+            },
+        );
+    }
+
+    async function populateDropdown(selectElementId, listName) {
+        const { config, selectElement } = getDropdownRecoveryElements(
+            selectElementId,
+        );
         if (!selectElement) {
             console.error(`[populateDropdown] Select element with ID '${selectElementId}' not found.`);
             return;
         }
+
+        selectElement.disabled = true;
+        selectElement.innerHTML = '<option value="">Loading...</option>';
+        setDropdownRecoveryState(selectElementId, { isLoading: true });
 
         try {
             // Use the public endpoint for fetching active items
@@ -156,14 +390,25 @@ document.addEventListener("DOMContentLoaded", function () {
                     option.textContent = item.item_label;
                     selectElement.appendChild(option);
                 });
+                selectElement.disabled = false;
+                setDropdownRecoveryState(selectElementId);
             } else {
                 console.warn(`[populateDropdown] No active items found for list: ${listName}`);
                 selectElement.innerHTML = '<option value="">No options available</option>';
+                selectElement.disabled = true;
+                setDropdownRecoveryState(selectElementId, {
+                    message: buildDropdownRecoveryMessage(listName),
+                    showRetry: Boolean(config.retryId),
+                });
             }
         } catch (error) {
             console.error(`[populateDropdown] Error populating ${listName}:`, error);
-            // Optionally, display an error message to the user in the dropdown
             selectElement.innerHTML = '<option value="">Error loading options</option>';
+            selectElement.disabled = true;
+            setDropdownRecoveryState(selectElementId, {
+                message: buildDropdownRecoveryMessage(listName),
+                showRetry: Boolean(config.retryId),
+            });
         }
     }
 
@@ -174,6 +419,35 @@ document.addEventListener("DOMContentLoaded", function () {
         populateDropdown("story-image-style", "image_styles");
         populateDropdown("story-word-to-picture-ratio", "word_to_picture_ratio");
         populateDropdown("story-text-density", "text_density");
+        // Populate wizard text position selects from static constants (V + H)
+        (function populateWizardTextPosition() {
+            const vSelect = document.getElementById("story-default-text-position-v");
+            const hSelect = document.getElementById("story-default-text-position-h");
+            if (!vSelect || !hSelect) return;
+            vSelect.innerHTML = "";
+            hSelect.innerHTML = "";
+            const { v: defaultV, h: defaultH } = parseTextPosition(STORY_EDITOR_DEFAULTS.text_position);
+            STORY_EDITOR_TEXT_POSITIONS_V.forEach((val) => {
+                const opt = document.createElement("option");
+                opt.value = val;
+                opt.textContent = STORY_EDITOR_POSITION_LABELS_V[val];
+                if (val === defaultV) opt.selected = true;
+                vSelect.appendChild(opt);
+            });
+            STORY_EDITOR_TEXT_POSITIONS_H.forEach((val) => {
+                const opt = document.createElement("option");
+                opt.value = val;
+                opt.textContent = STORY_EDITOR_POSITION_LABELS_H[val];
+                if (val === defaultH) opt.selected = true;
+                hSelect.appendChild(opt);
+            });
+        })();
+        populateDropdown("story-default-font-family", "font_families").then(() => {
+            const select = document.getElementById("story-default-font-family");
+            if (select && !select.value) {
+                select.value = STORY_EDITOR_DEFAULTS.font_family;
+            }
+        });
         // Populate first character gender if present
         populateDropdown("char-gender-1", "genders");
     }
@@ -189,16 +463,200 @@ document.addEventListener("DOMContentLoaded", function () {
     const stepDots = Array.from(document.querySelectorAll('#wizard-steps .wizard-step'));
     const btnPrev = document.getElementById('wizard-prev');
     const btnNext = document.getElementById('wizard-next');
+    const WIZARD_STEP_COUNT = 4;
+
+    const WIZARD_FIELD_ERROR_CONFIG = {
+        'story-genre': { errorId: 'story-genre-error' },
+        'story-outline': { errorId: 'story-outline-error' },
+        'char-name-1': { errorId: 'main-characters-error' },
+        'story-num-pages': { errorId: 'story-num-pages-error' },
+        'story-image-style': { errorId: 'story-image-style-error' },
+        'story-word-to-picture-ratio': {
+            errorId: 'story-word-to-picture-ratio-error',
+        },
+        'story-text-density': { errorId: 'story-text-density-error' },
+    };
+
+    function getWizardValidationControl(controlOrId) {
+        if (!controlOrId) return null;
+        if (typeof controlOrId === 'string') {
+            return document.getElementById(controlOrId);
+        }
+        return controlOrId;
+    }
+
+    function getWizardValidationMeta(controlOrId) {
+        const control = getWizardValidationControl(controlOrId);
+        if (!control) return {};
+        const config = WIZARD_FIELD_ERROR_CONFIG[control.id] || {};
+        const errorId = config.errorId || control.getAttribute('aria-describedby');
+        const errorEl = errorId ? document.getElementById(errorId) : null;
+        return { control, errorId, errorEl };
+    }
+
+    function setWizardFieldError(controlOrId, message) {
+        const { control, errorId, errorEl } = getWizardValidationMeta(controlOrId);
+        if (!control) return;
+
+        if (errorId) {
+            control.setAttribute('aria-describedby', errorId);
+        }
+
+        if (message) {
+            control.setAttribute('aria-invalid', 'true');
+            if (errorEl) {
+                errorEl.textContent = message;
+            }
+            return;
+        }
+
+        control.removeAttribute('aria-invalid');
+        if (errorEl) {
+            errorEl.textContent = '';
+        }
+    }
+
+    function clearWizardStepErrors(stepIdx) {
+        if (stepIdx === 0) {
+            setWizardFieldError('story-genre', '');
+            setWizardFieldError('story-outline', '');
+        } else if (stepIdx === 1) {
+            document
+                .querySelectorAll('#main-characters-fieldset .char-name')
+                .forEach((input) => setWizardFieldError(input, ''));
+            const sharedError = document.getElementById('main-characters-error');
+            if (sharedError) {
+                sharedError.textContent = '';
+            }
+        } else if (stepIdx === 2) {
+            setWizardFieldError('story-num-pages', '');
+            setWizardFieldError('story-image-style', '');
+            setWizardFieldError('story-word-to-picture-ratio', '');
+            setWizardFieldError('story-text-density', '');
+        }
+    }
+
+    function focusFirstInvalidWizardControl(invalidControls) {
+        const firstInvalid = invalidControls.find(Boolean);
+        if (firstInvalid && typeof firstInvalid.focus === 'function') {
+            firstInvalid.focus();
+        }
+    }
+
+    function attachWizardValidationClearHandler(controlOrId, eventNames = ['input', 'change']) {
+        const control = getWizardValidationControl(controlOrId);
+        if (!control || control.dataset.inlineValidationBound === 'true') {
+            return;
+        }
+
+        eventNames.forEach((eventName) => {
+            control.addEventListener(eventName, () => {
+                if (control.id.startsWith('char-name-')) {
+                    const names = Array.from(
+                        document.querySelectorAll('#main-characters-fieldset .char-name'),
+                    );
+                    const hasCharacterName = names.some((input) => input.value.trim());
+                    if (hasCharacterName) {
+                        names.forEach((input) => setWizardFieldError(input, ''));
+                        const sharedError = document.getElementById('main-characters-error');
+                        if (sharedError) {
+                            sharedError.textContent = '';
+                        }
+                    }
+                    updateStepUI();
+                    return;
+                }
+
+                const isEmptyNumber =
+                    control.id === 'story-num-pages' &&
+                    !parseInt(control.value || '0', 10);
+                updateStepUI();
+                if (!control.value || isEmptyNumber) {
+                    return;
+                }
+                setWizardFieldError(control, '');
+            });
+        });
+
+        control.dataset.inlineValidationBound = 'true';
+    }
+
+    function initializeWizardValidationA11y() {
+        Object.keys(WIZARD_FIELD_ERROR_CONFIG).forEach((id) => {
+            attachWizardValidationClearHandler(id);
+        });
+        document
+            .querySelectorAll('#main-characters-fieldset .char-name')
+            .forEach((input) => attachWizardValidationClearHandler(input));
+    }
+
+    function isWizardStepSatisfied(stepIdx) {
+        if (stepIdx === 0) {
+            const genre = document.getElementById('story-genre')?.value;
+            const outline = document.getElementById('story-outline')?.value?.trim();
+            return Boolean(genre && outline);
+        }
+
+        if (stepIdx === 1) {
+            const names = Array.from(
+                document.querySelectorAll('#main-characters-fieldset .char-name'),
+            )
+                .map((input) => input.value.trim())
+                .filter(Boolean);
+            return names.length > 0;
+        }
+
+        if (stepIdx === 2) {
+            const numPages = parseInt(
+                document.getElementById('story-num-pages')?.value || '0',
+                10,
+            );
+            const imageStyle = document.getElementById('story-image-style')?.value;
+            const ratio = document.getElementById('story-word-to-picture-ratio')?.value;
+            const density = document.getElementById('story-text-density')?.value;
+            return Boolean(numPages && imageStyle && ratio && density);
+        }
+
+        return true;
+    }
+
+    function getWizardMaxReachableStep() {
+        let maxReachableStep = 0;
+        for (let stepIdx = 0; stepIdx < WIZARD_STEP_COUNT - 1; stepIdx += 1) {
+            if (!isWizardStepSatisfied(stepIdx)) {
+                break;
+            }
+            maxReachableStep = stepIdx + 1;
+        }
+        return maxReachableStep;
+    }
 
     function updateStepUI() {
+        const maxReachableStep = getWizardMaxReachableStep();
+        if (wizardStep > maxReachableStep) {
+            wizardStep = maxReachableStep;
+        }
         // Show only current panel
         stepPanels.forEach((el, i) => {
             if (el) el.style.display = i === wizardStep ? 'block' : 'none';
         });
         // Step indicators
         stepDots.forEach((dot, i) => {
+            const isReachable = i <= maxReachableStep;
             dot.classList.toggle('active', i === wizardStep);
-            dot.setAttribute('aria-current', i === wizardStep ? 'step' : 'false');
+            if (i === wizardStep) {
+                dot.setAttribute('aria-current', 'step');
+            } else {
+                dot.removeAttribute('aria-current');
+            }
+
+            dot.disabled = !isReachable;
+
+            if (!isReachable) {
+                dot.setAttribute('aria-disabled', 'true');
+            } else {
+                dot.removeAttribute('aria-disabled');
+            }
         });
         // Nav buttons
         if (btnPrev) btnPrev.disabled = wizardStep === 0;
@@ -218,26 +676,92 @@ document.addEventListener("DOMContentLoaded", function () {
     function validateStep(stepIdx) {
         // Minimal validation per step
         if (stepIdx === 0) {
-            const genre = document.getElementById('story-genre')?.value;
-            const outline = document.getElementById('story-outline')?.value?.trim();
-            if (!genre || !outline) {
+            const genreInput = document.getElementById('story-genre');
+            const outlineInput = document.getElementById('story-outline');
+            const genre = genreInput?.value;
+            const outline = outlineInput?.value?.trim();
+            const invalidControls = [];
+
+            clearWizardStepErrors(stepIdx);
+
+            if (!genre) {
+                setWizardFieldError(genreInput, 'Select a genre to continue.');
+                invalidControls.push(genreInput);
+            }
+            if (!outline) {
+                setWizardFieldError(
+                    outlineInput,
+                    'Enter a story outline to continue.',
+                );
+                invalidControls.push(outlineInput);
+            }
+            if (invalidControls.length > 0) {
                 displayMessage('Please select a Genre and provide a Story Outline to continue.', 'warning');
+                focusFirstInvalidWizardControl(invalidControls);
                 return false;
             }
         } else if (stepIdx === 1) {
             // Require at least one character name or at least one selected existing character (future)
-            const names = Array.from(document.querySelectorAll('#main-characters-fieldset .char-name')).map(i => i.value.trim()).filter(Boolean);
+            const nameInputs = Array.from(
+                document.querySelectorAll('#main-characters-fieldset .char-name'),
+            );
+            const names = nameInputs.map(i => i.value.trim()).filter(Boolean);
+            clearWizardStepErrors(stepIdx);
             if (names.length === 0) {
+                nameInputs.forEach((input) => {
+                    setWizardFieldError(
+                        input,
+                        'Add at least one character name to continue.',
+                    );
+                });
                 displayMessage('Add at least one character name.', 'warning');
+                focusFirstInvalidWizardControl(nameInputs);
                 return false;
             }
         } else if (stepIdx === 2) {
-            const numPages = parseInt(document.getElementById('story-num-pages')?.value || '0', 10);
-            const imgStyle = document.getElementById('story-image-style')?.value;
-            const ratio = document.getElementById('story-word-to-picture-ratio')?.value;
-            const density = document.getElementById('story-text-density')?.value;
-            if (!numPages || !imgStyle || !ratio || !density) {
+            const numPagesInput = document.getElementById('story-num-pages');
+            const imageStyleInput = document.getElementById('story-image-style');
+            const ratioInput = document.getElementById('story-word-to-picture-ratio');
+            const densityInput = document.getElementById('story-text-density');
+            const numPages = parseInt(numPagesInput?.value || '0', 10);
+            const imgStyle = imageStyleInput?.value;
+            const ratio = ratioInput?.value;
+            const density = densityInput?.value;
+            const invalidControls = [];
+
+            clearWizardStepErrors(stepIdx);
+
+            if (!numPages) {
+                setWizardFieldError(
+                    numPagesInput,
+                    'Enter the number of pages to continue.',
+                );
+                invalidControls.push(numPagesInput);
+            }
+            if (!imgStyle) {
+                setWizardFieldError(
+                    imageStyleInput,
+                    'Select an image style to continue.',
+                );
+                invalidControls.push(imageStyleInput);
+            }
+            if (!ratio) {
+                setWizardFieldError(
+                    ratioInput,
+                    'Select a word-to-picture ratio to continue.',
+                );
+                invalidControls.push(ratioInput);
+            }
+            if (!density) {
+                setWizardFieldError(
+                    densityInput,
+                    'Select a text density to continue.',
+                );
+                invalidControls.push(densityInput);
+            }
+            if (invalidControls.length > 0) {
                 displayMessage('Please complete options: pages, image style, ratio, and text density.', 'warning');
+                focusFirstInvalidWizardControl(invalidControls);
                 return false;
             }
         }
@@ -246,6 +770,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function goToStep(step) {
         if (step < 0 || step > 3) return;
+        const maxReachableStep = getWizardMaxReachableStep();
+        if (step > maxReachableStep) {
+            return;
+        }
         wizardStep = step;
         updateStepUI();
     }
@@ -1065,20 +1593,35 @@ document.addEventListener("DOMContentLoaded", function () {
         const review = document.getElementById('review-container');
         if (!review) return;
         const data = getStoryDataFromForm();
+        const editorSettings = data.editor_settings || STORY_EDITOR_DEFAULTS;
         // Simple summary
         review.innerHTML = '';
         const s = document.createElement('div');
         s.className = 'review-summary';
         const characters = data.main_characters?.map(c => c.name).filter(Boolean) || [];
         const reusedCount = Array.isArray(data.character_ids) ? data.character_ids.length : 0;
+        const pageFormatLabels = {
+            letter: 'US Letter',
+            a4: 'A4',
+            portrait: 'Portrait',
+            landscape: 'Landscape',
+            'square-storybook': 'Square Storybook',
+        };
+        const pageFormat = String(
+            editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format,
+        ).toLowerCase();
+        const layoutMode = normalizeLayoutMode(editorSettings.layout_mode);
         s.innerHTML = `
-            <p><strong>Title:</strong> ${data.title || '(AI will generate)'}</p>
-            <p><strong>Genre:</strong> ${data.genre || '(not set)'}</p>
-            <p><strong>Outline:</strong> ${data.story_outline || '(empty)'}</p>
-            <p><strong>Characters:</strong> ${characters.length ? characters.join(', ') : '(none)'}</p>
+            <p><strong>Title:</strong> ${escapeHTML(data.title || '(AI will generate)')}</p>
+            <p><strong>Genre:</strong> ${escapeHTML(data.genre || '(not set)')}</p>
+            <p><strong>Outline:</strong> ${escapeHTML(data.story_outline || '(empty)')}</p>
+            <p><strong>Characters:</strong> ${escapeHTML(characters.length ? characters.join(', ') : '(none)')}</p>
             <p><strong>Reused characters:</strong> ${reusedCount}</p>
-            <p><strong>Pages:</strong> ${data.num_pages || '(not set)'} | <strong>Style:</strong> ${data.image_style || '(not set)'}</p>
-            <p><strong>Ratio:</strong> ${data.word_to_picture_ratio || '(not set)'} | <strong>Density:</strong> ${data.text_density || '(not set)'}</p>
+            <p><strong>Pages:</strong> ${escapeHTML(data.num_pages || '(not set)')} | <strong>Style:</strong> ${escapeHTML(data.image_style || '(not set)')}</p>
+            <p><strong>Ratio:</strong> ${escapeHTML(data.word_to_picture_ratio || '(not set)')} | <strong>Density:</strong> ${escapeHTML(data.text_density || '(not set)')}</p>
+            <p><strong>Page format:</strong> ${escapeHTML(pageFormatLabels[pageFormat] || pageFormat)}</p>
+            <p><strong>Layout mode:</strong> ${escapeHTML(getLayoutModeLabel(layoutMode))} | <strong>Text position:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')}</p>
+            <p><strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
         `;
         review.appendChild(s);
     }
@@ -1098,7 +1641,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Click on step indicators
     stepDots.forEach((dot) => {
         dot.addEventListener('click', () => {
-            const s = parseInt(dot.getAttribute('data-step'), 10);
+            if (dot.disabled || dot.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
             // Close Characters modal if open and reset modal state
             try {
                 const modal = document.getElementById('char-modal');
@@ -1111,6 +1656,7 @@ document.addEventListener("DOMContentLoaded", function () {
             } catch (error) {
                 console.error("Error closing modal:", error);
             }
+            const s = parseInt(dot.getAttribute('data-step'), 10);
             // Navigate to requested step
             if (!Number.isNaN(s)) {
                 goToStep(Math.max(0, Math.min(3, s)));
@@ -1121,6 +1667,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // --- INITIALIZATION ---
     // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
+    initializeDropdownRetryButtons();
     updateNav(!!authToken);
     if (!!authToken) {
         if (window.location.hash === "#browse") {
@@ -1130,6 +1677,7 @@ document.addEventListener("DOMContentLoaded", function () {
             showSection(storyCreationSection);
             populateAllDropdowns(); // Populate all dropdowns on load if logged in
         }
+        initializeWizardValidationA11y();
         // Initialize wizard UI state on load
         goToStep(0);
         // Add first character entry if not already present by HTML
@@ -1163,6 +1711,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Exposed at module scope for reuse (e.g., nav actions, "Use as Template").
     function resetFormAndState() {
         console.log("[resetFormAndState] Attempting to reset form and state.");
+        wizardStep = 0;
         if (storyCreationForm) {
             storyCreationForm.reset();
             console.log("[resetFormAndState] storyCreationForm reset called.");
@@ -1183,6 +1732,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 select.selectedIndex = 0; // The placeholder is the first option
             }
         });
+
+        clearWizardStepErrors(0);
+        clearWizardStepErrors(1);
+        clearWizardStepErrors(2);
 
         // Clear existing dynamic characters (beyond the first one)
         const characterEntries = document.querySelectorAll(
@@ -1221,7 +1774,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 const detailsDiv = document.getElementById("char-details-1");
                 const toggleButton = document.getElementById("char-details-toggle-1");
                 if (detailsDiv) detailsDiv.style.display = "none";
-                if (toggleButton) toggleButton.textContent = "Show Details";
+                if (toggleButton && detailsDiv) {
+                    syncCharacterDetailsDisclosure(toggleButton, detailsDiv);
+                }
                 console.log(
                     "[resetFormAndState] Reset fields and state for first character entry.",
                 );
@@ -1257,6 +1812,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         showSection(storyCreationSection); // Ensure the creation form is visible
+        updateStepUI();
         displayMessage("Form cleared. Ready for a new story.", "info");
         console.log(
             "[resetFormAndState] Form fields and draft state reset. Navigated to story creation section.",
@@ -1283,35 +1839,48 @@ document.addEventListener("DOMContentLoaded", function () {
         newCharacterEntry.classList.add("character-entry");
         newCharacterEntry.innerHTML = `
             <hr>
-            <h4>Character ${characterCount} <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}">Show Details</button></h4>
+            <div class="character-entry-header">
+                <h4 class="character-entry-title">Character ${characterCount}</h4>
+                <div class="character-entry-actions">
+                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
+                    <button type="button" class="remove-character-button action-button-danger" aria-label="Delete character ${characterCount} from this story">Delete from Story</button>
+                </div>
+            </div>
             <div class="form-group">
-                <label for="char-name-${characterCount}">Name:</label>
-                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" required>
+                <label for="char-name-${characterCount}">Name <span class="required-badge">Required</span></label>
+                <input type="text" id="char-name-${characterCount}" name="char-name-${characterCount}" class="char-name" required aria-describedby="main-characters-error">
             </div>
             <div id="char-details-${characterCount}" class="character-details-fields" style="display: none;">
                 <div class="form-group">
-                    <label for="char-age-${characterCount}">Age (Optional):</label>
-                    <input type="number" id="char-age-${characterCount}" name="char-age-${characterCount}">
+                    <label for="char-age-${characterCount}">Age</label>
+                    <input type="number" id="char-age-${characterCount}" name="char-age-${characterCount}" class="char-age">
                 </div>
                 <div class="form-group">
-                    <label for="char-gender-${characterCount}">Gender (Optional):</label>
-                    <select id="char-gender-${characterCount}" name="char-gender-${characterCount}"></select>
+                    <label for="char-gender-${characterCount}">Gender</label>
+                    <select id="char-gender-${characterCount}" name="char-gender-${characterCount}" class="char-gender"></select>
                 </div>
                 <div class="form-group">
-                    <label for="char-physical-appearance-${characterCount}">Physical Appearance (Optional):</label>
-                    <textarea id="char-physical-appearance-${characterCount}" name="char-physical-appearance-${characterCount}" rows="2"></textarea>
+                    <label for="char-physical-appearance-${characterCount}">Physical Appearance</label>
+                    <textarea id="char-physical-appearance-${characterCount}" name="char-physical-appearance-${characterCount}" class="char-physical-appearance" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="char-clothing-style-${characterCount}">Clothing Style (Optional):</label>
-                    <textarea id="char-clothing-style-${characterCount}" name="char-clothing-style-${characterCount}" rows="2"></textarea>
+                    <label for="char-clothing-style-${characterCount}">Clothing Style</label>
+                    <textarea id="char-clothing-style-${characterCount}" name="char-clothing-style-${characterCount}" class="char-clothing-style" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="char-key-traits-${characterCount}">Key Traits/Habits (Optional):</label>
-                    <textarea id="char-key-traits-${characterCount}" name="char-key-traits-${characterCount}" rows="2"></textarea>
+                    <label for="char-key-traits-${characterCount}">Key Traits/Habits</label>
+                    <textarea id="char-key-traits-${characterCount}" name="char-key-traits-${characterCount}" class="char-key-traits" rows="2"></textarea>
                 </div>
             </div>
         `;
         fieldset.appendChild(newCharacterEntry);
+        const detailsToggle = newCharacterEntry.querySelector('.character-details-toggle');
+        const detailsPanel = newCharacterEntry.querySelector('.character-details-fields');
+        if (detailsToggle && detailsPanel) {
+            syncCharacterDetailsDisclosure(detailsToggle, detailsPanel);
+        }
+        attachWizardValidationClearHandler(newCharacterEntry.querySelector('.char-name'));
+        updateStepUI();
         // Populate gender dropdown for the newly added character entry
         try { populateDropdown(`char-gender-${characterCount}`, 'genders'); } catch (e) { /* ignore */ }
     }
@@ -1366,243 +1935,992 @@ document.addEventListener("DOMContentLoaded", function () {
         return date.toLocaleString(undefined, options); // Using toLocaleString for date and time
     }
 
-    // Function to render the story preview
-    function displayStory(story) {
-        if (!storyPreviewContent || !story) {
-            console.error(
-                "[displayStory] Story preview content area or story data is missing.",
+    function normalizeStoryEditorSettings(settings) {
+        const normalized = {
+            ...STORY_EDITOR_DEFAULTS,
+            ...(settings || {}),
+        };
+        normalized.layout_mode = normalizeLayoutMode(normalized.layout_mode);
+        return normalized;
+    }
+
+    function normalizePageEditorState(page) {
+        const state = { ...(page?.editor_state || {}) };
+        if (state.original_text == null) state.original_text = page?.text || "";
+        if (state.original_image_path == null) {
+            state.original_image_path = page?.image_path || null;
+        }
+        return state;
+    }
+
+    function cloneStoryForEditor(story) {
+        const cloned = JSON.parse(JSON.stringify(story));
+        cloned.editor_settings = normalizeStoryEditorSettings(cloned.editor_settings);
+        cloned.pages = Array.isArray(cloned.pages)
+            ? cloned.pages
+                .slice()
+                .sort((a, b) => parseInt(a.page_number, 10) - parseInt(b.page_number, 10))
+                .map((page) => ({
+                    ...page,
+                    editor_state: normalizePageEditorState(page),
+                }))
+            : [];
+        return cloned;
+    }
+
+    function getPageEffectiveSettings(story, page) {
+        const settings = normalizeStoryEditorSettings(story?.editor_settings);
+        const editorState = normalizePageEditorState(page);
+        ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
+            if (editorState[key] !== undefined && editorState[key] !== null && editorState[key] !== "") {
+                settings[key] = editorState[key];
+            }
+        });
+        return settings;
+    }
+
+    function getTextPositionStyle(position) {
+        const oldMap = {
+            top: "top-center",
+            bottom: "bottom-center",
+            left: "middle-left",
+            right: "middle-right",
+            center: "middle-center",
+        };
+        const normalized = oldMap[String(position || "").toLowerCase()]
+            || String(position || "bottom-center").toLowerCase();
+        const parts = normalized.split("-");
+        const vertical = ["top", "middle", "bottom"].includes(parts[0]) ? parts[0] : "bottom";
+        const horizontal = ["left", "center", "right"].includes(parts[1]) ? parts[1] : "center";
+        const percent = (value, total) => `${((value / total) * 100).toFixed(3)}%`;
+        const stageWidth = 612;
+        const stageHeight = 792;
+        const margin = 36;
+        const top = vertical === "top"
+            ? percent(margin, stageHeight)
+            : vertical === "middle"
+                ? percent((stageHeight - (stageHeight * 0.34)) / 2, stageHeight)
+                : "";
+        const bottom = vertical === "bottom" ? percent(margin, stageHeight) : "";
+        const height = vertical === "middle"
+            ? percent(stageHeight * 0.34, stageHeight)
+            : percent(stageHeight * 0.22, stageHeight);
+
+        let width;
+        let left;
+        let right;
+        if (horizontal === "left") {
+            width = percent(stageWidth * 0.48, stageWidth);
+            left = percent(margin, stageWidth);
+            right = "";
+        } else if (horizontal === "right") {
+            width = percent(stageWidth * 0.48, stageWidth);
+            left = "";
+            right = percent(margin, stageWidth);
+        } else {
+            width = vertical === "middle"
+                ? percent(stageWidth * 0.65, stageWidth)
+                : percent(stageWidth - (2 * margin), stageWidth);
+            left = vertical === "middle"
+                ? percent((stageWidth - (stageWidth * 0.65)) / 2, stageWidth)
+                : percent(margin, stageWidth);
+            right = "";
+        }
+
+        return {
+            position: "absolute",
+            top,
+            right,
+            bottom,
+            left,
+            width,
+            height,
+        };
+    }
+
+    function applyEditorPreviewStyles(pageStage, imageSlot, textCard, settings) {
+        const layoutMode = normalizeLayoutMode(settings.layout_mode);
+        const positionStyle = getTextPositionStyle(settings.text_position);
+        const { v, h } = parseTextPosition(settings.text_position);
+        const justifyContent = v === "top"
+            ? "flex-start"
+            : v === "middle"
+                ? "center"
+                : "flex-end";
+        const alignItems = h === "left"
+            ? "flex-start"
+            : h === "center"
+                ? "center"
+                : "flex-end";
+        const textAlign = h === "right" ? "right" : h === "center" ? "center" : "left";
+
+        pageStage.dataset.layoutMode = layoutMode;
+        if (imageSlot) {
+            imageSlot.dataset.layoutMode = layoutMode;
+            imageSlot.style.position = "";
+            imageSlot.style.inset = "";
+            imageSlot.style.width = "";
+            imageSlot.style.height = "";
+            imageSlot.style.minHeight = "0";
+            imageSlot.style.overflow = "hidden";
+        }
+
+        pageStage.style.display = "block";
+        pageStage.style.gridTemplateColumns = "";
+        pageStage.style.gridTemplateRows = "";
+        pageStage.style.justifyContent = "";
+        pageStage.style.alignItems = "";
+
+        textCard.style.display = "block";
+        textCard.style.alignItems = "";
+        textCard.style.justifyContent = "";
+        textCard.style.textAlign = "left";
+        textCard.style.position = positionStyle.position;
+        textCard.style.top = positionStyle.top;
+        textCard.style.right = positionStyle.right;
+        textCard.style.bottom = positionStyle.bottom;
+        textCard.style.left = positionStyle.left;
+        textCard.style.width = positionStyle.width;
+        textCard.style.height = positionStyle.height;
+        textCard.style.marginLeft = "0";
+        textCard.style.marginRight = "0";
+        textCard.style.boxSizing = "border-box";
+        textCard.style.padding = "1rem";
+        textCard.style.fontSize = `${Math.max(12, parseInt(settings.font_size, 10) || 28)}px`;
+        textCard.style.color = settings.font_color || "#ffffff";
+        const opacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
+        textCard.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
+        textCard.style.fontFamily = "inherit";
+
+        if (layoutMode === "horizontal-split" || layoutMode === "vertical-split") {
+            pageStage.style.display = "grid";
+            pageStage.style.gridTemplateRows = layoutMode === "horizontal-split" ? "1.05fr 0.7fr" : "1fr";
+            pageStage.style.gridTemplateColumns = layoutMode === "vertical-split" ? "1.12fr 0.88fr" : "1fr";
+            if (imageSlot) {
+                imageSlot.style.position = "relative";
+                imageSlot.style.width = "100%";
+                imageSlot.style.height = "100%";
+            }
+            textCard.style.display = "flex";
+            textCard.style.position = "relative";
+            textCard.style.top = "";
+            textCard.style.right = "";
+            textCard.style.bottom = "";
+            textCard.style.left = "";
+            textCard.style.width = "100%";
+            textCard.style.height = "100%";
+            textCard.style.padding = "1.25rem";
+            textCard.style.alignItems = alignItems;
+            textCard.style.justifyContent = justifyContent;
+            textCard.style.textAlign = textAlign;
+            textCard.style.borderRadius = "0";
+        }
+    }
+
+    /**
+     * Re-applies preview styles to all visible page stages without destroying
+     * the DOM. Used by control input handlers so native UI elements (colour
+     * pickers, selects) are not detached mid-interaction.
+     */
+    function applyLivePreviewUpdate() {
+        const story = storyEditorState.story;
+        if (!story || !story.pages) return;
+        story.pages.forEach((page) => {
+            const pageSettings = getPageEffectiveSettings(story, page);
+            const preview = document.querySelector(
+                `.story-editor-page-preview[data-page-id="${page.id}"]`
             );
+            if (!preview) return;
+            const pageStage = preview.querySelector(".story-editor-page-stage");
+            const imageSlot = preview.querySelector(".story-editor-page-image-slot");
+            const textCard = preview.querySelector(".story-editor-text-card");
+            if (pageStage && textCard) {
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
+            }
+            const textContent = preview.querySelector(
+                ".story-editor-text-card-content"
+            );
+            if (textContent) textContent.textContent = page.text || "";
+        });
+    }
+
+    function buildStoryEditorPayload({ includeAllPages = false } = {}) {
+        const story = storyEditorState.story;
+        if (!story) return null;
+        const changedPages = [];
+        (story.pages || []).forEach((page) => {
+            const original = page.__original || {};
+            const state = page.editor_state || {};
+            const payloadState = {};
+
+            ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
+                if (state[key] !== undefined && state[key] !== original.editor_state?.[key]) {
+                    payloadState[key] = state[key];
+                }
+            });
+
+            const textChanged = page.text !== original.text;
+            if (includeAllPages || textChanged || Object.keys(payloadState).length > 0) {
+                changedPages.push({
+                    id: page.id,
+                    text: page.text,
+                    editor_state: {
+                        original_text: state.original_text,
+                        original_image_path: state.original_image_path,
+                        ...payloadState,
+                    },
+                });
+            }
+        });
+
+        return {
+            title: story.title,
+            editor_settings: story.editor_settings,
+            pages: changedPages,
+        };
+    }
+
+    function setStoryEditorSaveStatus(state, message, { showRetry = false } = {}) {
+        storyEditorState.saveStatus = {
+            state,
+            message,
+            showRetry,
+        };
+
+        const statusEl = document.getElementById("story-editor-save-status");
+        if (statusEl) {
+            statusEl.dataset.state = state;
+            statusEl.textContent = message;
+        }
+
+        const retryButton = document.getElementById("story-editor-retry-save-button");
+        if (retryButton) {
+            retryButton.style.display = showRetry ? "inline-flex" : "none";
+            retryButton.disabled = storyEditorState.isSaving;
+        }
+    }
+
+    async function persistStoryEditor({ immediate = false, toast = false } = {}) {
+        const story = storyEditorState.story;
+        if (!story || !story.id || storyEditorState.isSaving) {
+            storyEditorState.saveRequested = storyEditorState.isSaving;
+            return;
+        }
+        const payload = buildStoryEditorPayload({ includeAllPages: immediate });
+        if (!payload) return;
+
+        storyEditorState.isSaving = true;
+        setStoryEditorSaveStatus(
+            "saving",
+            immediate ? "Saving..." : "Auto-saving...",
+        );
+        try {
+            const updatedStory = await apiRequest(
+                `/api/v1/stories/${story.id}/editor`,
+                "PUT",
+                payload,
+            );
+            currentStoryId = updatedStory.id;
+            if (!storyEditorState.saveRequested) {
+                storyEditorState.story = cloneStoryForEditor(updatedStory);
+                storyEditorState.story.pages.forEach((page) => {
+                    page.__original = JSON.parse(JSON.stringify(page));
+                });
+                renderStoryEditor();
+                setStoryEditorSaveStatus(
+                    "saved",
+                    `Saved ${new Date().toLocaleTimeString()}`,
+                );
+            }
+            if (toast) displayMessage("Story changes saved.", "success");
+        } catch (error) {
+            console.error("[persistStoryEditor] Error saving editor state:", error);
+            setStoryEditorSaveStatus(
+                "failed",
+                "Save failed. Retry to keep editing.",
+                { showRetry: true },
+            );
+        } finally {
+            storyEditorState.isSaving = false;
+            if (storyEditorState.saveStatus.showRetry) {
+                setStoryEditorSaveStatus(
+                    storyEditorState.saveStatus.state,
+                    storyEditorState.saveStatus.message,
+                    { showRetry: true },
+                );
+            }
+            if (storyEditorState.saveRequested) {
+                storyEditorState.saveRequested = false;
+                persistStoryEditor({ immediate: true });
+            }
+        }
+    }
+
+    function scheduleStoryEditorAutosave() {
+        clearTimeout(storyEditorState.autosaveTimer);
+        storyEditorState.autosaveTimer = setTimeout(() => {
+            persistStoryEditor();
+        }, 800);
+        setStoryEditorSaveStatus("unsaved", "Unsaved changes");
+    }
+
+    async function restoreStoryPageText(pageId) {
+        const story = storyEditorState.story;
+        if (!story) return;
+        const updatedPage = await apiRequest(
+            `/api/v1/stories/${story.id}/pages/${pageId}/restore-text`,
+            "POST",
+        );
+        const page = story.pages.find((item) => item.id === pageId);
+        if (!page || !updatedPage) return;
+        page.text = updatedPage.text;
+        page.editor_state = normalizePageEditorState(updatedPage);
+        if (parseInt(page.page_number, 10) === 0) story.title = updatedPage.text;
+        renderStoryEditor();
+        displayMessage("Original page text restored.", "success");
+    }
+
+    async function restoreStoryPageImage(pageId) {
+        const story = storyEditorState.story;
+        if (!story) return;
+        const updatedPage = await apiRequest(
+            `/api/v1/stories/${story.id}/pages/${pageId}/restore-image`,
+            "POST",
+        );
+        const page = story.pages.find((item) => item.id === pageId);
+        if (!page || !updatedPage) return;
+        page.image_path = updatedPage.image_path;
+        page.editor_state = normalizePageEditorState(updatedPage);
+        renderStoryEditor();
+        displayMessage("Original page image restored.", "success");
+    }
+
+    async function regenerateStoryPageImage(pageId) {
+        const story = storyEditorState.story;
+        if (!story) return;
+        const updatedPage = await apiRequest(
+            `/api/v1/stories/${story.id}/pages/${pageId}/regenerate-image`,
+            "POST",
+        );
+        const page = story.pages.find((item) => item.id === pageId);
+        if (!page || !updatedPage) return;
+        page.image_path = updatedPage.image_path;
+        page.editor_state = normalizePageEditorState(updatedPage);
+        renderStoryEditor();
+        displayMessage("Page image regenerated.", "success");
+    }
+
+    function createFontOptions(selectedValue) {
+        return STORY_EDITOR_FONT_OPTIONS.map((option) => {
+            const selected = option.value === selectedValue ? "selected" : "";
+            return `<option value="${option.value}" ${selected}>${option.label}</option>`;
+        }).join("");
+    }
+
+    function createLayoutModeOptions(selectedValue) {
+        const normalized = normalizeLayoutMode(selectedValue);
+        return STORY_EDITOR_LAYOUT_OPTIONS.map((option) => {
+            const selected = option.value === normalized ? "selected" : "";
+            return `<option value="${option.value}" ${selected}>${option.label}</option>`;
+        }).join("");
+    }
+
+    function createTextPositionOptions(selectedValue) {
+        return ["top", "bottom", "left", "right", "center"].map((value) => {
+            const selected = value === selectedValue ? "selected" : "";
+            const label = value.charAt(0).toUpperCase() + value.slice(1);
+            return `<option value="${value}" ${selected}>${label}</option>`;
+        }).join("");
+    }
+
+    function parseTextPosition(position) {
+        const oldMap = {
+            top: "top-center",
+            bottom: "bottom-center",
+            left: "middle-left",
+            right: "middle-right",
+            center: "middle-center",
+        };
+        const normalized = oldMap[String(position || "").toLowerCase()]
+            || String(position || "bottom-center").toLowerCase();
+        const parts = normalized.split("-");
+        return {
+            v: ["top", "middle", "bottom"].includes(parts[0]) ? parts[0] : "bottom",
+            h: ["left", "center", "right"].includes(parts[1]) ? parts[1] : "center",
+        };
+    }
+
+    function combineTextPosition(vertical, horizontal) {
+        return `${vertical || "bottom"}-${horizontal || "center"}`;
+    }
+
+    function isPrivateStoryAssetPath(path) {
+        const normalized = String(path || "")
+            .trim()
+            .replace(/^\/+/, "")
+            .replace(/\\/g, "/");
+        return /^images\/user_\d+\/story_\d+(?:\/|$)/.test(normalized);
+    }
+
+    function revokeStoryEditorImageUrl(entry) {
+        if (!entry?.objectUrl || !window.URL?.revokeObjectURL) return;
+        window.URL.revokeObjectURL(entry.objectUrl);
+    }
+
+    function syncStoryEditorImageCache(story) {
+        const pages = Array.isArray(story?.pages) ? story.pages : [];
+        const validImagePaths = new Map(
+            pages
+                .filter((page) => page?.image_path && isPrivateStoryAssetPath(page.image_path))
+                .map((page) => [page.id, page.image_path]),
+        );
+
+        for (const [pageId, entry] of storyEditorState.pageImageObjectUrls.entries()) {
+            if (entry.storyId !== story?.id || validImagePaths.get(pageId) !== entry.imagePath) {
+                revokeStoryEditorImageUrl(entry);
+                storyEditorState.pageImageObjectUrls.delete(pageId);
+            }
+        }
+
+        for (const [pageId, entry] of storyEditorState.pageImageFetches.entries()) {
+            if (entry.storyId !== story?.id || validImagePaths.get(pageId) !== entry.imagePath) {
+                storyEditorState.pageImageFetches.delete(pageId);
+            }
+        }
+    }
+
+    function createStoryPageImageElement(src) {
+        const imageEl = document.createElement("img");
+        imageEl.className = "story-editor-page-image";
+        imageEl.src = src;
+        imageEl.alt = "Story page image";
+        return imageEl;
+    }
+
+    function setStoryPageImageSlotContent(slot, content) {
+        if (!slot) return;
+        slot.innerHTML = "";
+        if (typeof content === "string") {
+            slot.innerHTML = content;
+            return;
+        }
+        slot.appendChild(content);
+    }
+
+    async function fetchPrivateStoryPageImageObjectUrl(storyId, pageId) {
+        const token = localStorage.getItem("authToken");
+        const response = await fetch(
+            `${API_BASE_URL}/api/v1/stories/${storyId}/pages/${pageId}/image`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`Could not load story image (${response.status}).`);
+        }
+
+        const blob = await response.blob();
+        return window.URL.createObjectURL(blob);
+    }
+
+    async function hydrateStoryPageImage(story, page) {
+        const slot = document.querySelector(
+            `.story-editor-page-image-slot[data-page-id="${page.id}"]`,
+        );
+        if (!slot) return;
+
+        if (!page.image_path) {
+            setStoryPageImageSlotContent(
+                slot,
+                '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>',
+            );
+            return;
+        }
+
+        if (!isPrivateStoryAssetPath(page.image_path)) {
+            setStoryPageImageSlotContent(
+                slot,
+                createStoryPageImageElement(staticContentUrl(page.image_path)),
+            );
+            return;
+        }
+
+        const cachedImage = storyEditorState.pageImageObjectUrls.get(page.id);
+        if (
+            cachedImage
+            && cachedImage.storyId === story.id
+            && cachedImage.imagePath === page.image_path
+        ) {
+            setStoryPageImageSlotContent(
+                slot,
+                createStoryPageImageElement(cachedImage.objectUrl),
+            );
+            return;
+        }
+
+        setStoryPageImageSlotContent(
+            slot,
+            '<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>',
+        );
+
+        let pendingImage = storyEditorState.pageImageFetches.get(page.id);
+        if (
+            !pendingImage
+            || pendingImage.storyId !== story.id
+            || pendingImage.imagePath !== page.image_path
+        ) {
+            pendingImage = {
+                storyId: story.id,
+                imagePath: page.image_path,
+                promise: fetchPrivateStoryPageImageObjectUrl(story.id, page.id),
+            };
+            storyEditorState.pageImageFetches.set(page.id, pendingImage);
+        }
+
+        try {
+            const objectUrl = await pendingImage.promise;
+            const latestStory = storyEditorState.story;
+            const latestPage = latestStory?.pages?.find((item) => item.id === page.id);
+
+            if (!latestStory || latestStory.id !== story.id || latestPage?.image_path !== page.image_path) {
+                revokeStoryEditorImageUrl({ objectUrl });
+                return;
+            }
+
+            const previousImage = storyEditorState.pageImageObjectUrls.get(page.id);
+            if (previousImage && previousImage.objectUrl !== objectUrl) {
+                revokeStoryEditorImageUrl(previousImage);
+            }
+
+            storyEditorState.pageImageObjectUrls.set(page.id, {
+                storyId: story.id,
+                imagePath: page.image_path,
+                objectUrl,
+            });
+
+            const latestSlot = document.querySelector(
+                `.story-editor-page-image-slot[data-page-id="${page.id}"]`,
+            );
+            setStoryPageImageSlotContent(
+                latestSlot,
+                createStoryPageImageElement(objectUrl),
+            );
+        } catch (error) {
+            console.error("[story editor image] Error loading image:", error);
+            setStoryPageImageSlotContent(
+                slot,
+                '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>',
+            );
+        } finally {
+            const activeFetch = storyEditorState.pageImageFetches.get(page.id);
+            if (
+                activeFetch
+                && activeFetch.storyId === pendingImage.storyId
+                && activeFetch.imagePath === pendingImage.imagePath
+            ) {
+                storyEditorState.pageImageFetches.delete(page.id);
+            }
+        }
+    }
+
+    function createTextPositionSelects(currentPosition, idPrefix, pageId) {
+        const { v, h } = parseTextPosition(currentPosition);
+        const pageAttr = pageId != null ? ` data-page-id="${pageId}"` : "";
+        const verticalOptions = STORY_EDITOR_TEXT_POSITIONS_V.map((value) =>
+            `<option value="${value}" ${value === v ? "selected" : ""}>${STORY_EDITOR_POSITION_LABELS_V[value]}</option>`
+        ).join("");
+        const horizontalOptions = STORY_EDITOR_TEXT_POSITIONS_H.map((value) =>
+            `<option value="${value}" ${value === h ? "selected" : ""}>${STORY_EDITOR_POSITION_LABELS_H[value]}</option>`
+        ).join("");
+        return `
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <select id="${idPrefix}-v" class="story-editor-select" style="flex:1;min-width:0" ${pageAttr ? `data-page-field="text_position_v"${pageAttr}` : ""}>${verticalOptions}</select>
+                <select id="${idPrefix}-h" class="story-editor-select" style="flex:1;min-width:0" ${pageAttr ? `data-page-field="text_position_h"${pageAttr}` : ""}>${horizontalOptions}</select>
+            </div>
+        `;
+    }
+
+    function renderStoryEditor() {
+        const story = storyEditorState.story;
+        if (!storyPreviewContent || !story) {
+            console.error("[displayStory] Story preview content area or story data is missing.");
             displayMessage("Could not display story preview.", "error");
             if (exportPdfButton) exportPdfButton.style.display = "none";
             return;
         }
 
-        console.log(
-            "[displayStory] Story object received:",
-            JSON.parse(JSON.stringify(story)),
-        );
-        currentStoryId = story.id; // Store current story ID for reuse
+        syncStoryEditorImageCache(story);
 
-        storyPreviewContent.innerHTML = ""; // Clear previous content
+        currentStoryId = story.id;
+        storyPreviewContent.innerHTML = "";
 
-        // --- Main Story Title with Edit Functionality ---
-        const titleContainer = document.createElement("div");
-        titleContainer.classList.add("story-main-title-container");
+        const shell = document.createElement("div");
+        shell.className = "story-editor-shell";
+        const saveStatus = storyEditorState.saveStatus || {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        };
+        const previewAvailable = storyEditorState.previewAvailable !== false;
+        shell.innerHTML = `
+            <div class="story-editor-toolbar">
+                <div class="story-editor-title-group">
+                    <label class="story-editor-field-label" for="story-editor-title">Story Title</label>
+                    <input id="story-editor-title" class="story-editor-title-input" type="text" value="${escapeHTML(story.title || "Untitled Story")}">
+                </div>
+                <div class="story-editor-toolbar-actions">
+                    ${previewAvailable ? '<button type="button" id="story-editor-preview-button" class="action-button-secondary">Back to Preview</button>' : ''}
+                    <span id="story-editor-save-status" class="story-editor-save-status" role="status" aria-live="polite" aria-atomic="true" data-state="${saveStatus.state}">${escapeHTML(saveStatus.message)}</span>
+                    <button type="button" id="story-editor-retry-save-button" class="action-button-secondary" style="display:${saveStatus.showRetry ? "inline-flex" : "none"};">Retry save</button>
+                    <button type="button" id="story-editor-save-button" class="action-button-primary">Save</button>
+                </div>
+            </div>
+            <div class="story-editor-layout">
+                <aside class="story-editor-sidebar">
+                    <h3>Document Defaults</h3>
+                    <label class="story-editor-field-label" for="story-editor-layout-mode">Layout Mode</label>
+                    <select id="story-editor-layout-mode" class="story-editor-select">${createLayoutModeOptions(story.editor_settings.layout_mode)}</select>
+                    <label class="story-editor-field-label" for="story-editor-font-family">Font</label>
+                    <select id="story-editor-font-family" class="story-editor-select">${createFontOptions(story.editor_settings.font_family)}</select>
+                    <label class="story-editor-field-label" for="story-editor-font-size">Font Size</label>
+                        <input id="story-editor-font-size" class="story-editor-number" type="number" min="16" max="56" step="1" value="${Number(story.editor_settings.font_size || 28)}">
+                    <label class="story-editor-field-label" for="story-editor-font-color">Font Colour</label>
+                    <input id="story-editor-font-color" class="story-editor-color" type="color" value="${story.editor_settings.font_color || "#ffffff"}">
+                    <label class="story-editor-field-label">Text Position</label>
+                    ${createTextPositionSelects(story.editor_settings.text_position, "story-editor-text-position", null)}
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            <label class="story-editor-field-label" for="story-editor-text-opacity" style="margin:0;">Text Box Opacity</label>
+                            <span id="story-editor-text-opacity-value" style="font-size:0.85rem;color:#a8b3c7;min-width:2.5rem;text-align:right;">${Math.round((story.editor_settings.text_box_opacity ?? 0.6) * 100)}%</span>
+                        </div>
+                    <input id="story-editor-text-opacity" class="story-editor-range" type="range" min="0" max="1" step="0.05" value="${Number(story.editor_settings.text_box_opacity ?? 0.6)}">
+                    <p class="story-editor-help">Defaults apply to all pages unless a page override is set.</p>
+                </aside>
+                <div class="story-editor-pages" id="story-editor-pages"></div>
+            </div>
+        `;
 
-        const mainStoryTitleElement = document.createElement("h2");
-        mainStoryTitleElement.textContent = story.title || "Untitled Story";
-        mainStoryTitleElement.classList.add("story-main-title");
-        mainStoryTitleElement.id = `story-title-text-${story.id}`; // ID for easy access
-        mainStoryTitleElement.style.display = "inline"; // Ensure it's inline from the start
-
-        const editTitleIcon = document.createElement("span");
-        editTitleIcon.textContent = " ✏️"; // Pencil emoji for edit
-        editTitleIcon.classList.add("edit-title-icon");
-        editTitleIcon.style.cursor = "pointer";
-        editTitleIcon.title = "Edit title";
-        editTitleIcon.id = `edit-title-icon-${story.id}`;
-
-        const titleEditForm = document.createElement("div");
-        titleEditForm.classList.add("title-edit-form");
-        titleEditForm.style.display = "none"; // Hidden by default
-        titleEditForm.id = `title-edit-form-${story.id}`;
-
-        const titleInput = document.createElement("input");
-        titleInput.type = "text";
-        titleInput.classList.add("title-edit-input");
-        titleInput.value = story.title || "Untitled Story";
-
-        const saveTitleButton = document.createElement("button");
-        saveTitleButton.textContent = "Save";
-        saveTitleButton.classList.add("save-title-button");
-
-        const cancelTitleButton = document.createElement("button");
-        cancelTitleButton.textContent = "Cancel";
-        cancelTitleButton.classList.add("cancel-title-button");
-
-        titleEditForm.appendChild(titleInput);
-        titleEditForm.appendChild(saveTitleButton);
-        titleEditForm.appendChild(cancelTitleButton);
-
-        titleContainer.appendChild(mainStoryTitleElement);
-        titleContainer.appendChild(editTitleIcon);
-        titleContainer.appendChild(titleEditForm);
-        storyPreviewContent.appendChild(titleContainer);
-
-        editTitleIcon.addEventListener("click", () => {
-            mainStoryTitleElement.style.display = "none";
-            editTitleIcon.style.display = "none";
-            titleEditForm.style.display = "inline-block"; // Or 'flex' if using flexbox for layout
-            titleInput.value = mainStoryTitleElement.textContent; // Ensure current value
-            titleInput.focus();
+        storyPreviewContent.appendChild(shell);
+        shell.querySelector("#story-editor-preview-button")?.addEventListener("click", () => {
+            renderStoryReadOnlyPreview();
+        });
+        const titleInput = shell.querySelector("#story-editor-title");
+        titleInput.addEventListener("input", (event) => {
+            story.title = event.target.value;
+            const coverPage = story.pages.find((page) => parseInt(page.page_number, 10) === 0);
+            if (coverPage) coverPage.text = story.title;
+            scheduleStoryEditorAutosave();
         });
 
-        saveTitleButton.addEventListener("click", async () => {
-            const newTitle = titleInput.value.trim();
-            if (newTitle && newTitle !== mainStoryTitleElement.textContent) {
-                await updateStoryTitle(
-                    story.id,
-                    newTitle,
-                    mainStoryTitleElement,
-                    editTitleIcon,
-                    titleEditForm,
-                );
-            } else if (!newTitle) {
-                displayMessage("Title cannot be empty.", "warning");
-            } else {
-                // No change
-                mainStoryTitleElement.style.display = "inline";
-                editTitleIcon.style.display = "inline";
-                titleEditForm.style.display = "none";
-            }
-        });
-
-        cancelTitleButton.addEventListener("click", () => {
-            mainStoryTitleElement.style.display = "inline"; // Or 'block' or 'initial' based on original display
-            editTitleIcon.style.display = "inline";
-            titleEditForm.style.display = "none";
-            // Optionally reset input value if needed: titleInput.value = mainStoryTitleElement.textContent;
-        });
-        // --- End Main Story Title with Edit Functionality ---
-
-        if (story.pages && story.pages.length > 0) {
-            console.log("[displayStory] story.pages.length:", story.pages.length);
-
-            // Sort pages to ensure title page (page_number 0) is first, then others by page_number
-            const sortedPages = story.pages.sort((a, b) => {
-                // Ensure page_number is treated as a number for sorting, even if it's a string like "0" or "Title" (which becomes 0)
-                const pageNumA = parseInt(a.page_number, 10);
-                const pageNumB = parseInt(b.page_number, 10);
-                return pageNumA - pageNumB;
+        [
+            ["#story-editor-layout-mode", "layout_mode", (value) => normalizeLayoutMode(value)],
+            ["#story-editor-font-family", "font_family", (value) => value],
+            ["#story-editor-font-size", "font_size", (value) => parseInt(value, 10)],
+            ["#story-editor-font-color", "font_color", (value) => value],
+            ["#story-editor-text-opacity", "text_box_opacity", (value) => Number(value)],
+        ].forEach(([selector, key, parser]) => {
+            const input = shell.querySelector(selector);
+            input.addEventListener("input", (event) => {
+                story.editor_settings[key] = parser(event.target.value);
+                applyLivePreviewUpdate();
+                scheduleStoryEditorAutosave();
             });
+        });
 
-            sortedPages.forEach((page, index) => {
-                console.log(
-                    `[displayStory] Processing page data (Page Number: ${page.page_number}):`,
-                    JSON.parse(JSON.stringify(page)),
-                );
-
-                const pageContainer = document.createElement("div");
-
-                // Check if it's the title page (page_number 0)
-                // The backend converts "Title" to 0, so we check for numeric 0.
-                if (parseInt(page.page_number, 10) === 0) {
-                    pageContainer.classList.add("story-title-page-preview");
-
-                    // Title from page.text (should be the story title for page 0)
-                    if (page.text) {
-                        const titlePageTitleElement = document.createElement("h3"); // Title on the title page
-                        titlePageTitleElement.classList.add("title-page-story-title");
-                        titlePageTitleElement.textContent = page.text;
-                        pageContainer.appendChild(titlePageTitleElement);
-                    }
-
-                    // Cover image for title page
-                    if (page.image_path) {
-                        const imageElement = document.createElement("img");
-                        imageElement.classList.add("title-page-cover-image");
-                        // Ensure the path is correctly formed for static content
-                        if (page.image_path.startsWith("data/")) {
-                            imageElement.src = staticContentUrl(
-                                page.image_path.substring("data/".length),
-                            );
-                        } else if (page.image_path.startsWith("/static_content/")) {
-                            imageElement.src = staticContentUrl(page.image_path);
-                        } else {
-                            // Assuming it might be a relative path that needs the prefix
-                            imageElement.src = staticContentUrl(page.image_path);
-                        }
-                        imageElement.alt = story.title
-                            ? `Cover image for ${story.title}`
-                            : "Cover image";
-                        // Basic styling for preview - can be enhanced with CSS
-                        imageElement.style.maxWidth = "80%";
-                        imageElement.style.maxHeight = "400px";
-                        imageElement.style.display = "block";
-                        imageElement.style.margin = "20px auto"; // Center it a bit
-                        pageContainer.appendChild(imageElement);
-                    } else if (page.image_description) {
-                        // Fallback to description if no image
-                        const descElement = document.createElement("p");
-                        descElement.style.fontStyle = "italic";
-                        descElement.textContent = `Cover Image Description: ${page.image_description}`;
-                        pageContainer.appendChild(descElement);
-                    }
-                } else {
-                    // Regular content page
-                    pageContainer.classList.add("story-content-page-preview");
-
-                    const pageNumberElement = document.createElement("h4");
-                    pageNumberElement.textContent = `Page ${page.page_number}`;
-                    pageContainer.appendChild(pageNumberElement);
-
-                    if (page.text) {
-                        const textElement = document.createElement("p");
-                        textElement.textContent = page.text;
-                        pageContainer.appendChild(textElement);
-                    }
-
-                    if (page.image_path) {
-                        const imageElement = document.createElement("img");
-                        imageElement.classList.add("content-page-image");
-                        // Ensure the path is correctly formed for static content
-                        if (page.image_path.startsWith("data/")) {
-                            imageElement.src = staticContentUrl(
-                                page.image_path.substring("data/".length),
-                            );
-                        } else if (page.image_path.startsWith("/static_content/")) {
-                            imageElement.src = staticContentUrl(page.image_path);
-                        } else {
-                            // Assuming it might be a relative path that needs the prefix
-                            imageElement.src = staticContentUrl(page.image_path);
-                        }
-                        imageElement.alt = `Image for page ${page.page_number}`;
-                        imageElement.style.maxWidth = "300px";
-                        imageElement.style.maxHeight = "300px";
-                        imageElement.style.display = "block";
-                        imageElement.style.marginTop = "10px";
-                        imageElement.style.marginBottom = "10px";
-                        pageContainer.appendChild(imageElement);
-                    } else if (page.image_description) {
-                        const descElement = document.createElement("p");
-                        descElement.style.fontStyle = "italic";
-                        descElement.textContent = `Image Description: ${page.image_description}`;
-                        pageContainer.appendChild(descElement);
-                    }
-                }
-
-                storyPreviewContent.appendChild(pageContainer);
-                // Add a separator if not the last page (considering sortedPages)
-                if (index < sortedPages.length - 1) {
-                    storyPreviewContent.appendChild(document.createElement("hr"));
-                }
+        const opacityInput = shell.querySelector("#story-editor-text-opacity");
+        const opacityValueEl = shell.querySelector("#story-editor-text-opacity-value");
+        if (opacityInput && opacityValueEl) {
+            opacityInput.addEventListener("input", (event) => {
+                opacityValueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
             });
+        }
+
+        ["story-editor-text-position-v", "story-editor-text-position-h"].forEach((id) => {
+            const element = shell.querySelector(`#${id}`);
+            if (!element) return;
+            element.addEventListener("input", () => {
+                const vertical = shell.querySelector("#story-editor-text-position-v")?.value || "bottom";
+                const horizontal = shell.querySelector("#story-editor-text-position-h")?.value || "center";
+                story.editor_settings.text_position = combineTextPosition(vertical, horizontal);
+                applyLivePreviewUpdate();
+                scheduleStoryEditorAutosave();
+            });
+        });
+
+        shell.querySelector("#story-editor-save-button").addEventListener("click", async () => {
+            await persistStoryEditor({ immediate: true, toast: true });
+            renderStoryEditor();
+        });
+
+        shell.querySelector("#story-editor-retry-save-button").addEventListener("click", async () => {
+            await persistStoryEditor({ immediate: true, toast: true });
+            renderStoryEditor();
+        });
+
+        const pagesContainer = shell.querySelector("#story-editor-pages");
+        if (!story.pages || story.pages.length === 0) {
+            pagesContainer.innerHTML = "<p>This story has no pages.</p>";
         } else {
-            const noPagesElement = document.createElement("p");
-            noPagesElement.textContent =
-                "This story has no pages or page data is missing.";
-            storyPreviewContent.appendChild(noPagesElement);
+            story.pages.forEach((page) => {
+                const pageSettings = getPageEffectiveSettings(story, page);
+                const pageCard = document.createElement("article");
+                pageCard.className = "story-editor-page-card";
+                pageCard.innerHTML = `
+                    <div class="story-editor-page-header">
+                        <div>
+                            <h3>${parseInt(page.page_number, 10) === 0 ? "Cover Page" : `Page ${page.page_number}`}</h3>
+                            <p class="story-editor-page-subtitle">${escapeHTML(getLayoutModeDescription(pageSettings.layout_mode))}</p>
+                        </div>
+                        <div class="story-editor-page-actions">
+                            <button type="button" class="action-button-secondary" data-action="restore-text" data-page-id="${page.id}">Restore Text</button>
+                            <button type="button" class="action-button-secondary" data-action="restore-image" data-page-id="${page.id}">Restore Image</button>
+                            <button type="button" class="action-button-info" data-action="regen-image" data-page-id="${page.id}">Regenerate Image</button>
+                        </div>
+                    </div>
+                    <div class="story-editor-page-layout">
+                        <div class="story-editor-page-preview" data-page-id="${page.id}">
+                            <div class="story-editor-page-stage">
+                                <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? `<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>` : `<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>`}</div>
+                                <div class="story-editor-text-card">
+                                    <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="story-editor-page-controls">
+                            <label class="story-editor-field-label">Page Text</label>
+                            <textarea class="story-editor-textarea" data-page-field="text" data-page-id="${page.id}" rows="5">${escapeHTML(page.text || "")}</textarea>
+                            <div>
+                                <label class="story-editor-field-label">Text Position Override</label>
+                                ${createTextPositionSelects(page.editor_state.text_position || pageSettings.text_position, "page-text-pos-" + page.id, page.id)}
+                            </div>
+                            <div class="story-editor-inline-grid">
+                                <div>
+                                    <label class="story-editor-field-label">Font Size Override</label>
+                                    <input class="story-editor-number" data-page-field="font_size" data-page-id="${page.id}" type="number" min="16" max="56" value="${page.editor_state.font_size ?? ""}" placeholder="Default ${pageSettings.font_size}">
+                                </div>
+                                <div>
+                                    <label class="story-editor-field-label">Font Colour Override</label>
+                                    <input class="story-editor-color" data-page-field="font_color" data-page-id="${page.id}" type="color" value="${page.editor_state.font_color || pageSettings.font_color || "#ffffff"}">
+                                </div>
+                            </div>
+                            <div>
+                                <div style="display:flex;align-items:center;gap:0.5rem;">
+                                    <label class="story-editor-field-label" for="story-editor-page-opacity-${page.id}" style="margin:0;">Text Box Opacity Override</label>
+                                    <span data-page-opacity-value="${page.id}" style="font-size:0.85rem;color:#a8b3c7;min-width:2.5rem;text-align:right;">${Math.round(Number(page.editor_state.text_box_opacity ?? pageSettings.text_box_opacity ?? 0.6) * 100)}%</span>
+                                </div>
+                                <input
+                                    id="story-editor-page-opacity-${page.id}"
+                                    class="story-editor-range"
+                                    data-page-field="text_box_opacity"
+                                    data-page-id="${page.id}"
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value="${Number(page.editor_state.text_box_opacity ?? pageSettings.text_box_opacity ?? 0.6)}"
+                                >
+                            </div>
+                            <button type="button" class="action-button-secondary story-editor-clear-override" data-action="clear-overrides" data-page-id="${page.id}">Use Document Defaults</button>
+                        </div>
+                    </div>
+                `;
+                const pageStage = pageCard.querySelector(".story-editor-page-stage");
+                const imageSlot = pageCard.querySelector(".story-editor-page-image-slot");
+                const textCard = pageCard.querySelector(".story-editor-text-card");
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
+                pagesContainer.appendChild(pageCard);
+                void hydrateStoryPageImage(story, page);
+            });
+        }
+
+        pagesContainer.querySelectorAll("[data-page-field]").forEach((input) => {
+            input.addEventListener("input", (event) => {
+                const pageId = parseInt(event.target.dataset.pageId, 10);
+                const field = event.target.dataset.pageField;
+                const page = story.pages.find((item) => item.id === pageId);
+                if (!page) return;
+                if (field === "text") {
+                    page.text = event.target.value;
+                    if (parseInt(page.page_number, 10) === 0) story.title = event.target.value;
+                } else if (field === "text_position_v" || field === "text_position_h") {
+                    const pageCard = event.target.closest(".story-editor-page-card");
+                    const verticalInput = pageCard?.querySelector(`[data-page-field="text_position_v"][data-page-id="${pageId}"]`);
+                    const horizontalInput = pageCard?.querySelector(`[data-page-field="text_position_h"][data-page-id="${pageId}"]`);
+                    const vertical = verticalInput?.value || "bottom";
+                    const horizontal = horizontalInput?.value || "center";
+                    page.editor_state.text_position = combineTextPosition(vertical, horizontal);
+                } else if (field === "text_box_opacity") {
+                    page.editor_state[field] = event.target.value === "" ? null : Number(event.target.value);
+                    const valueEl = event.target
+                        .closest(".story-editor-page-controls")
+                        ?.querySelector(`[data-page-opacity-value="${pageId}"]`);
+                    if (valueEl) {
+                        valueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+                    }
+                } else if (field === "font_size") {
+                    page.editor_state[field] = event.target.value ? parseInt(event.target.value, 10) : null;
+                } else {
+                    page.editor_state[field] = event.target.value || null;
+                }
+                applyLivePreviewUpdate();
+                scheduleStoryEditorAutosave();
+            });
+        });
+
+        pagesContainer.querySelectorAll("[data-action]").forEach((button) => {
+            button.addEventListener("click", async (event) => {
+                const pageId = parseInt(event.currentTarget.dataset.pageId, 10);
+                const action = event.currentTarget.dataset.action;
+                const page = story.pages.find((item) => item.id === pageId);
+                if (!page) return;
+                if (action === "clear-overrides") {
+                    page.editor_state.text_position = null;
+                    page.editor_state.font_size = null;
+                    page.editor_state.font_color = null;
+                    page.editor_state.text_box_opacity = null;
+                    renderStoryEditor();
+                    scheduleStoryEditorAutosave();
+                    return;
+                }
+                showSpinner();
+                try {
+                    if (action === "restore-text") {
+                        await restoreStoryPageText(pageId);
+                    } else if (action === "restore-image") {
+                        await restoreStoryPageImage(pageId);
+                    } else if (action === "regen-image") {
+                        await regenerateStoryPageImage(pageId);
+                    }
+                } catch (error) {
+                    console.error("[story editor action] Error:", error);
+                } finally {
+                    hideSpinner();
+                }
+            });
+        });
+
+        if (exportPdfButton) {
+            exportPdfButton.style.display = story.pages && story.pages.length > 0 ? "inline-block" : "none";
+            exportPdfButton.classList.add("action-button-info");
+        }
+    }
+
+    function renderStoryReadOnlyPreview() {
+        const story = storyEditorState.story;
+        if (!storyPreviewContent || !story) {
+            console.error("[renderStoryReadOnlyPreview] Story preview content area or story data is missing.");
+            displayMessage("Could not display story preview.", "error");
+            if (exportPdfButton) exportPdfButton.style.display = "none";
+            return;
+        }
+
+        syncStoryEditorImageCache(story);
+
+        currentStoryId = story.id;
+        storyPreviewContent.innerHTML = "";
+
+        const shell = document.createElement("div");
+        shell.className = "story-editor-shell story-editor-shell--preview";
+        shell.innerHTML = `
+            <div class="story-editor-toolbar">
+                <div class="story-editor-title-group">
+                    <span class="story-editor-field-label">Story Title</span>
+                    <h2 class="story-editor-preview-title">${escapeHTML(story.title || "Untitled Story")}</h2>
+                </div>
+                <div class="story-editor-toolbar-actions">
+                    <button type="button" id="story-preview-edit-button" class="action-button-primary">Edit Story</button>
+                </div>
+            </div>
+            <div class="story-editor-layout">
+                <aside class="story-editor-sidebar">
+                    <h3>Story Settings</h3>
+                    <dl class="story-editor-preview-meta">
+                        <div><dt>Layout</dt><dd>${escapeHTML(getLayoutModeLabel(story.editor_settings.layout_mode || STORY_EDITOR_DEFAULTS.layout_mode))}</dd></div>
+                        <div><dt>Font</dt><dd>${escapeHTML(story.editor_settings.font_family || STORY_EDITOR_DEFAULTS.font_family)}</dd></div>
+                        <div><dt>Font Size</dt><dd>${Number(story.editor_settings.font_size || STORY_EDITOR_DEFAULTS.font_size)}px</dd></div>
+                        <div><dt>Font Colour</dt><dd>${escapeHTML(story.editor_settings.font_color || STORY_EDITOR_DEFAULTS.font_color)}</dd></div>
+                        <div><dt>Text Position</dt><dd>${escapeHTML(story.editor_settings.text_position || STORY_EDITOR_DEFAULTS.text_position)}</dd></div>
+                        <div><dt>Text Box Opacity</dt><dd>${Math.round(Number(story.editor_settings.text_box_opacity ?? STORY_EDITOR_DEFAULTS.text_box_opacity) * 100)}%</dd></div>
+                    </dl>
+                </aside>
+                <div class="story-editor-pages" id="story-preview-pages"></div>
+            </div>
+        `;
+
+        storyPreviewContent.appendChild(shell);
+        shell.querySelector("#story-preview-edit-button")?.addEventListener("click", () => {
+            renderStoryEditor();
+        });
+
+        const pagesContainer = shell.querySelector("#story-preview-pages");
+        if (!story.pages || story.pages.length === 0) {
+            pagesContainer.innerHTML = "<p>This story has no pages.</p>";
+        } else {
+            story.pages.forEach((page) => {
+                const pageSettings = getPageEffectiveSettings(story, page);
+                const pageCard = document.createElement("article");
+                pageCard.className = "story-editor-page-card story-editor-page-card--preview";
+                pageCard.innerHTML = `
+                    <div class="story-editor-page-header">
+                        <div>
+                            <h3>${parseInt(page.page_number, 10) === 0 ? "Cover Page" : `Page ${page.page_number}`}</h3>
+                            <p class="story-editor-page-subtitle">${escapeHTML(`${getLayoutModeLabel(pageSettings.layout_mode)} preset preview`)}</p>
+                        </div>
+                    </div>
+                    <div class="story-editor-page-layout">
+                        <div class="story-editor-page-preview" data-page-id="${page.id}">
+                            <div class="story-editor-page-stage">
+                                <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? '<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>' : '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>'}</div>
+                                <div class="story-editor-text-card">
+                                    <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                const pageStage = pageCard.querySelector(".story-editor-page-stage");
+                const imageSlot = pageCard.querySelector(".story-editor-page-image-slot");
+                const textCard = pageCard.querySelector(".story-editor-text-card");
+                applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
+                pagesContainer.appendChild(pageCard);
+                void hydrateStoryPageImage(story, page);
+            });
         }
 
         if (exportPdfButton) {
-            const shouldShowButton = story.pages && story.pages.length > 0;
-            console.log(
-                "[displayStory] Condition (story.pages && story.pages.length > 0):",
-                shouldShowButton,
-            );
-            exportPdfButton.style.display = shouldShowButton
-                ? "inline-block"
-                : "none"; // Changed to inline-block
+            exportPdfButton.style.display = story.pages && story.pages.length > 0 ? "inline-block" : "none";
             exportPdfButton.classList.add("action-button-info");
-            console.log(
-                "[displayStory] exportPdfButton display set to:",
-                exportPdfButton.style.display,
-            );
-        } else {
-            console.error(
-                "[displayStory] exportPdfButton element is NULL or undefined!",
-            );
         }
+    }
+
+    // Function to render the story preview/editor
+    function displayStory(story, options = {}) {
+        if (!story) {
+            console.error("[displayStory] Story data is missing.");
+            displayMessage("Could not display story preview.", "error");
+            if (exportPdfButton) exportPdfButton.style.display = "none";
+            return;
+        }
+        console.log("[displayStory] Story object received:", JSON.parse(JSON.stringify(story)));
+        storyEditorState.story = cloneStoryForEditor(story);
+        storyEditorState.previewAvailable = options.previewAvailable !== false;
+        storyEditorState.saveStatus = {
+            state: "saved",
+            message: "Saved",
+            showRetry: false,
+        };
+        storyEditorState.story.pages.forEach((page) => {
+            page.__original = JSON.parse(JSON.stringify(page));
+        });
+        if (options.mode === "preview") {
+            renderStoryReadOnlyPreview();
+        } else {
+            renderStoryEditor();
+        }
+        storyPreviewContent?.scrollIntoView?.({ behavior: "instant", block: "start" });
     }
 
     function showSection(sectionToShow) {
@@ -2008,7 +3326,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 storyData = await apiRequest(`/api/v1/stories/${storyId}`);
                 if (storyData) {
                     showSection(storyPreviewSection);
-                    displayStory(storyData);
+                    displayStory(storyData, { mode: "preview", previewAvailable: true });
                 } else {
                     displayMessage("Could not load story details.", "error");
                 }
@@ -2259,6 +3577,21 @@ document.addEventListener("DOMContentLoaded", function () {
         const ratioVal = document.getElementById("story-word-to-picture-ratio").value;
         const densityVal = document.getElementById("story-text-density").value;
         const imageStyleVal = document.getElementById("story-image-style").value;
+        const pageFormatVal =
+            document.getElementById("story-page-format")?.value
+            || STORY_EDITOR_DEFAULTS.page_format;
+        const layoutModeVal = normalizeLayoutMode(
+            document.getElementById("story-layout-mode")?.value,
+        );
+        const tpV = document.getElementById("story-default-text-position-v")?.value || "bottom";
+        const tpH = document.getElementById("story-default-text-position-h")?.value || "center";
+        const textPositionVal = combineTextPosition(tpV, tpH);
+        const fontFamilyVal = document.getElementById("story-default-font-family")?.value || STORY_EDITOR_DEFAULTS.font_family;
+        const fontSizeRaw = document.getElementById("story-default-font-size")?.value;
+        const fontColorVal = document.getElementById("story-default-font-color")?.value || STORY_EDITOR_DEFAULTS.font_color;
+        const textBoxOpacityRaw = document.getElementById("story-default-text-box-opacity")?.value;
+        const fontSizeVal = Number.parseInt(fontSizeRaw, 10);
+        const textBoxOpacityVal = Number.parseFloat(textBoxOpacityRaw);
 
         const payload = {
             title: document.getElementById("story-title").value,
@@ -2270,6 +3603,19 @@ document.addEventListener("DOMContentLoaded", function () {
             setting: document.getElementById("story-setting").value,
             // Phase 3: add selected existing characters by id
             character_ids: Array.from(characterLibraryState.selectedIds),
+            editor_settings: {
+                page_format: pageFormatVal,
+                layout_mode: layoutModeVal,
+                text_position: textPositionVal,
+                font_family: fontFamilyVal,
+                font_size: Number.isFinite(fontSizeVal)
+                    ? fontSizeVal
+                    : STORY_EDITOR_DEFAULTS.font_size,
+                font_color: fontColorVal,
+                text_box_opacity: Number.isFinite(textBoxOpacityVal)
+                    ? textBoxOpacityVal
+                    : STORY_EDITOR_DEFAULTS.text_box_opacity,
+            },
         };
 
         if (ratioVal) payload.word_to_picture_ratio = ratioVal;
@@ -2389,13 +3735,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const __pollingConfig = {
         baseIntervalMs: 3000,
         maxIntervalMs: 15000,
-        maxDurationMs: 5 * 60 * 1000, // 5 minutes in production
+        slowNoticeMs: 5 * 60 * 1000,
+        maxDurationMs: 30 * 60 * 1000,
     };
 
     function __setPollingConfig(cfg) {
         if (!cfg || typeof cfg !== 'object') return;
         if (typeof cfg.baseIntervalMs === 'number') __pollingConfig.baseIntervalMs = cfg.baseIntervalMs;
         if (typeof cfg.maxIntervalMs === 'number') __pollingConfig.maxIntervalMs = cfg.maxIntervalMs;
+        if (typeof cfg.slowNoticeMs === 'number') __pollingConfig.slowNoticeMs = cfg.slowNoticeMs;
         if (typeof cfg.maxDurationMs === 'number') __pollingConfig.maxDurationMs = cfg.maxDurationMs;
     }
 
@@ -2419,9 +3767,11 @@ document.addEventListener("DOMContentLoaded", function () {
         let currentIntervalMs = baseIntervalMs;
         const maxIntervalMs = __pollingConfig.maxIntervalMs;
         const startedAt = Date.now();
+        const slowNoticeMs = __pollingConfig.slowNoticeMs;
         const maxDurationMs = __pollingConfig.maxDurationMs; // overridable
 
         let stopped = false;
+        let slowNoticeShown = false;
 
         const poll = async () => {
             try {
@@ -2486,6 +3836,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 displayMessage('Story generation timed out. Please try again later.', 'error');
                 return;
             }
+            if (!slowNoticeShown && Date.now() - startedAt > slowNoticeMs) {
+                slowNoticeShown = true;
+                displayMessage(
+                    'Story generation is still running. This can take several minutes.',
+                    'warning',
+                    { persistMs: 10000 }
+                );
+            }
             try {
                 await poll();
             } catch (e) {
@@ -2508,6 +3866,10 @@ document.addEventListener("DOMContentLoaded", function () {
         window.__TEST_API__ = window.__TEST_API__ || {};
         window.__TEST_API__.pollForStatus = pollForStoryStatus;
         window.__TEST_API__.setPollingConfig = __setPollingConfig;
+        window.__TEST_API__.displayStory = displayStory;
+        window.__TEST_API__.populateCreateFormWithStoryData =
+            populateCreateFormWithStoryData;
+        window.__TEST_API__.viewOrEditStory = viewOrEditStory;
     }
 
 
@@ -2733,6 +4095,33 @@ document.addEventListener("DOMContentLoaded", function () {
             storyData.text_density || "Concise (~30-50 words)";
         document.getElementById("story-image-style").value =
             storyData.image_style || "Default";
+        const editorSettings = storyData.editor_settings || STORY_EDITOR_DEFAULTS;
+        const pageFormatEl = document.getElementById("story-page-format");
+        if (pageFormatEl) {
+            pageFormatEl.value =
+                editorSettings.page_format || STORY_EDITOR_DEFAULTS.page_format;
+        }
+        const layoutModeEl = document.getElementById("story-layout-mode");
+        if (layoutModeEl) {
+            layoutModeEl.value = normalizeLayoutMode(
+                editorSettings.layout_mode || STORY_EDITOR_DEFAULTS.layout_mode,
+            );
+        }
+        const prefillPos = parseTextPosition(
+            editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position,
+        );
+        const prefillVEl = document.getElementById("story-default-text-position-v");
+        const prefillHEl = document.getElementById("story-default-text-position-h");
+        if (prefillVEl) prefillVEl.value = prefillPos.v;
+        if (prefillHEl) prefillHEl.value = prefillPos.h;
+        document.getElementById("story-default-font-family").value =
+            editorSettings.font_family || STORY_EDITOR_DEFAULTS.font_family;
+        document.getElementById("story-default-font-size").value =
+            editorSettings.font_size || STORY_EDITOR_DEFAULTS.font_size;
+        document.getElementById("story-default-font-color").value =
+            editorSettings.font_color || STORY_EDITOR_DEFAULTS.font_color;
+        document.getElementById("story-default-text-box-opacity").value =
+            editorSettings.text_box_opacity ?? STORY_EDITOR_DEFAULTS.text_box_opacity;
 
         const fieldset = document.getElementById("main-characters-fieldset");
         const existingEntries = fieldset.querySelectorAll(".character-entry");
@@ -2776,9 +4165,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     `char-details-toggle-${characterCount}`,
                 ); // Changed from querySelector to getElementById
                 if (detailsDiv) detailsDiv.style.display = "none";
-                if (toggleButton) {
-                    toggleButton.textContent = "Show Details";
-                    // REMOVED: initializeCharacterDetailsToggle(toggleButton);
+                if (toggleButton && detailsDiv) {
+                    syncCharacterDetailsDisclosure(toggleButton, detailsDiv);
                 }
             });
         } else {
@@ -2786,9 +4174,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const firstCharToggle = document.getElementById("char-details-toggle-1"); // Changed from querySelector to getElementById
             const firstCharDetails = document.getElementById("char-details-1");
             if (firstCharDetails) firstCharDetails.style.display = "none";
-            if (firstCharToggle) {
-                firstCharToggle.textContent = "Show Details";
-                // REMOVED: initializeCharacterDetailsToggle(firstCharToggle);
+            if (firstCharToggle && firstCharDetails) {
+                syncCharacterDetailsDisclosure(firstCharToggle, firstCharDetails);
             }
         }
 
@@ -2816,6 +4203,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         showSection(storyCreationSection); // Ensure the form is visible
+        updateStepUI();
         console.log(
             "[populateCreateFormWithStoryData] Form population complete. currentStoryId:",
             currentStoryId,
@@ -2998,7 +4386,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             list.innerHTML = characterLibraryState.items.map(item => {
                 const selected = characterLibraryState.selectedIds.has(item.id);
-                const imgSrc = item.thumbnail_path ? (item.thumbnail_path.startsWith('/static_content/') ? item.thumbnail_path : `/static_content/${item.thumbnail_path}`) : '';
+                const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
                 return `
                 <div class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" style="border:1px solid ${selected ? '#4f8cff' : '#333'};border-radius:8px;padding:8px;cursor:pointer;background:${selected ? '#1f2937' : '#111'};">
                     ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail" style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;" />` : '<div style="height:140px;background:#222;border-radius:6px;"></div>'}
@@ -3093,14 +4481,26 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
         mainCharactersFieldset.addEventListener("click", function (event) {
-            if (event.target.classList.contains("character-details-toggle")) {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+
+            if (target.classList.contains("remove-character-button")) {
+                const characterEntry = target.closest(".character-entry");
+                if (characterEntry) {
+                    characterEntry.remove();
+                    updateStepUI();
+                }
+                return;
+            }
+
+            if (target.classList.contains("character-details-toggle")) {
                 console.log(
                     "[Toggle Click] Button clicked:",
-                    event.target,
+                    target,
                     "ID:",
-                    event.target.id,
+                    target.id,
                 );
-                const targetId = event.target.dataset.target;
+                const targetId = target.dataset.target;
                 console.log("[Toggle Click] Data-target ID:", targetId);
                 const detailsDiv = document.getElementById(targetId);
                 console.log("[Toggle Click] Details div found:", detailsDiv);
@@ -3112,9 +4512,9 @@ document.addEventListener("DOMContentLoaded", function () {
                         `[Toggle Click] Details div (${targetId}) isHidden (computed): ${isHidden}, current style.display: '${detailsDiv.style.display}'`,
                     );
                     detailsDiv.style.display = isHidden ? "block" : "none";
-                    event.target.textContent = isHidden ? "Hide Details" : "Show Details";
+                    syncCharacterDetailsDisclosure(target, detailsDiv);
                     console.log(
-                        `[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${event.target.textContent}'`,
+                        `[Toggle Click] Set detailsDiv.style.display to '${detailsDiv.style.display}', button text to '${target.textContent}'`,
                     );
                 } else {
                     console.error(

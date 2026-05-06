@@ -184,6 +184,7 @@ describe('wizard character library: load failure shows inline error', () => {
   test('shows inline error message when library load fails', async () => {
     // Enter create flow and go to step 1
   document.getElementById('nav-create-story').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   // Fill minimal valid fields to pass step-0 validation
   document.getElementById('story-genre').value = 'fantasy';
   document.getElementById('story-outline').value = 'Outline text';

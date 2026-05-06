@@ -27,21 +27,28 @@ function mountWizardDom() {
         <form id="story-creation-form">
           <div id="step-0-basics" class="wizard-step-panel">
             <input type="text" id="story-title" />
-            <select id="story-genre"><option value="">Select…</option><option value="Fantasy">Fantasy</option></select>
-            <textarea id="story-outline"></textarea>
+            <select id="story-genre" aria-describedby="story-genre-error"><option value="">Select…</option><option value="Fantasy">Fantasy</option></select>
+            <div id="story-genre-error"></div>
+            <textarea id="story-outline" aria-describedby="story-outline-error"></textarea>
+            <div id="story-outline-error"></div>
           </div>
           <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
             <fieldset id="main-characters-fieldset">
-              <input class="char-name" id="char-name-1" value="" />
+              <input class="char-name" id="char-name-1" value="" aria-describedby="main-characters-error" />
               <select id="char-gender-1"><option value="">Select…</option><option value="female">Female</option></select>
             </fieldset>
+            <div id="main-characters-error"></div>
             <button type="button" id="add-character-button">Add Another Character</button>
           </div>
           <div id="step-2-options" class="wizard-step-panel" style="display:none;">
-            <input id="story-num-pages" type="number" value="" />
-            <select id="story-image-style"><option value="">Select…</option><option value="Cartoon">Cartoon</option></select>
-            <select id="story-word-to-picture-ratio"><option value="">Select…</option><option value="One image per page">One image per page</option></select>
-            <select id="story-text-density"><option value="">Select…</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
+            <input id="story-num-pages" type="number" value="" aria-describedby="story-num-pages-error" />
+            <div id="story-num-pages-error"></div>
+            <select id="story-image-style" aria-describedby="story-image-style-error"><option value="">Select…</option><option value="Cartoon">Cartoon</option></select>
+            <div id="story-image-style-error"></div>
+            <select id="story-word-to-picture-ratio" aria-describedby="story-word-to-picture-ratio-error"><option value="">Select…</option><option value="One image per page">One image per page</option></select>
+            <div id="story-word-to-picture-ratio-error"></div>
+            <select id="story-text-density" aria-describedby="story-text-density-error"><option value="">Select…</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
+            <div id="story-text-density-error"></div>
           </div>
           <div id="step-3-review" class="wizard-step-panel" style="display:none;"><div id="review-container"></div></div>
           <div class="wizard-nav">
@@ -94,7 +101,7 @@ describe('wizard required-field validation', () => {
         });
     });
 
-    test('step 0: missing genre/outline blocks Next and shows warning', () => {
+    test('step 0: missing genre/outline blocks Next, marks fields invalid, and focuses the first invalid control', () => {
         const next = document.getElementById('wizard-next');
         // Ensure fields are empty/missing
         document.getElementById('story-genre').value = '';
@@ -104,13 +111,23 @@ describe('wizard required-field validation', () => {
 
         // Should remain on step 0
         expect(document.getElementById('step-1-characters').style.display).toBe('none');
+      expect(document.activeElement).toBe(document.getElementById('story-genre'));
+      expect(document.getElementById('story-genre')).toHaveAttribute('aria-invalid', 'true');
+      expect(document.getElementById('story-outline')).toHaveAttribute('aria-invalid', 'true');
+      expect(document.getElementById('story-genre-error').textContent).toMatch(/select a genre/i);
+      expect(document.getElementById('story-outline-error').textContent).toMatch(/enter a story outline/i);
         // Warning shown
         const snackbar = document.getElementById('snackbar');
         expect(snackbar.style.display).toBe('block');
         expect(snackbar.textContent).toMatch(/please select a genre/i);
+
+      document.getElementById('story-genre').value = 'Fantasy';
+      fireEvent.change(document.getElementById('story-genre'));
+      expect(document.getElementById('story-genre')).not.toHaveAttribute('aria-invalid');
+      expect(document.getElementById('story-genre-error').textContent).toBe('');
     });
 
-    test('step 1: no character names blocks Next', () => {
+    test('step 1: no character names blocks Next, marks the character name invalid, and focuses it', () => {
         const next = document.getElementById('wizard-next');
         // Make step 0 valid, then go to step 1
         document.getElementById('story-genre').value = 'Fantasy';
@@ -124,12 +141,20 @@ describe('wizard required-field validation', () => {
 
         // Should remain on step 1
         expect(document.getElementById('step-2-options').style.display).toBe('none');
+        expect(document.activeElement).toBe(document.getElementById('char-name-1'));
+        expect(document.getElementById('char-name-1')).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('main-characters-error').textContent).toMatch(/at least one character name/i);
         const snackbar = document.getElementById('snackbar');
         expect(snackbar.style.display).toBe('block');
         expect(snackbar.textContent).toMatch(/add at least one character name/i);
+
+        document.getElementById('char-name-1').value = 'Alice';
+        fireEvent.input(document.getElementById('char-name-1'));
+        expect(document.getElementById('char-name-1')).not.toHaveAttribute('aria-invalid');
+        expect(document.getElementById('main-characters-error').textContent).toBe('');
     });
 
-    test('step 2: missing options block Next', () => {
+      test('step 2: missing options block Next, marks required controls invalid, and focuses the first invalid control', () => {
         const next = document.getElementById('wizard-next');
         // Step 0 valid
         document.getElementById('story-genre').value = 'Fantasy';
@@ -149,8 +174,20 @@ describe('wizard required-field validation', () => {
         fireEvent.click(next);
         // Should remain on step 2
         expect(document.getElementById('step-3-review').style.display).toBe('none');
+        expect(document.activeElement).toBe(document.getElementById('story-num-pages'));
+        expect(document.getElementById('story-num-pages')).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('story-image-style')).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('story-word-to-picture-ratio')).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('story-text-density')).toHaveAttribute('aria-invalid', 'true');
+        expect(document.getElementById('story-num-pages-error').textContent).toMatch(/number of pages/i);
+        expect(document.getElementById('story-image-style-error').textContent).toMatch(/image style/i);
         const snackbar = document.getElementById('snackbar');
         expect(snackbar.style.display).toBe('block');
         expect(snackbar.textContent).toMatch(/please complete options/i);
+
+        document.getElementById('story-num-pages').value = '5';
+        fireEvent.input(document.getElementById('story-num-pages'));
+        expect(document.getElementById('story-num-pages')).not.toHaveAttribute('aria-invalid');
+        expect(document.getElementById('story-num-pages-error').textContent).toBe('');
     });
 });

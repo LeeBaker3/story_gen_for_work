@@ -42,6 +42,8 @@ def _seed_defaults_programmatically(db: Session):
             "writing_styles": "Writing Styles",
             "word_to_picture_ratio": "Word to Picture Ratio",
             "text_density": "Text Density",
+            "text_positions": "Text Positions",
+            "font_families": "Font Families",
             "genders": "Genders",
         }
         for name, label in lists.items():
@@ -96,6 +98,31 @@ def _seed_defaults_programmatically(db: Session):
         for i, d in enumerate(densities, start=1):
             ensure_item("text_density", d, d, i)
 
+        text_positions = [
+            ("top-left", "Top Left"),
+            ("top-center", "Top Centre"),
+            ("top-right", "Top Right"),
+            ("middle-left", "Middle Left"),
+            ("middle-center", "Middle Centre"),
+            ("middle-right", "Middle Right"),
+            ("bottom-left", "Bottom Left"),
+            ("bottom-center", "Bottom Centre"),
+            ("bottom-right", "Bottom Right"),
+        ]
+        for i, (value, label) in enumerate(text_positions, start=1):
+            ensure_item("text_positions", value, label, i)
+
+        font_families = [
+            ("storybook", "Storybook"),
+            ("classic", "Classic"),
+            ("modern", "Modern"),
+            ("handwritten", "Handwritten"),
+            ("dyslexia-friendly", "Dyslexia-friendly"),
+            ("large print", "Large print"),
+        ]
+        for i, (value, label) in enumerate(font_families, start=1):
+            ensure_item("font_families", value, label, i)
+
         genders = ["Female", "Male", "Non-binary",
                    "Other", "Prefer not to say"]
         for i, g in enumerate(genders, start=1):
@@ -114,33 +141,34 @@ def _run_seeding_logic(db: Session):
     Contains the actual logic for seeding the database.
     """
     try:
-        if not is_database_empty(db):
-            app_logger.info(
-                "Database already contains data in dynamic_lists. Skipping seeding.")
-            return
+        # Capture whether this is a fresh install before seeding.
+        fresh_install = is_database_empty(db)
 
-        # Always seed a safe baseline programmatically first (idempotent)
+        # Always run idempotent programmatic seeding so new lists/items
+        # added in future releases are picked up on existing databases.
         app_logger.info(
-            "Seeding baseline dynamic lists/items programmatically...")
+            "Applying idempotent programmatic seeding for dynamic lists...")
         _seed_defaults_programmatically(db)
 
-        # Optionally apply the SQL script to add/align any additional items
-        seed_script_path = os.path.join(os.path.dirname(
-            __file__), '..', 'scripts', 'seed_dynamic_lists.sql')
-        if os.path.exists(seed_script_path):
-            app_logger.info(
-                f"Applying SQL seed script for completeness: {seed_script_path}...")
-            with open(seed_script_path, 'r') as f:
-                # Split commands by semicolon and filter out empty ones
-                sql_commands = [cmd.strip()
-                                for cmd in f.read().split(';') if cmd.strip()]
-                for command in sql_commands:
-                    db.execute(text(command))
-            db.commit()
-            app_logger.info("SQL seed script applied.")
-        else:
-            app_logger.warning(
-                f"Seed script not found at {seed_script_path}. Skipping script application.")
+        # Only apply the SQL script on a fresh install (it may not be
+        # fully idempotent across all SQLite versions).
+        if fresh_install:
+            seed_script_path = os.path.join(os.path.dirname(
+                __file__), '..', 'scripts', 'seed_dynamic_lists.sql')
+            if os.path.exists(seed_script_path):
+                app_logger.info(
+                    f"Applying SQL seed script: {seed_script_path}...")
+                with open(seed_script_path, 'r') as f:
+                    sql_commands = [cmd.strip()
+                                    for cmd in f.read().split(';')
+                                    if cmd.strip()]
+                    for command in sql_commands:
+                        db.execute(text(command))
+                db.commit()
+                app_logger.info("SQL seed script applied.")
+            else:
+                app_logger.warning(
+                    f"Seed script not found at {seed_script_path}. Skipping.")
 
     except Exception as e:
         app_logger.error(

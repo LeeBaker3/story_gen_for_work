@@ -8,18 +8,19 @@ from typing import List, Dict, Any, Optional
 import base64
 import uuid
 import sys
-import logging
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from sqlalchemy.orm import Session
 import asyncio
 import io
+import time
 
 # Import loggers
-from .logging_config import api_logger, error_logger, app_logger
+from .logging_config import api_logger, error_logger, app_logger, warning_logger
 from .settings import get_settings
 from . import crud, schemas
 from .schemas import CharacterDetail, WordToPictureRatio, ImageStyle, TextDensity
-from .image_style_mapping import get_openai_image_style, map_style
+from .image_style_mapping import get_openai_image_style, resolve_image_style
+from .metrics import observe_openai_text_call
 
 load_dotenv()
 # Explicitly load project root .env (preferred). For backward compatibility,
@@ -45,12 +46,68 @@ if not OPENAI_API_KEY:
         "OPENAI_API_KEY not found in environment variables during import; AI services will be disabled until configured.")
 
 # Define a retry decorator for OpenAI API calls
+
+
+def _should_retry_openai_error(exc: BaseException) -> bool:
+    """Return True only for transient OpenAI and transport failures."""
+
+    if isinstance(exc, requests.exceptions.RequestException):
+        return True
+
+    if isinstance(exc, (openai.Timeout, openai.APIConnectionError,
+                        openai.RateLimitError)):
+        return True
+
+    non_retriable_types = (
+        getattr(openai, "BadRequestError", ()),
+        getattr(openai, "AuthenticationError", ()),
+        getattr(openai, "PermissionDeniedError", ()),
+        getattr(openai, "NotFoundError", ()),
+        getattr(openai, "ConflictError", ()),
+        getattr(openai, "UnprocessableEntityError", ()),
+    )
+    if isinstance(exc, non_retriable_types):
+        return False
+
+    return isinstance(exc, openai.APIError)
+
+
+def _get_openai_error_details(exc: BaseException) -> Dict[str, Any]:
+    """Return the nested OpenAI error payload for SDK exceptions when present."""
+
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return {}
+    error = body.get("error")
+    if isinstance(error, dict):
+        return error
+    return {}
+
+
+def _is_openai_image_moderation_block(exc: BaseException) -> bool:
+    """Return True when the image request was blocked by OpenAI safety checks."""
+
+    bad_request_type = getattr(openai, "BadRequestError", ())
+    if not isinstance(exc, bad_request_type):
+        return False
+
+    error = _get_openai_error_details(exc)
+    code = str(error.get("code") or "").strip().lower()
+    error_type = str(error.get("type") or "").strip().lower()
+    message = str(error.get("message") or exc).strip().lower()
+
+    return (
+        code == "moderation_blocked"
+        or error_type == "image_generation_user_error"
+        and "safety system" in message
+    )
+
+
 api_retry = retry(
     stop=stop_after_attempt(getattr(_settings, "retry_max_attempts", 5)),
     wait=wait_exponential(multiplier=getattr(
         _settings, "retry_backoff_base", 1.0), min=2, max=60),
-    retry=retry_if_exception_type((openai.APIError, openai.Timeout, openai.APIConnectionError,
-                                  openai.RateLimitError, requests.exceptions.RequestException)))
+    retry=retry_if_exception(_should_retry_openai_error))
 
 # Initialize the client only if key is available; tests may patch `client`.
 client = OpenAI(api_key=OPENAI_API_KEY,
@@ -62,15 +119,125 @@ EXPECTED_PAGE_KEYS = ["Page_number", "Text",
 
 OPENAI_CLIENT = None
 
-# Initialize logging
-logger = logging.getLogger(__name__)
-error_logger = logging.getLogger('error_logger')
-warning_logger = logging.getLogger('warning_logger')
-
-TEXT_MODEL = getattr(_settings, "text_model", "gpt-4.1-mini")
-IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1")
+TEXT_MODEL = getattr(_settings, "text_model", "gpt-5-mini")
+IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1.5")
 IMAGE_SIZE = "1024x1024"
 MAX_PROMPT_LENGTH = 4000
+
+
+def _images_api_supports_style(model: str) -> bool:
+    """Return True if the Images API `style` param is supported for model.
+
+    Per current OpenAI Images API docs, `style` is only supported for `dall-e-3`.
+    """
+
+    model_value = (model or "").strip().lower()
+    return model_value == "dall-e-3"
+
+
+def _use_openai_responses_api() -> bool:
+    """Return True when Responses API is enabled for story text generation."""
+
+    return bool(getattr(_settings, "use_openai_responses_api", False))
+
+
+def _generate_story_text_via_responses(prompt: str) -> str:
+    """Generate the story JSON text using the OpenAI Responses API.
+
+    Parameters
+    ----------
+    prompt:
+        The full user prompt including all formatting requirements.
+
+    Returns
+    -------
+    str
+        The model's output text, expected to be a single JSON object.
+    """
+
+    _ensure_client_available()
+
+    response = client.responses.create(
+        model=TEXT_MODEL,
+        # Keep the same semantics as the existing system+user prompt.
+        instructions=(
+            "You are a creative story writer that outputs structured JSON. "
+            "Adherence to all formatting and content constraints, including "
+            "specified text density per page, is critical."
+        ),
+        input=prompt,
+        # Structured outputs shape differs from Chat Completions.
+        text={"format": {"type": "json_object"}},
+        # Avoid server-side storage by default.
+        store=False,
+    )
+
+    output_text = getattr(response, "output_text", None)
+    if not isinstance(output_text, str) or not output_text.strip():
+        raise ValueError("Responses API returned empty output_text for story.")
+
+    return output_text
+
+
+def _generate_story_text_via_chat_completions(prompt: str) -> str:
+    """Generate the story JSON text using Chat Completions.
+
+    Parameters
+    ----------
+    prompt:
+        The full user prompt including all formatting requirements.
+
+    Returns
+    -------
+    str
+        The model's output text, expected to be a single JSON object.
+    """
+
+    _ensure_client_available()
+
+    try:
+        response = client.chat.completions.create(
+            model=TEXT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a creative story writer that outputs structured JSON. "
+                        "Adherence to all formatting and content constraints, including "
+                        "specified text density per page, is critical."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"},
+        )
+    except Exception as e:
+        # Some models (notably reasoning-focused ones) may reject sampling params
+        # like `temperature`. If so, retry once without it.
+        if "Unsupported parameter" in str(e) and "temperature" in str(e):
+            response = client.chat.completions.create(
+                model=TEXT_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a creative story writer that outputs structured JSON. "
+                            "Adherence to all formatting and content constraints, including "
+                            "specified text density per page, is critical."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+        else:
+            raise
+
+    response_text = response.choices[0].message.content
+    if not isinstance(response_text, str) or not response_text.strip():
+        raise ValueError("Chat Completions returned empty content for story.")
+    return response_text
 
 
 def _ensure_client_available():
@@ -221,6 +388,19 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
 - It is absolutely crucial that every page has a non-empty "Image_description".
 """
 
+    editor_settings = story_input.get('editor_settings') or {}
+    default_text_position = str(
+        editor_settings.get('text_position', 'bottom')
+    ).strip().lower()
+    if default_text_position not in {'top', 'bottom', 'left', 'right', 'center'}:
+        default_text_position = 'bottom'
+
+    text_layout_instruction = (
+        f"Default page text placement is {default_text_position}. "
+        "Every Image_description should compose the artwork so this area stays readable "
+        "and less visually busy for story text overlay."
+    )
+
     # Enhanced character instructions for the prompt
     character_visual_instructions = [
         "IMPORTANT: The following visual details for each character are key to maintaining consistency across all images.",
@@ -346,6 +526,8 @@ Further Instructions:
 - The desired visual style for all images is: '{image_style_description}'. All "Image_description" fields that are not null must reflect this style (e.g., by appending ', {image_style_description} style' or similar phrasing to the description).
 - Optional tone: {story_input.get('tone', 'N/A')}.
 - Optional setting: {story_input.get('setting', 'N/A')}.
+- Page text placement for the layout defaults: {default_text_position}.
+- Layout guidance for all generated page images: {text_layout_instruction}
 
 Output Requirements:
 - The final output MUST be a single JSON object.
@@ -388,18 +570,77 @@ Output Requirements:
 
     response_text = None
     try:
-        app_logger.info(
+        app_logger.debug(
             f"Sending request to ChatGPT API with prompt: {prompt[:200]}...")
-        response = client.chat.completions.create(
-            model=TEXT_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a creative story writer that outputs structured JSON. Adherence to all formatting and content constraints, including specified text density per page, is critical."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            response_format={"type": "json_object"}
+        primary_path = "responses" if _use_openai_responses_api() else "chat_completions"
+        fallback_enabled = bool(
+            getattr(_settings, "openai_text_enable_fallback", False)
         )
-        response_text = response.choices[0].message.content
+        fallback_path = "chat_completions" if primary_path == "responses" else "responses"
+
+        paths_to_try = [primary_path]
+        if fallback_enabled:
+            paths_to_try.append(fallback_path)
+
+        last_error: Exception | None = None
+
+        for attempt_index, path in enumerate(paths_to_try, start=1):
+            start_ts = time.perf_counter()
+            try:
+                if path == "responses":
+                    response_text = _generate_story_text_via_responses(prompt)
+                else:
+                    response_text = _generate_story_text_via_chat_completions(
+                        prompt)
+
+                elapsed = time.perf_counter() - start_ts
+                observe_openai_text_call(
+                    path=path,
+                    outcome="success",
+                    duration_seconds=elapsed,
+                )
+                api_logger.info(
+                    "OpenAI text generation succeeded",
+                    extra={
+                        "event": "openai_text_generation",
+                        "path": path,
+                        "model": TEXT_MODEL,
+                        "duration_ms": int(elapsed * 1000),
+                        "attempt": attempt_index,
+                        "fallback_used": attempt_index > 1,
+                    },
+                )
+                break
+            except Exception as e:
+                elapsed = time.perf_counter() - start_ts
+                observe_openai_text_call(
+                    path=path,
+                    outcome="error",
+                    duration_seconds=elapsed,
+                    error_type=type(e).__name__,
+                )
+                api_logger.warning(
+                    "OpenAI text generation failed",
+                    extra={
+                        "event": "openai_text_generation",
+                        "path": path,
+                        "model": TEXT_MODEL,
+                        "duration_ms": int(elapsed * 1000),
+                        "attempt": attempt_index,
+                        "will_fallback": fallback_enabled
+                        and attempt_index < len(paths_to_try),
+                        "error_type": type(e).__name__,
+                    },
+                )
+                last_error = e
+                response_text = None
+                continue
+
+        if response_text is None:
+            # Preserve original exception behavior for callers and tenacity.
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("OpenAI text generation failed with no error.")
         api_logger.info(
             f"Received response from ChatGPT API. Length: {len(response_text)}")
 
@@ -454,10 +695,16 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     image_style = story_input.image_style
     if hasattr(image_style, 'value'):
         image_style = image_style.value
-    else:
+    elif image_style is not None:
         image_style = str(image_style)
 
-    business_style = image_style
+    resolved_style = resolve_image_style(
+        db=db,
+        business_style=image_style,
+        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+    )
+    business_style = resolved_style.business_style or image_style
+    prompt_style = resolved_style.prompt_style or business_style
     openai_style = "vivid"
     try:
         openai_style = get_openai_image_style(
@@ -466,19 +713,9 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
         # Never block generation due to optional mapping.
         openai_style = "vivid"
 
-    # Optionally map business style to a more descriptive OpenAI style phrase
-    try:
-        if getattr(_settings, "enable_image_style_mapping", False):
-            mapped = map_style(image_style)
-            if mapped:
-                image_style = mapped
-    except Exception:
-        # Mapping issues should not break generation; fallback to original
-        pass
-
     # Construct a detailed prompt with style at the forefront
     prompt_parts = [
-        f"A {image_style} style full-body character sheet for {character.name}"]
+        f"A {prompt_style} style full-body character sheet for {character.name}"]
     if character.physical_appearance:
         prompt_parts.append(character.physical_appearance)
     if character.clothing_style:
@@ -540,7 +777,13 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
             "Database session is not available in generate_image_for_page")
         return None
 
-    business_style = style_reference
+    resolved_style = resolve_image_style(
+        db=db,
+        business_style=style_reference,
+        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+    )
+    business_style = resolved_style.business_style or style_reference
+    prompt_style = resolved_style.prompt_style or business_style
 
     openai_style = "vivid"
     try:
@@ -549,16 +792,7 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
     except Exception:
         openai_style = "vivid"
 
-    # Optionally map the style reference to a richer prompt modifier
-    try:
-        if getattr(_settings, "enable_image_style_mapping", False):
-            mapped = map_style(style_reference)
-            if mapped:
-                style_reference = mapped
-    except Exception:
-        pass
-
-    prompt_parts = [f"A {style_reference} style image of {page_content}"]
+    prompt_parts = [f"A {prompt_style} style image of {page_content}"]
     if characters_in_scene:
         prompt_parts.append(
             f"The scene features the following characters: {', '.join(characters_in_scene)}.")
@@ -619,7 +853,7 @@ def generate_image(
 
         response = None
         style_value = None
-        if openai_style:
+        if _images_api_supports_style(IMAGE_MODEL) and openai_style:
             style_candidate = str(openai_style).strip().lower()
             if style_candidate in ("vivid", "natural"):
                 style_value = style_candidate
@@ -702,6 +936,15 @@ def generate_image(
         # Raise a standard permission-related error for upstream HTTP mapping
         raise PermissionError(
             "OpenAI authentication failed. Check OPENAI_API_KEY.")
+    except getattr(openai, "BadRequestError", ()) as e:
+        if _is_openai_image_moderation_block(e):
+            error_logger.warning(
+                "OpenAI image request blocked by moderation; continuing without an image: %s",
+                e,
+            )
+            return None
+        error_logger.error(f"OpenAI bad request in AI image generation: {e}")
+        raise
     except openai.APIError as e:
         error_logger.error(f"OpenAI API error in AI image generation: {e}")
         raise

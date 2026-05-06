@@ -87,11 +87,12 @@ def ensure_admin_user(
             is_active=True,
         )
         user = crud.create_user(db, admin_data)
+        user.role = "admin"
         # Ensure soft-delete is cleared in case this username ever existed.
         if getattr(user, "is_deleted", False):
             user.is_deleted = False
-            db.commit()
-            db.refresh(user)
+        db.commit()
+        db.refresh(user)
         return user, "created"
 
     changed = False

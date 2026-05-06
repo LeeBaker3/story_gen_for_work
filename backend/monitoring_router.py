@@ -247,13 +247,21 @@ def config_diagnostics():
             "openai_key_masked": masked,
             "text_model": settings.text_model,
             "image_model": settings.image_model,
+            "use_openai_responses_api": settings.use_openai_responses_api,
+            "openai_text_enable_fallback": getattr(
+                settings, "openai_text_enable_fallback", False
+            ),
             "run_env": settings.run_env,
             "enable_image_style_mapping": settings.enable_image_style_mapping,
             "mount_frontend_static": settings.mount_frontend_static,
             "mount_data_static": settings.mount_data_static,
-            "frontend_static_dir": settings.frontend_static_dir,
-            "data_dir": settings.data_dir,
-            "logs_dir": LOG_DIRECTORY,
+            "frontend_static_dir_exists": os.path.isdir(
+                settings.frontend_static_dir
+            ) if settings.frontend_static_dir else False,
+            "data_dir_exists": os.path.isdir(settings.data_dir)
+            if settings.data_dir else False,
+            "logs_dir_exists": os.path.isdir(LOG_DIRECTORY)
+            if LOG_DIRECTORY else False,
             "client_initialized": client_initialized,
         }
     except Exception:

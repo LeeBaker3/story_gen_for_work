@@ -217,6 +217,34 @@ def test_regenerate_image_sets_current_image(client: TestClient, regular_user_au
     _cleanup_generated_file(fp2)
 
 
+def test_regenerate_image_hides_internal_exception_message(client: TestClient, regular_user_auth_headers: dict, monkeypatch):
+    def _failing_generate_image(prompt, style, size):
+        raise RuntimeError("internal provider failure: billing account 123")
+
+    monkeypatch.setattr(
+        "backend.ai_services.generate_image", _failing_generate_image
+    )
+
+    res_create = client.post(
+        "/api/v1/characters/",
+        json={"name": "Leaky Regen", "generate_image": False},
+        headers=regular_user_auth_headers,
+    )
+    assert res_create.status_code == 201
+    char_id = res_create.json()["id"]
+
+    res_regen = client.post(
+        f"/api/v1/characters/{char_id}/regenerate-image",
+        json={"description": "new look"},
+        headers=regular_user_auth_headers,
+    )
+
+    assert res_regen.status_code == 500
+    assert res_regen.json()["detail"] == "Image generation error"
+    assert "internal provider failure" not in res_regen.text
+    assert "billing account 123" not in res_regen.text
+
+
 def test_delete_character(client: TestClient, regular_user_auth_headers: dict):
     res_create = client.post(
         "/api/v1/characters/",
