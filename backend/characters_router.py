@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
+import shutil
 import os
 import uuid
 from PIL import Image as PILImage
@@ -10,6 +11,7 @@ from .settings import get_settings
 from .logging_config import app_logger, error_logger
 
 router = APIRouter(prefix="/characters", tags=["characters"])
+
 
 
 def _ext_from_upload(upload: UploadFile) -> str:
@@ -137,10 +139,40 @@ def list_characters(
         db, current_user.id, q=q, page=page, page_size=page_size)
     list_items = []
     for ch in items:
-        thumb = ch.current_image.file_path if ch.current_image else None
         list_items.append(schemas.CharacterListItem(
-            id=ch.id, name=ch.name, updated_at=ch.updated_at, thumbnail_path=thumb))
+            id=ch.id,
+            name=ch.name,
+            updated_at=ch.updated_at,
+            thumbnail_path=crud.get_public_character_thumbnail_path(ch),
+        ))
     return schemas.PaginatedCharacters(items=list_items, total=total, page=page, page_size=page_size)
+
+
+@router.post(
+    "/backfill-thumbnails",
+    response_model=schemas.CharacterThumbnailBackfillResponse,
+)
+def backfill_character_thumbnails(
+    db: Session = Depends(database.get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+):
+    """Repair missing public character thumbnails for the current user."""
+
+    try:
+        counts = crud.backfill_public_character_thumbnails(db, current_user.id)
+    except Exception as exc:
+        error_logger.error(
+            "Failed to backfill character thumbnails for user %s: %s",
+            current_user.id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred.",
+        ) from exc
+
+    return schemas.CharacterThumbnailBackfillResponse(**counts)
 
 
 @router.get("/{char_id}", response_model=schemas.CharacterOut)

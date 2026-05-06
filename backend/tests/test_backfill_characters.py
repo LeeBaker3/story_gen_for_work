@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
-from backend import schemas
+from backend import crud, schemas
+from backend.database import User
+from backend.settings import get_settings
+import os
 
 
 def test_backfill_characters_populates_library(client: TestClient, regular_user_auth_headers: dict):
@@ -35,3 +38,51 @@ def test_backfill_characters_populates_library(client: TestClient, regular_user_
     payload = res_list.json()
     names = {item["name"] for item in payload.get("items", [])}
     assert {"LibHero", "Sidekick"}.issubset(names)
+
+
+def test_backfill_character_thumbnails_repairs_only_current_users_characters(
+    client: TestClient,
+    db_session,
+    regular_user_auth_headers: dict,
+):
+    create_res = client.post(
+        "/api/v1/characters/",
+        json={"name": "EndpointThumb", "generate_image": False},
+        headers=regular_user_auth_headers,
+    )
+    assert create_res.status_code == 201, create_res.text
+    character = create_res.json()
+
+    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    source_rel_path = (
+        f"images/user_{user.id}/story_777/references/endpoint-thumb.png"
+    )
+    source_abs_path = os.path.join(get_settings().data_dir, source_rel_path)
+    os.makedirs(os.path.dirname(source_abs_path), exist_ok=True)
+    with open(source_abs_path, "wb") as source_file:
+        source_file.write(b"endpoint repair thumbnail")
+
+    crud.add_character_image(
+        db_session,
+        user.id,
+        character["id"],
+        source_rel_path,
+        prompt_used=None,
+        image_style=None,
+    )
+
+    res = client.post(
+        "/api/v1/characters/backfill-thumbnails",
+        headers=regular_user_auth_headers,
+    )
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    assert payload == {
+        "scanned": 1,
+        "repaired": 1,
+        "already_public": 0,
+        "missing_source": 0,
+        "no_private_source": 0,
+        "copy_failed": 0,
+        "skipped": 0,
+    }

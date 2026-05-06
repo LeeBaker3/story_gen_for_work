@@ -4386,7 +4386,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             list.innerHTML = characterLibraryState.items.map(item => {
                 const selected = characterLibraryState.selectedIds.has(item.id);
-                const imgSrc = item.thumbnail_path ? (item.thumbnail_path.startsWith('/static_content/') ? item.thumbnail_path : `/static_content/${item.thumbnail_path}`) : '';
+                const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
                 return `
                 <div class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" style="border:1px solid ${selected ? '#4f8cff' : '#333'};border-radius:8px;padding:8px;cursor:pointer;background:${selected ? '#1f2937' : '#111'};">
                     ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail" style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;" />` : '<div style="height:140px;background:#222;border-radius:6px;"></div>'}

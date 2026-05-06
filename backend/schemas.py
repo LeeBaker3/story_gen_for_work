@@ -463,6 +463,18 @@ class PaginatedCharacters(BaseModel):
     page_size: int = Field(20, ge=1, le=100)
 
 
+class CharacterThumbnailBackfillResponse(BaseModel):
+    """Result summary for an explicit character thumbnail repair run."""
+
+    scanned: int
+    repaired: int
+    already_public: int
+    missing_source: int
+    no_private_source: int
+    copy_failed: int
+    skipped: int
+
+
 class RegenerateImageRequest(BaseModel):
     description: Optional[str] = None
     image_style: Optional[str] = None

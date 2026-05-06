@@ -9,7 +9,11 @@ from fastapi import HTTPException, status
 from fastapi.encoders import jsonable_encoder  # Added for JSON conversion
 # Ensure datetime and timezone are imported
 from datetime import datetime, timezone
+import os
+import shutil
 import uuid  # Import uuid for generating task IDs
+
+from . import storage_paths
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -1122,6 +1126,164 @@ def add_character_image(db: Session, user_id: int, char_id: int, file_path: str,
     db.commit()
     db.refresh(ch)
     return img
+
+
+def iter_character_thumbnail_candidate_paths(
+    character: Character,
+) -> List[str]:
+    """Return candidate thumbnail paths in newest-first order without duplicates."""
+
+    candidate_paths: List[str] = []
+    if getattr(character, "current_image", None):
+        candidate_paths.append(character.current_image.file_path)
+
+    images = sorted(
+        getattr(character, "images", []) or [],
+        key=lambda image: (
+            getattr(image, "created_at", None) is not None,
+            getattr(image, "created_at", None),
+            getattr(image, "id", 0),
+        ),
+        reverse=True,
+    )
+    candidate_paths.extend(image.file_path for image in images)
+
+    seen_paths = set()
+    ordered_paths: List[str] = []
+    for path in candidate_paths:
+        if path in seen_paths:
+            continue
+        seen_paths.add(path)
+        ordered_paths.append(path)
+    return ordered_paths
+
+
+def is_public_character_thumbnail_path(
+    path: Optional[str],
+    user_id: int,
+    char_id: int,
+) -> bool:
+    """Return whether a path points to a public character-library asset."""
+
+    if not path:
+        return False
+
+    try:
+        normalized = storage_paths.normalize_data_relative_path(path)
+    except ValueError:
+        return False
+
+    if storage_paths.is_private_story_asset_path(normalized):
+        return False
+
+    unix_style = normalized.replace(os.sep, "/")
+    expected_prefix = f"images/user_{user_id}/characters/{char_id}/"
+    return unix_style.startswith(expected_prefix)
+
+
+def get_public_character_thumbnail_path(character: Character) -> Optional[str]:
+    """Return the newest existing public character thumbnail path, if any."""
+
+    for path in iter_character_thumbnail_candidate_paths(character):
+        if is_public_character_thumbnail_path(path, character.user_id, character.id):
+            return path
+    return None
+
+
+def repair_public_character_thumbnail(db: Session, character: Character) -> str:
+    """Materialize one public character thumbnail from a valid same-user story asset."""
+
+    if get_public_character_thumbnail_path(character):
+        return "already_public"
+
+    saw_private_story_asset = False
+    saw_missing_source = False
+    saw_copy_failure = False
+
+    for path in iter_character_thumbnail_candidate_paths(character):
+        try:
+            normalized = storage_paths.normalize_data_relative_path(path)
+        except ValueError:
+            continue
+
+        unix_style = normalized.replace(os.sep, "/")
+        story_prefix = f"images/user_{character.user_id}/story_"
+        if not unix_style.startswith(story_prefix):
+            continue
+        if not storage_paths.is_private_story_asset_path(normalized):
+            continue
+
+        saw_private_story_asset = True
+
+        try:
+            source_abs = storage_paths.resolve_data_path(normalized)
+        except ValueError:
+            continue
+        if not os.path.isfile(source_abs):
+            saw_missing_source = True
+            continue
+
+        ext = os.path.splitext(source_abs)[1].lower() or ".png"
+        dest_rel_dir = os.path.join(
+            "images", f"user_{character.user_id}", "characters", str(character.id)
+        )
+        dest_rel_path = os.path.join(dest_rel_dir, f"{uuid.uuid4()}{ext}")
+
+        try:
+            dest_abs_path = storage_paths.resolve_data_path(dest_rel_path)
+            os.makedirs(os.path.dirname(dest_abs_path), exist_ok=True)
+            shutil.copy2(source_abs, dest_abs_path)
+            add_character_image(
+                db,
+                character.user_id,
+                character.id,
+                dest_rel_path,
+                prompt_used=None,
+                image_style=character.image_style,
+            )
+        except OSError:
+            saw_copy_failure = True
+            try:
+                if "dest_abs_path" in locals() and os.path.exists(dest_abs_path):
+                    os.remove(dest_abs_path)
+            except OSError:
+                pass
+            continue
+
+        return "repaired"
+
+    if saw_missing_source:
+        return "missing_source"
+    if saw_copy_failure:
+        return "copy_failed"
+    if saw_private_story_asset:
+        return "skipped"
+    return "no_private_source"
+
+
+def backfill_public_character_thumbnails(
+    db: Session,
+    user_id: int,
+) -> Dict[str, int]:
+    """Repair missing public character thumbnails for all of a user's characters."""
+
+    counts = {
+        "scanned": 0,
+        "repaired": 0,
+        "already_public": 0,
+        "missing_source": 0,
+        "no_private_source": 0,
+        "copy_failed": 0,
+        "skipped": 0,
+    }
+
+    characters = db.query(Character).filter(Character.user_id == user_id).all()
+    for character in characters:
+        counts["scanned"] += 1
+        status = repair_public_character_thumbnail(db, character)
+        counts[status] = counts.get(status, 0) + 1
+
+    return counts
 
 
 def upsert_character_from_detail(db: Session, user_id: int, char_detail: dict) -> Character:
