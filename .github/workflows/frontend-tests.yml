@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -45,3 +49,30 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
           if-no-files-found: ignore
+
+  legacy-status:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Publish legacy commit status
+        uses: actions/github-script@v7
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+        with:
+          script: |
+            const result = process.env.TEST_RESULT;
+            const state = result === 'success' ? 'success' : 'failure';
+            const description = state === 'success'
+              ? 'Frontend test workflow checks passed'
+              : `Frontend test workflow checks did not pass (${result})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state,
+              context: 'legacy/frontend-tests',
+              description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
