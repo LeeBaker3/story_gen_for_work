@@ -10,6 +10,18 @@
 - Optional Responses API pathway for story text (`USE_OPENAI_RESPONSES_API`).
 - Optional fallback between text paths (`OPENAI_TEXT_ENABLE_FALLBACK`).
 
+## [0.7.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.6.0...backend-v0.7.0) (2026-05-06)
+
+
+### Features
+
+* **openai:** add Responses toggle, metrics, and fallback ([c9e162e](https://github.com/LeeBaker3/story_gen_for_work/commit/c9e162ea5cda303e71ee031d78b33587728dffc7))
+
+
+### Documentation
+
+* **changelog:** clean up v0.6.0 notes ([a1eb4f0](https://github.com/LeeBaker3/story_gen_for_work/commit/a1eb4f057189eab3a484874ecca7a1b6139c28e7))
+
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.5.0...backend-v0.6.0) (2026-01-05)
 
 

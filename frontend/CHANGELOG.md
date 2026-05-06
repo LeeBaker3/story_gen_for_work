@@ -5,6 +5,13 @@
 ### Changed
 - No user-visible frontend changes; documentation/config references updated to align with new OpenAI defaults and toggles.
 
+## [0.7.0](https://github.com/LeeBaker3/story_gen_for_work/compare/frontend-v0.6.0...frontend-v0.7.0) (2026-05-06)
+
+
+### Features
+
+* **openai:** add Responses toggle, metrics, and fallback ([c9e162e](https://github.com/LeeBaker3/story_gen_for_work/commit/c9e162ea5cda303e71ee031d78b33587728dffc7))
+
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/frontend-v0.5.0...frontend-v0.6.0) (2026-01-05)
 
 
