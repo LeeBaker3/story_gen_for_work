@@ -124,7 +124,8 @@ async def prometheus_http_metrics(request, call_next):
     route_template = getattr(route, "path", None)
     path_label = normalize_http_path(
         raw_path=str(request.url.path),
-        route_template=route_template if isinstance(route_template, str) else None,
+        route_template=route_template if isinstance(
+            route_template, str) else None,
     )
 
     method = str(request.method)
@@ -296,7 +297,8 @@ async def update_story_draft_endpoint(
         },
     )
 
-    existing_draft = crud.get_story(db, story_id=story_id, user_id=current_user.id)
+    existing_draft = crud.get_story(
+        db, story_id=story_id, user_id=current_user.id)
     if (
         existing_draft is None
         or existing_draft.owner_id != current_user.id
@@ -360,7 +362,8 @@ async def read_story_draft(
 ):
     """Return one draft story owned by the current user."""
 
-    db_story_draft = crud.get_story_draft(db, story_id=story_id, user_id=current_user.id)
+    db_story_draft = crud.get_story_draft(
+        db, story_id=story_id, user_id=current_user.id)
     if db_story_draft is None:
         raise HTTPException(status_code=404, detail="Draft not found")
     return db_story_draft

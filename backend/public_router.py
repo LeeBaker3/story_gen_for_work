@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Literal
 import asyncio
 import io
 import os
@@ -139,6 +139,8 @@ def _extract_reference_image_paths(db_story: database.Story) -> List[str]:
         if path:
             paths.append(path)
     return paths
+
+
 @public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
 async def register_user(
     user: schemas.UserCreate,
@@ -179,6 +181,65 @@ async def login_for_access_token(
     )
 
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@public_router.post(
+    "/password-reset/request",
+    response_model=schemas.ForgotPasswordResponse,
+    tags=["authentication"],
+)
+@limiter.limit(settings.login_rate_limit)
+async def request_password_reset(
+    request: Request,
+    payload: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Issue a password reset token without revealing account existence."""
+
+    identifier = payload.identifier.strip()
+    generic_detail = (
+        "If an account matches the provided details, a password reset token "
+        "has been issued."
+    )
+
+    user = crud.get_user_by_email(db, email=identifier)
+    if user is None:
+        user = crud.get_user_by_username(db, username=identifier)
+
+    reset_token_preview: Optional[str] = None
+    if user is not None:
+        token, _ = auth.issue_password_reset_token(db, user)
+        if auth.should_expose_password_reset_token_preview():
+            reset_token_preview = token
+    elif auth.should_expose_password_reset_token_preview():
+        reset_token_preview = auth.issue_password_reset_token_preview()
+
+    return schemas.ForgotPasswordResponse(
+        detail=generic_detail,
+        reset_token_preview=reset_token_preview,
+    )
+
+
+@public_router.post(
+    "/password-reset/confirm",
+    response_model=schemas.MessageResponse,
+    tags=["authentication"],
+)
+async def confirm_password_reset(
+    payload: schemas.ResetPasswordConfirm,
+    db: Session = Depends(get_db),
+):
+    """Validate a password reset token and update the user's password."""
+
+    user = auth.get_valid_password_reset_user(db, payload.token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        )
+
+    auth.reset_user_password(db, user, payload.new_password)
+    return schemas.MessageResponse(detail="Password reset successful")
 
 
 @public_router.post("/stories/", response_model=schemas.StoryGenerationTask, status_code=status.HTTP_202_ACCEPTED)
@@ -366,7 +427,8 @@ async def read_story_page_image_api(
         )
         image_path = storage_paths.resolve_data_path(db_page.image_path)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Page image not found") from exc
+        raise HTTPException(
+            status_code=404, detail="Page image not found") from exc
 
     if not is_private_story_image or not os.path.isfile(image_path):
         raise HTTPException(status_code=404, detail="Page image not found")
@@ -516,6 +578,105 @@ async def regenerate_story_page_image_api(
     return db_page
 
 
+@public_router.post(
+    "/stories/{story_id}/pages/{page_id}/regenerate-text",
+    response_model=schemas.Page,
+)
+async def regenerate_story_page_text_api(
+    story_id: int,
+    page_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+):
+    """Regenerate a single content page's text without replacing the story."""
+
+    db_story = _get_story_or_404(
+        db,
+        story_id=story_id,
+        user_id=current_user.id,
+    )
+    db_page = _get_story_page_or_404(db_story, page_id)
+    if db_page.page_number == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Cover page text cannot be regenerated independently.",
+        )
+
+    ordered_pages = sorted(
+        db_story.pages or [],
+        key=lambda page: int(getattr(page, "page_number", 0)),
+    )
+    previous_page = next(
+        (
+            page for page in ordered_pages
+            if page.page_number == db_page.page_number - 1
+        ),
+        None,
+    )
+    next_page = next(
+        (
+            page for page in ordered_pages
+            if page.page_number == db_page.page_number + 1
+        ),
+        None,
+    )
+    regen_outline = (
+        f"{db_story.story_outline}\n\n"
+        f"Regenerate only page {db_page.page_number} of this existing story. "
+        "Keep the same characters, tone, and continuity. Return exactly one "
+        "content page plus the required title page JSON wrapper. "
+        f"Current page text: {db_page.text!r}. "
+        f"Previous page summary: {(previous_page.text if previous_page else '')!r}. "
+        f"Next page summary: {(next_page.text if next_page else '')!r}."
+    )
+    story_input = {
+        "title": db_story.title,
+        "genre": db_story.genre,
+        "story_outline": regen_outline,
+        "main_characters": db_story.main_characters or [],
+        "num_pages": 1,
+        "tone": db_story.tone,
+        "setting": db_story.setting,
+        "writing_style": db_story.writing_style,
+        "image_style": db_story.image_style,
+        "word_to_picture_ratio": db_story.word_to_picture_ratio,
+        "text_density": db_story.text_density,
+        "editor_settings": crud.get_story_editor_settings(db_story),
+    }
+    regenerated_story = await asyncio.to_thread(
+        ai_services.generate_story_from_chatgpt,
+        story_input,
+    )
+    if asyncio.iscoroutine(regenerated_story):
+        regenerated_story = await regenerated_story
+
+    regenerated_page = next(
+        (
+            page for page in regenerated_story.get("Pages", [])
+            if str(page.get("Page_number", "")).strip().lower() != "title"
+        ),
+        None,
+    )
+    regenerated_text = (
+        str(regenerated_page.get("Text", "")).strip()
+        if regenerated_page is not None
+        else ""
+    )
+    if not regenerated_text:
+        raise HTTPException(
+            status_code=502,
+            detail="Text generation did not return regenerated page text.",
+        )
+
+    db_page.text = regenerated_text
+    if regenerated_page.get("Image_description"):
+        db_page.image_description = regenerated_page["Image_description"]
+    db_page.editor_state = crud.get_page_editor_state(db_page)
+    db.commit()
+    db.refresh(db_page)
+    return db_page
+
+
 @public_router.delete("/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_story(
     story_id: int,
@@ -594,6 +755,10 @@ def get_public_list_items(list_name: str, db: Session = Depends(get_db)):
 @public_router.get("/stories/{story_id}/pdf", status_code=status.HTTP_200_OK)
 async def export_story_as_pdf_api(
     story_id: int,
+    disposition: Literal["attachment", "inline"] = Query(
+        default="attachment",
+        description="Choose attachment for download or inline for preview.",
+    ),
     db: Session = Depends(get_db),
     current_user: database.User = Depends(auth.get_current_active_user)
 ):
@@ -621,8 +786,15 @@ async def export_story_as_pdf_api(
         if not safe_title:
             safe_title = f"story_{db_story.id}"
 
-        return StreamingResponse(io.BytesIO(pdf_content_bytes), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename={safe_title}.pdf"})
+        return StreamingResponse(
+            io.BytesIO(pdf_content_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f"{disposition}; filename={safe_title}.pdf"
+                )
+            },
+        )
     except Exception as e:
         error_logger.error(
             f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)

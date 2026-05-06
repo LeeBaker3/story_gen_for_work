@@ -75,7 +75,8 @@ def test_story_generation_full_loop_completes_and_exports_pdf(
         assert len(story.pages) == 2
         return b"%PDF-1.4\n% loop test pdf\n"
 
-    monkeypatch.setattr(story_generation_service.database, "get_db", override_background_db)
+    monkeypatch.setattr(story_generation_service.database,
+                        "get_db", override_background_db)
     monkeypatch.setattr(
         ai_services,
         "generate_character_reference_image",
@@ -156,7 +157,8 @@ def test_story_generation_full_loop_completes_and_exports_pdf(
     }
     assert [page["page_number"] for page in story["pages"]] == [0, 1]
     assert story["pages"][1]["text"] == "Ava finds the hidden lantern."
-    assert story["pages"][1]["image_path"].startswith("images/user_2/story_") and story["pages"][1]["image_path"].endswith("p1.png")
+    assert story["pages"][1]["image_path"].startswith(
+        "images/user_2/story_") and story["pages"][1]["image_path"].endswith("p1.png")
 
     pdf_response = client.get(
         f"/api/v1/stories/{task['story_id']}/pdf",

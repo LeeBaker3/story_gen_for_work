@@ -4,8 +4,10 @@ from typing import List, Optional
 
 from backend import crud, schemas, database
 from backend.auth import get_current_admin_user
+from backend.image_style_mapping import get_admin_image_style_mapping_state
 from backend.logging_config import app_logger, error_logger
 from backend.database import get_db
+from backend.settings import get_settings
 from sqlalchemy import func, and_
 from datetime import datetime, timedelta, timezone
 
@@ -108,7 +110,134 @@ def get_admin_stats(db: Session = Depends(get_db)):
         avg_attempts_last_24h=avg_attempts,
     )
 
+
+@admin_router.get(
+    "/broadcasts",
+    response_model=List[schemas.AdminBroadcast],
+)
+def list_admin_broadcasts(db: Session = Depends(get_db)):
+    """Return recent broadcast records for the admin dashboard."""
+
+    from backend.database import AdminBroadcast
+
+    return db.query(AdminBroadcast).order_by(AdminBroadcast.sent_at.desc()).all()
+
+
+@admin_router.post(
+    "/broadcasts",
+    response_model=schemas.AdminBroadcast,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_admin_broadcast(
+    broadcast: schemas.AdminBroadcastCreate,
+    db: Session = Depends(get_db),
+    current_admin_user=Depends(get_current_admin_user),
+):
+    """Persist a minimal broadcast record and mark it sent to active users."""
+
+    from backend.database import AdminBroadcast, User
+
+    recipient_count = db.query(func.count(User.id)).filter(
+        User.is_active == True,
+        User.is_deleted == False,
+    ).scalar() or 0
+
+    db_broadcast = AdminBroadcast(
+        title=broadcast.title,
+        message=broadcast.message,
+        target_scope="all_active_users",
+        status="sent",
+        recipient_count=recipient_count,
+        created_by_user_id=current_admin_user.id,
+        sent_at=datetime.now(timezone.utc),
+    )
+    db.add(db_broadcast)
+    db.commit()
+    db.refresh(db_broadcast)
+    return db_broadcast
+
+
+@admin_router.get(
+    "/analytics",
+    response_model=schemas.AdminAnalyticsSummary,
+)
+def get_admin_analytics(db: Session = Depends(get_db)):
+    """Return product-facing usage summaries for the admin dashboard."""
+
+    from backend.database import AdminBroadcast, Character, Story
+    from backend.database import StoryGenerationTask, User
+
+    now = datetime.now(timezone.utc)
+    since_7d = now - timedelta(days=7)
+    since_30d = now - timedelta(days=30)
+
+    users_registered_last_7d = db.query(func.count(User.id)).filter(
+        User.created_at >= since_7d,
+    ).scalar() or 0
+    stories_created_last_7d = db.query(func.count(Story.id)).filter(
+        Story.created_at >= since_7d,
+    ).scalar() or 0
+    stories_generated_last_7d = db.query(func.count(Story.id)).filter(
+        Story.generated_at >= since_7d,
+        Story.is_draft == False,
+    ).scalar() or 0
+    characters_created_last_7d = db.query(func.count(Character.id)).filter(
+        Character.created_at >= since_7d,
+    ).scalar() or 0
+    active_story_authors_last_7d = db.query(
+        func.count(func.distinct(Story.owner_id))
+    ).filter(Story.created_at >= since_7d).scalar() or 0
+
+    completed_tasks_last_7d = db.query(func.count(StoryGenerationTask.id)).filter(
+        StoryGenerationTask.created_at >= since_7d,
+        StoryGenerationTask.status == schemas.GenerationTaskStatus.COMPLETED.value,
+    ).scalar() or 0
+    failed_tasks_last_7d = db.query(func.count(StoryGenerationTask.id)).filter(
+        StoryGenerationTask.created_at >= since_7d,
+        StoryGenerationTask.status == schemas.GenerationTaskStatus.FAILED.value,
+    ).scalar() or 0
+
+    generation_success_rate_last_7d = None
+    if completed_tasks_last_7d + failed_tasks_last_7d > 0:
+        generation_success_rate_last_7d = completed_tasks_last_7d / (
+            completed_tasks_last_7d + failed_tasks_last_7d
+        )
+
+    broadcasts_sent_last_30d = db.query(func.count(AdminBroadcast.id)).filter(
+        AdminBroadcast.sent_at >= since_30d,
+    ).scalar() or 0
+    broadcast_recipients_last_30d = db.query(
+        func.coalesce(func.sum(AdminBroadcast.recipient_count), 0)
+    ).filter(AdminBroadcast.sent_at >= since_30d).scalar() or 0
+
+    return schemas.AdminAnalyticsSummary(
+        users_registered_last_7d=users_registered_last_7d,
+        stories_created_last_7d=stories_created_last_7d,
+        stories_generated_last_7d=stories_generated_last_7d,
+        characters_created_last_7d=characters_created_last_7d,
+        active_story_authors_last_7d=active_story_authors_last_7d,
+        generation_success_rate_last_7d=generation_success_rate_last_7d,
+        broadcasts_sent_last_30d=broadcasts_sent_last_30d,
+        broadcast_recipients_last_30d=broadcast_recipients_last_30d,
+    )
+
 # DynamicList Endpoints
+
+
+@admin_router.get(
+    "/image-style-mappings",
+    response_model=schemas.AdminImageStyleMappingState,
+)
+def read_image_style_mapping_state_endpoint(
+    db: Session = Depends(get_db),
+):
+    """Return the effective image style mapping state for admin tooling."""
+
+    settings = get_settings()
+    return get_admin_image_style_mapping_state(
+        db=db,
+        mapping_enabled=getattr(settings, "enable_image_style_mapping", False),
+    )
 
 
 @admin_router.post("/dynamic-lists/", response_model=schemas.DynamicList, status_code=status.HTTP_201_CREATED)

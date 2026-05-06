@@ -279,7 +279,8 @@ def test_create_story_draft_logs_only_metadata(
         lambda: mock_normal_user
     )
     app.dependency_overrides[main_module.get_db] = lambda: None
-    monkeypatch.setattr(main_module.crud, "create_story_draft", lambda **kwargs: draft)
+    monkeypatch.setattr(
+        main_module.crud, "create_story_draft", lambda **kwargs: draft)
 
     try:
         with patch.object(main_module.app_logger, "info") as mock_info:

@@ -19,7 +19,8 @@ def _private_dir() -> str:
 def normalize_data_relative_path(path: str) -> str:
     """Return a safe normalized path relative to the data directory."""
 
-    normalized = os.path.normpath(str(path or "").replace("\\", "/").lstrip("/"))
+    normalized = os.path.normpath(
+        str(path or "").replace("\\", "/").lstrip("/"))
     if normalized in ("", "."):
         raise ValueError("Data-relative path is required")
     if normalized.startswith(".."):

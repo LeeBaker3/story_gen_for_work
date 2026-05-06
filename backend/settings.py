@@ -1,7 +1,23 @@
+import json
 import os
-from typing import List
+from typing import Any, Dict, List
 from pathlib import Path
 from dotenv import load_dotenv
+
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+ADMIN_CONFIG_OVERRIDE_FILENAME = "admin_config_overrides.json"
+ADMIN_CONFIG_EDITABLE_FIELDS = (
+    "openai_text_provider",
+    "openai_text_base_url",
+    "openai_image_provider",
+    "openai_image_base_url",
+    "text_model",
+    "image_model",
+    "enable_image_generation",
+    "use_openai_responses_api",
+    "openai_text_enable_fallback",
+    "enable_image_style_mapping",
+)
 
 # Ensure environment is populated from the repo root .env before creating settings.
 _here = Path(__file__).resolve().parent
@@ -14,6 +30,122 @@ else:
     load_dotenv()
 
 
+def _parse_bool_env(value: str | None, default: bool = False) -> bool:
+    """Parse a boolean environment flag with a fallback default."""
+
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes")
+
+
+def _resolve_repo_path(repo_root: Path, path_value: str) -> str:
+    """Resolve a path relative to the repository root when needed."""
+
+    if not path_value:
+        return str(repo_root)
+    path = Path(path_value)
+    return str(path if path.is_absolute() else (repo_root / path).resolve())
+
+
+def _resolve_admin_config_override_path(
+    repo_root: Path,
+    private_data_dir: str,
+) -> str:
+    """Return the file path used for persisted admin-safe config overrides."""
+
+    override_path = os.getenv("ADMIN_CONFIG_OVERRIDE_FILE")
+    if override_path:
+        return _resolve_repo_path(repo_root, override_path)
+    return str(Path(private_data_dir) / ADMIN_CONFIG_OVERRIDE_FILENAME)
+
+
+def load_admin_config_overrides(path: str | None = None) -> Dict[str, Any]:
+    """Load persisted admin-safe config overrides from disk."""
+
+    repo_root = _here.parent
+    target_path = path or _resolve_admin_config_override_path(
+        repo_root,
+        _resolve_repo_path(repo_root, os.getenv("PRIVATE_DATA_DIR", "private_data")),
+    )
+    if not os.path.exists(target_path):
+        return {}
+
+    try:
+        with open(target_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return {
+        key: value
+        for key, value in payload.items()
+        if key in ADMIN_CONFIG_EDITABLE_FIELDS
+    }
+
+
+def save_admin_config_overrides(
+    values: Dict[str, Any],
+    path: str | None = None,
+) -> Dict[str, Any]:
+    """Persist validated admin-safe config overrides to disk."""
+
+    repo_root = _here.parent
+    target_path = path or _resolve_admin_config_override_path(
+        repo_root,
+        _resolve_repo_path(repo_root, os.getenv("PRIVATE_DATA_DIR", "private_data")),
+    )
+    overrides = load_admin_config_overrides(target_path)
+
+    for key, value in values.items():
+        if key not in ADMIN_CONFIG_EDITABLE_FIELDS:
+            raise ValueError(f"Unsupported admin config field: {key}")
+
+        if value is None:
+            overrides.pop(key, None)
+        else:
+            overrides[key] = value
+
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    if overrides:
+        with open(target_path, "w", encoding="utf-8") as handle:
+            json.dump(overrides, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+    elif os.path.exists(target_path):
+        os.remove(target_path)
+
+    return overrides
+
+
+def reset_settings_cache() -> None:
+    """Reset the cached settings singleton."""
+
+    global _settings_instance
+    _settings_instance = None
+
+
+def _normalize_openai_base_url(value: str | None) -> str:
+    """Return a normalized OpenAI-compatible base URL.
+
+    Production behavior remains unchanged when no override is supplied.
+    """
+
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return OPENAI_DEFAULT_BASE_URL
+    return raw_value.rstrip("/")
+
+
+def _default_openai_provider(base_url: str) -> str:
+    """Return a safe provider label derived from the active base URL."""
+
+    if base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL:
+        return "openai"
+    return "openai-compatible"
+
+
 class BaseSettings:
     """
     Lightweight settings loader. Reads from environment with sensible defaults.
@@ -23,32 +155,39 @@ class BaseSettings:
     def __init__(self):
         repo_root = _here.parent
 
-        def _resolve_dir(path_value: str) -> str:
-            """Resolve a directory path to an absolute path.
-
-            If the provided value is relative, it is resolved relative to the
-            repository root (the folder containing `.env`).
-            """
-            if not path_value:
-                return str(repo_root)
-            p = Path(path_value)
-            return str(p if p.is_absolute() else (repo_root / p).resolve())
-
         # Environment & paths
         self.run_env: str = os.getenv("RUN_ENV", "dev")
         self.api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
 
         # Static directories to mount
-        self.frontend_static_dir: str = _resolve_dir(
+        self.frontend_static_dir: str = _resolve_repo_path(
+            repo_root,
             os.getenv("FRONTEND_DIR", "frontend")
         )
-        self.data_dir: str = _resolve_dir(os.getenv("DATA_DIR", "data"))
+        self.data_dir: str = _resolve_repo_path(
+            repo_root,
+            os.getenv("DATA_DIR", "data"),
+        )
 
         # Private storage (never mounted publicly). Use for user uploads that must
         # not be publicly accessible.
-        self.private_data_dir: str = _resolve_dir(
+        self.private_data_dir: str = _resolve_repo_path(
+            repo_root,
             os.getenv("PRIVATE_DATA_DIR", "private_data")
         )
+        self.admin_config_override_path: str = _resolve_admin_config_override_path(
+            repo_root,
+            self.private_data_dir,
+        )
+        self.admin_config_override_relative_path: str = os.path.relpath(
+            self.admin_config_override_path,
+            repo_root,
+        )
+        admin_overrides = load_admin_config_overrides(
+            self.admin_config_override_path,
+        )
+        self.admin_config_overrides: Dict[str, Any] = dict(admin_overrides)
+        self.config_overrides_applied: List[str] = sorted(admin_overrides.keys())
 
         # Upload limits
         self.max_upload_bytes: int = int(
@@ -66,7 +205,10 @@ class BaseSettings:
 
         # Logging
         logs_dir_env = os.getenv("LOGS_DIR")
-        self.logs_dir: str = _resolve_dir(logs_dir_env) if logs_dir_env else os.path.join(
+        self.logs_dir: str = _resolve_repo_path(
+            repo_root,
+            logs_dir_env,
+        ) if logs_dir_env else os.path.join(
             self.data_dir, "logs"
         )
         self.logging_config_file: str = os.getenv(
@@ -79,8 +221,46 @@ class BaseSettings:
 
         # OpenAI / models
         self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
-        self.text_model: str = os.getenv("TEXT_MODEL", "gpt-5.4-mini")
-        self.image_model: str = os.getenv("IMAGE_MODEL", "gpt-image-2")
+        shared_openai_base_url = _normalize_openai_base_url(
+            os.getenv("OPENAI_BASE_URL")
+        )
+        self.openai_text_base_url: str = _normalize_openai_base_url(
+            admin_overrides.get("openai_text_base_url")
+            or os.getenv("OPENAI_TEXT_BASE_URL")
+            or shared_openai_base_url
+        )
+        self.openai_image_base_url: str = _normalize_openai_base_url(
+            admin_overrides.get("openai_image_base_url")
+            or os.getenv("OPENAI_IMAGE_BASE_URL")
+            or shared_openai_base_url
+        )
+        self.openai_text_provider: str = (
+            admin_overrides.get("openai_text_provider")
+            or os.getenv("OPENAI_TEXT_PROVIDER")
+            or _default_openai_provider(self.openai_text_base_url)
+        )
+        self.openai_image_provider: str = (
+            admin_overrides.get("openai_image_provider")
+            or os.getenv("OPENAI_IMAGE_PROVIDER")
+            or _default_openai_provider(self.openai_image_base_url)
+        )
+        self.text_model: str = str(
+            admin_overrides.get("text_model")
+            or os.getenv("TEXT_MODEL", "gpt-5.4-mini")
+        )
+        self.image_model: str = str(
+            admin_overrides.get("image_model")
+            or os.getenv("IMAGE_MODEL", "gpt-image-2")
+        )
+        if "enable_image_generation" in admin_overrides:
+            self.enable_image_generation = bool(
+                admin_overrides["enable_image_generation"]
+            )
+        else:
+            self.enable_image_generation = _parse_bool_env(
+                os.getenv("ENABLE_IMAGE_GENERATION"),
+                default=True,
+            )
 
         # Retry / backoff
         self.retry_max_attempts: int = int(
@@ -91,21 +271,38 @@ class BaseSettings:
         # Feature flags
         # When enabled, story text generation uses the OpenAI Responses API.
         # Default is disabled for incremental migration.
-        self.use_openai_responses_api: bool = os.getenv(
-            "USE_OPENAI_RESPONSES_API", ""
-        ).lower() in ("1", "true", "yes")
+        if "use_openai_responses_api" in admin_overrides:
+            self.use_openai_responses_api = bool(
+                admin_overrides["use_openai_responses_api"]
+            )
+        else:
+            self.use_openai_responses_api = _parse_bool_env(
+                os.getenv("USE_OPENAI_RESPONSES_API")
+            )
 
         # Optional resilience: when enabled, fall back to the other text path
         # (Responses <-> Chat Completions) if the primary path errors.
-        self.openai_text_enable_fallback: bool = os.getenv(
-            "OPENAI_TEXT_ENABLE_FALLBACK", ""
-        ).lower() in ("1", "true", "yes")
+        if "openai_text_enable_fallback" in admin_overrides:
+            self.openai_text_enable_fallback = bool(
+                admin_overrides["openai_text_enable_fallback"]
+            )
+        else:
+            self.openai_text_enable_fallback = _parse_bool_env(
+                os.getenv("OPENAI_TEXT_ENABLE_FALLBACK")
+            )
 
-        self.enable_image_style_mapping: bool = os.getenv(
-            "ENABLE_IMAGE_STYLE_MAPPING", "").lower() in ("1", "true", "yes")
+        if "enable_image_style_mapping" in admin_overrides:
+            self.enable_image_style_mapping = bool(
+                admin_overrides["enable_image_style_mapping"]
+            )
+        else:
+            self.enable_image_style_mapping = _parse_bool_env(
+                os.getenv("ENABLE_IMAGE_STYLE_MAPPING")
+            )
 
-        self.enable_telemetry: bool = os.getenv(
-            "ENABLE_TELEMETRY", "").lower() in ("1", "true", "yes")
+        self.enable_telemetry: bool = _parse_bool_env(
+            os.getenv("ENABLE_TELEMETRY")
+        )
 
         # Authentication rate limiting
         self.login_rate_limit: str = os.getenv(

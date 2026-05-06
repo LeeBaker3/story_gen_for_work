@@ -32,7 +32,7 @@ def _build_story_input() -> dict:
 
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
-@patch('backend.ai_services.client')
+@patch('backend.ai_services.image_client')
 def test_generate_image(mock_openai_client, mock_truncate_prompt):
     """
     Test that generate_image calls client.images.generate with the correct parameters and returns image bytes.
@@ -63,6 +63,30 @@ def test_generate_image(mock_openai_client, mock_truncate_prompt):
     )
 
     assert result_bytes == fake_image_bytes
+
+
+@patch('backend.ai_services.OpenAI')
+def test_create_openai_client_uses_configured_base_url(mock_openai_class):
+    """Client creation should pass through the configured compatible base URL."""
+
+    with patch.object(ai_services, 'OPENAI_API_KEY', 'dummy-key'):
+        client = ai_services._create_openai_client("http://localhost:11434/v1")
+
+    assert client is mock_openai_class.return_value
+    mock_openai_class.assert_called_once_with(
+        api_key='dummy-key',
+        base_url="http://localhost:11434/v1",
+    )
+
+
+@patch('backend.ai_services._truncate_prompt')
+def test_generate_image_returns_none_when_disabled(mock_truncate_prompt):
+    """Image generation should skip API calls entirely when disabled."""
+
+    with patch.object(ai_services._settings, 'enable_image_generation', False):
+        assert ai_services.generate_image(prompt="skip images") is None
+
+    mock_truncate_prompt.assert_not_called()
 
 
 def test_should_retry_openai_error_excludes_bad_request():
@@ -121,7 +145,8 @@ def test_generate_story_text_via_responses_rejects_empty_output(
 ):
     """Responses API should fail fast when output_text is empty."""
 
-    mock_openai_client.responses.create.return_value = MagicMock(output_text=" ")
+    mock_openai_client.responses.create.return_value = MagicMock(
+        output_text=" ")
 
     with pytest.raises(ValueError, match="empty output_text"):
         ai_services._generate_story_text_via_responses("prompt text")
@@ -172,8 +197,39 @@ def test_generate_story_from_chatgpt_raises_json_decode_error(
         ai_services.generate_story_from_chatgpt(_build_story_input())
 
 
+@patch('backend.ai_services._generate_story_text_via_chat_completions')
+@patch('backend.ai_services._use_openai_responses_api', return_value=False)
+@patch('backend.ai_services._ensure_client_available')
+def test_generate_story_from_chatgpt_includes_new_wizard_preferences_in_prompt(
+    mock_ensure_client_available,
+    mock_use_openai_responses_api,
+    mock_generate_via_chat_completions,
+):
+    """Prompt construction should include the new wizard preferences."""
+
+    mock_generate_via_chat_completions.return_value = (
+        '{"Title": "Moonlit Rescue", "Pages": []}'
+    )
+    story_input = _build_story_input()
+    story_input['writing_style'] = 'Playful'
+    story_input['editor_settings'] = {
+        'text_position': 'top-center',
+        'image_fit': 'Keep artwork contained',
+        'cover_title_placement': 'Top',
+        'readability_treatment': 'High-contrast box',
+    }
+
+    ai_services.generate_story_from_chatgpt(story_input)
+
+    prompt = mock_generate_via_chat_completions.call_args.args[0]
+    assert 'Optional writing style: Playful.' in prompt
+    assert 'artwork can sit contained on the page without awkward cropping' in prompt
+    assert 'high-contrast text box' in prompt
+    assert 'title-page cover guidance' in prompt
+
+
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
-@patch('backend.ai_services.client')
+@patch('backend.ai_services.image_client')
 def test_generate_image_returns_none_when_moderation_blocked(
     mock_openai_client,
     mock_truncate_prompt,
@@ -200,7 +256,7 @@ def test_generate_image_returns_none_when_moderation_blocked(
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
 @patch('builtins.open')
 @patch('backend.ai_services.os.path.exists', return_value=True)
-@patch('backend.ai_services.client')
+@patch('backend.ai_services.image_client')
 def test_generate_image_uses_edit_for_existing_reference_images(
     mock_openai_client,
     mock_path_exists,
@@ -232,7 +288,7 @@ def test_generate_image_uses_edit_for_existing_reference_images(
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)
 @patch('backend.ai_services.os.path.exists', return_value=False)
-@patch('backend.ai_services.client')
+@patch('backend.ai_services.image_client')
 def test_generate_image_falls_back_to_generate_when_references_missing(
     mock_openai_client,
     mock_path_exists,

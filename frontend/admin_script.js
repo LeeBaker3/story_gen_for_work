@@ -110,7 +110,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const dialog = document.getElementById(modalId);
 
         if (!dialog) {
-            return { close: () => {} };
+            return { close: () => { } };
         }
 
         const titleElement = dialog.querySelector('h2');
@@ -290,9 +290,20 @@ document.addEventListener("DOMContentLoaded", function () {
         displayAdminMessage("");
         adminViewPanel.innerHTML = `<p>Loading ${sectionName.replace(/-/g, ' ')}...</p>`;
 
+        if (adminStatsInterval) {
+            clearInterval(adminStatsInterval);
+            adminStatsInterval = null;
+        }
+
         switch (sectionName) {
             case "user-management":
                 await loadUserManagement();
+                break;
+            case "admin-broadcasts":
+                await loadAdminBroadcastsSection();
+                break;
+            case "admin-analytics":
+                await loadAdminAnalyticsSection();
                 break;
             case "dynamic-content":
                 await loadDynamicContentManagement();
@@ -304,8 +315,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 await loadSystemMonitoring();
                 break;
             case "app-config":
-                adminViewPanel.innerHTML = "<h2>Application Configuration</h2><p>Settings for API keys, application behavior, and broadcast messages will be here.</p>";
-                displayAdminMessage("Application config loaded.", "success");
+                await loadApplicationConfig();
                 break;
             case "admin-stats":
                 await loadAdminStatsSection();
@@ -328,6 +338,269 @@ document.addEventListener("DOMContentLoaded", function () {
             displayAdminMessage("Failed to load users: " + error.message, "error");
             adminViewPanel.innerHTML += '<p class="error-message">Could not load user data.</p>';
         }
+    }
+
+    async function loadApplicationConfig() {
+        adminViewPanel.innerHTML = `
+            <h2>Application Configuration</h2>
+            <div id="app-config-container">
+                <p>Loading current application configuration...</p>
+            </div>
+        `;
+
+        try {
+            const config = await apiRequest("/api/v1/admin/monitoring/config", "GET");
+            renderApplicationConfig(config);
+            displayAdminMessage("Application config loaded.", "success");
+        } catch (error) {
+            console.error("Error loading application config:", error);
+            document.getElementById("app-config-container").innerHTML = `
+                <p class="error-message">Failed to load application config.</p>
+            `;
+            displayAdminMessage(
+                "Failed to load application config: " + error.message,
+                "error"
+            );
+        }
+    }
+
+    function renderApplicationConfig(config) {
+        const container = document.getElementById("app-config-container");
+        if (!container) {
+            return;
+        }
+
+        const fieldMetadata = config.editable_field_metadata || {};
+        const editableValues = config.editable_values || {};
+        const notes = Array.isArray(config.config_update_notes)
+            ? config.config_update_notes
+            : [];
+        const storage = config.override_storage || {};
+        const diagnosticsRows = [
+            ["OpenAI key present", config.openai_key_present ? "Yes" : "No"],
+            ["OpenAI key", config.openai_key_masked || "Not configured"],
+            ["Run environment", config.run_env || "unknown"],
+            ["Text client initialized", config.client_initialized ? "Yes" : "No"],
+            ["Image client initialized", config.image_client_initialized ? "Yes" : "No"],
+            ["Override storage", storage.relative_path || "private_data/admin_config_overrides.json"],
+            ["Active overrides", (storage.applied_fields || []).join(', ') || 'None'],
+        ];
+        const fieldMarkup = Object.entries(fieldMetadata).map(([fieldName, metadata]) => {
+            const inputId = `app-config-field-${fieldName}`;
+            const inputType = metadata.input_type === 'checkbox'
+                ? 'checkbox'
+                : (metadata.input_type || 'text');
+            const currentValue = editableValues[fieldName];
+
+            if (inputType === 'checkbox') {
+                return `
+                    <div class="form-group app-config-field">
+                        <div class="form-group-checkbox app-config-checkbox-row">
+                            <input
+                                type="checkbox"
+                                id="${inputId}"
+                                name="${fieldName}"
+                                ${currentValue ? 'checked' : ''}
+                            >
+                            <label for="${inputId}">${escapeHTML(metadata.label || fieldName)}</label>
+                        </div>
+                        <p class="app-config-help">${escapeHTML(metadata.help_text || '')}</p>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="form-group app-config-field">
+                    <label for="${inputId}">${escapeHTML(metadata.label || fieldName)}</label>
+                    <input
+                        type="${escapeHTML(inputType)}"
+                        id="${inputId}"
+                        name="${fieldName}"
+                        value="${escapeHTML(currentValue ?? '')}"
+                        ${metadata.can_clear ? '' : 'required'}
+                    >
+                    <p class="app-config-help">${escapeHTML(metadata.help_text || '')}</p>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="app-config-layout">
+                <section class="app-config-card">
+                    <h3>Effective Diagnostics</h3>
+                    <table>
+                        <tbody>
+                            ${diagnosticsRows.map(([label, value]) => `
+                                <tr>
+                                    <th>${escapeHTML(label)}</th>
+                                    <td>${escapeHTML(value)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="app-config-notes">
+                        <h3>Update Constraints</h3>
+                        <ul>
+                            ${notes.map((note) => `<li>${escapeHTML(note)}</li>`).join('')}
+                        </ul>
+                    </div>
+                </section>
+                <section class="app-config-card">
+                    <h3>Editable Safe Subset</h3>
+                    <div id="app-config-form-errors" class="admin-message error" style="display:none;"></div>
+                    <form id="app-config-form" class="admin-form">
+                        ${fieldMarkup}
+                        <div class="modal-actions app-config-actions">
+                            <button type="submit" id="app-config-save-button" class="admin-button-primary">Save changes</button>
+                            <button type="button" id="app-config-reset-button" class="admin-button-secondary">Reset form</button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        `;
+
+        const form = document.getElementById('app-config-form');
+        if (!form) {
+            return;
+        }
+
+        form.__initialValues = { ...editableValues };
+        form.__fieldMetadata = fieldMetadata;
+
+        document.getElementById('app-config-reset-button')?.addEventListener('click', () => {
+            renderApplicationConfig(config);
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            setApplicationConfigFormError('');
+
+            const validationErrors = validateApplicationConfigForm(form, fieldMetadata);
+            if (validationErrors.length > 0) {
+                const message = validationErrors.join(' ');
+                setApplicationConfigFormError(message);
+                displayAdminMessage(message, 'error');
+                return;
+            }
+
+            const updates = collectApplicationConfigUpdates(form, fieldMetadata, form.__initialValues || {});
+            if (Object.keys(updates).length === 0) {
+                displayAdminMessage('No application config changes to save.', 'info');
+                return;
+            }
+
+            const saveButton = document.getElementById('app-config-save-button');
+            if (saveButton) saveButton.disabled = true;
+
+            try {
+                const updatedConfig = await apiRequest(
+                    '/api/v1/admin/monitoring/config',
+                    'PATCH',
+                    updates
+                );
+                renderApplicationConfig(updatedConfig);
+                const updateSummary = updatedConfig.update_summary || {};
+                const changedFields = [
+                    ...(updateSummary.updated_fields || []),
+                    ...(updateSummary.cleared_fields || []),
+                ];
+                const message = changedFields.length > 0
+                    ? `Application config updated: ${changedFields.join(', ')}`
+                    : 'Application config updated.';
+                displayAdminMessage(message, 'success');
+            } catch (error) {
+                console.error('Failed to update application config:', error);
+                const detail = extractApiErrorDetail(error);
+                setApplicationConfigFormError(detail);
+                displayAdminMessage('Failed to update application config: ' + detail, 'error');
+            } finally {
+                if (saveButton) saveButton.disabled = false;
+            }
+        });
+    }
+
+    function setApplicationConfigFormError(message) {
+        const errorEl = document.getElementById('app-config-form-errors');
+        if (!errorEl) {
+            return;
+        }
+
+        errorEl.textContent = message || '';
+        errorEl.style.display = message ? 'block' : 'none';
+    }
+
+    function validateApplicationConfigForm(form, fieldMetadata) {
+        const errors = [];
+
+        Object.entries(fieldMetadata).forEach(([fieldName, metadata]) => {
+            if (metadata.input_type === 'checkbox') {
+                return;
+            }
+
+            const input = form.elements.namedItem(fieldName);
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const rawValue = input.value.trim();
+            if (!rawValue && !metadata.can_clear) {
+                errors.push(`${metadata.label || fieldName} is required.`);
+                return;
+            }
+
+            if (!rawValue) {
+                return;
+            }
+
+            if (metadata.input_type === 'url') {
+                try {
+                    const parsed = new URL(rawValue);
+                    if (!['http:', 'https:'].includes(parsed.protocol)) {
+                        errors.push(`${metadata.label || fieldName} must use http or https.`);
+                    }
+                } catch {
+                    errors.push(`${metadata.label || fieldName} must be a valid URL.`);
+                }
+                return;
+            }
+
+            if ((fieldName === 'openai_text_provider' || fieldName === 'openai_image_provider')
+                && !/^[A-Za-z0-9_-]+$/.test(rawValue)) {
+                errors.push(`${metadata.label || fieldName} may only use letters, numbers, hyphens, or underscores.`);
+            }
+        });
+
+        return errors;
+    }
+
+    function collectApplicationConfigUpdates(form, fieldMetadata, initialValues) {
+        const updates = {};
+
+        Object.entries(fieldMetadata).forEach(([fieldName, metadata]) => {
+            const input = form.elements.namedItem(fieldName);
+            if (!input) {
+                return;
+            }
+
+            let nextValue;
+            if (metadata.input_type === 'checkbox' && input instanceof HTMLInputElement) {
+                nextValue = !!input.checked;
+            } else if (input instanceof HTMLInputElement) {
+                const rawValue = input.value.trim();
+                nextValue = rawValue === '' && metadata.can_clear ? null : rawValue;
+            } else {
+                return;
+            }
+
+            const initialValue = Object.prototype.hasOwnProperty.call(initialValues, fieldName)
+                ? initialValues[fieldName]
+                : null;
+            if (nextValue !== initialValue) {
+                updates[fieldName] = nextValue;
+            }
+        });
+
+        return updates;
     }
 
     function renderUserTable(users) {
@@ -523,6 +796,16 @@ document.addEventListener("DOMContentLoaded", function () {
     async function loadDynamicContentManagement() {
         adminViewPanel.innerHTML = `
         <h2>Dynamic Content Management</h2>
+        <section id="image-style-mapping-section" style="margin-bottom:24px;">
+            <h3>Image Style Mapping</h3>
+            <p>Inspect the active OpenAI style mapping used for new generations. Editing rules here does not retroactively change existing stories or stored assets.</p>
+            <div class="modal-actions" style="margin-bottom:12px;">
+                <button id="refresh-image-style-mapping-btn" class="admin-button-secondary">Refresh Mapping Summary</button>
+                <button id="manage-image-style-mapping-btn" class="admin-button">Manage Mapping Rules</button>
+                <button id="add-image-style-mapping-rule-btn" class="admin-button-success">Add Mapping Rule</button>
+            </div>
+            <div id="image-style-mapping-summary-container" class="table-responsive-container"></div>
+        </section>
         <div class="tabs">
             <button class="tab-link active" data-tab="manage-lists">Manage Lists</button>
             <button class="tab-link" data-tab="manage-items">Manage Items</button>
@@ -543,10 +826,19 @@ document.addEventListener("DOMContentLoaded", function () {
         </div>
     `;
 
-        setupDynamicContentTabs();
-        await populateListsForManagement();
-        await populateListSelectorForItems();
-        displayAdminMessage("Dynamic content loaded.", "success");
+        document.getElementById('refresh-image-style-mapping-btn').addEventListener('click', () => {
+            loadImageStyleMappingSummary();
+        });
+        document.getElementById('manage-image-style-mapping-btn').addEventListener('click', async (event) => {
+            await openDynamicListItemsView('image_style_mappings');
+            if (event.currentTarget && typeof event.currentTarget.blur === 'function') {
+                event.currentTarget.blur();
+            }
+        });
+        document.getElementById('add-image-style-mapping-rule-btn').addEventListener('click', async (event) => {
+            await openDynamicListItemsView('image_style_mappings');
+            showAddEditDynamicListItemModal(null, 'image_style_mappings', event.currentTarget);
+        });
 
         document.getElementById('add-new-list-btn').addEventListener('click', (event) => {
             showAddEditDynamicListModal(null, event.currentTarget);
@@ -572,27 +864,167 @@ document.addEventListener("DOMContentLoaded", function () {
                 document.getElementById('dynamic-list-items-container').innerHTML = '';
             }
         });
+
+        setupDynamicContentTabs();
+        await loadImageStyleMappingSummary();
+        await populateListsForManagement();
+        await populateListSelectorForItems();
+        displayAdminMessage("Dynamic content loaded.", "success");
     }
 
-    function setupDynamicContentTabs() {
+    function setDynamicContentTab(targetTab) {
         const tabLinks = adminViewPanel.querySelectorAll('.tab-link');
         const tabContents = adminViewPanel.querySelectorAll('.tab-content');
 
         tabLinks.forEach(link => {
-            link.addEventListener('click', () => {
-                tabLinks.forEach(l => l.classList.remove('active'));
-                link.classList.add('active');
+            link.classList.toggle('active', link.dataset.tab === targetTab);
+        });
 
-                const targetTab = link.dataset.tab;
-                tabContents.forEach(content => {
-                    if (content.id === `dynamic-content-${targetTab.replace('manage-', '')}-view`) {
-                        content.classList.add('active');
-                    } else {
-                        content.classList.remove('active');
-                    }
-                });
+        tabContents.forEach(content => {
+            content.classList.toggle(
+                'active',
+                content.id === `dynamic-content-${targetTab.replace('manage-', '')}-view`
+            );
+        });
+    }
+
+    function setupDynamicContentTabs() {
+        const tabLinks = adminViewPanel.querySelectorAll('.tab-link');
+
+        tabLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                setDynamicContentTab(link.dataset.tab);
             });
         });
+    }
+
+    async function openDynamicListItemsView(listName) {
+        const listSelector = document.getElementById('select-list-for-items');
+        const addNewItemBtn = document.getElementById('add-new-item-btn');
+        const itemsContainer = document.getElementById('dynamic-list-items-container');
+
+        if (!listSelector || !addNewItemBtn || !itemsContainer) {
+            return;
+        }
+
+        setDynamicContentTab('manage-items');
+
+        if (!Array.from(listSelector.options).some(option => option.value === listName)) {
+            await populateListSelectorForItems();
+        }
+
+        if (!Array.from(listSelector.options).some(option => option.value === listName)) {
+            const option = document.createElement('option');
+            option.value = listName;
+            option.textContent = listName;
+            listSelector.appendChild(option);
+        }
+
+        listSelector.value = listName;
+
+        if (listSelector.value === listName) {
+            addNewItemBtn.style.display = 'inline-block';
+            await loadItemsForSelectedList(listName);
+            return;
+        }
+
+        addNewItemBtn.style.display = 'none';
+        itemsContainer.innerHTML = `<p class="error-message">Dynamic list <strong>${escapeHTML(listName)}</strong> is not available yet. Create it under Manage Lists first.</p>`;
+    }
+
+    function getImageStyleMappingRuleStatus(rule) {
+        if (!rule.image_style_item_active && rule.mapping_item_id) {
+            return rule.mapping_item_active ? 'Orphaned rule' : 'Orphaned disabled rule';
+        }
+        if (!rule.mapping_item_id) {
+            return 'No rule';
+        }
+        return rule.mapping_item_active ? 'Active rule' : 'Disabled rule';
+    }
+
+    async function loadImageStyleMappingSummary() {
+        const container = document.getElementById('image-style-mapping-summary-container');
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '<p>Loading image style mapping summary...</p>';
+
+        try {
+            const state = await apiRequest('/api/v1/admin/image-style-mappings', 'GET');
+            const rules = Array.isArray(state.rules) ? state.rules : [];
+
+            let tableHTML = `
+                <div class="form-group" style="margin-bottom:12px;">
+                    <p><strong>Feature enabled:</strong> ${state.mapping_feature_enabled ? 'Yes' : 'No'}</p>
+                    <p><strong>Fallback OpenAI style:</strong> ${escapeHTML(state.default_openai_style || 'vivid')}</p>
+                </div>
+            `;
+
+            if (rules.length === 0) {
+                container.innerHTML = `${tableHTML}<p>No image style mapping rules are configured.</p>`;
+                return;
+            }
+
+            tableHTML += `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Business Style</th>
+                            <th>Rule Status</th>
+                            <th>Configured OpenAI Style</th>
+                            <th>Effective OpenAI Style</th>
+                            <th>Source</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            rules.forEach(rule => {
+                const actionLabel = rule.mapping_item_id ? 'Edit Rule' : 'Add Rule';
+                tableHTML += `
+                    <tr>
+                        <td>${escapeHTML(rule.business_style)}</td>
+                        <td>${escapeHTML(getImageStyleMappingRuleStatus(rule))}</td>
+                        <td>${escapeHTML(rule.configured_openai_style || 'None')}</td>
+                        <td>${escapeHTML(rule.effective_openai_style || state.default_openai_style || 'vivid')}</td>
+                        <td>${escapeHTML(rule.source || 'default')}</td>
+                        <td class="actions-cell">
+                            <button
+                                type="button"
+                                class="admin-button-secondary image-style-mapping-rule-action-btn"
+                                data-item-id="${rule.mapping_item_id || ''}"
+                                data-business-style="${escapeHTML(rule.business_style)}"
+                            >${actionLabel}</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += '</tbody></table>';
+            container.innerHTML = tableHTML;
+
+            container.querySelectorAll('.image-style-mapping-rule-action-btn').forEach(button => {
+                button.addEventListener('click', async (event) => {
+                    const mappingItemId = parseInt(event.currentTarget.dataset.itemId, 10);
+                    if (mappingItemId) {
+                        showAddEditDynamicListItemModal(mappingItemId, null, event.currentTarget);
+                        return;
+                    }
+
+                    await openDynamicListItemsView('image_style_mappings');
+                    showAddEditDynamicListItemModal(
+                        null,
+                        'image_style_mappings',
+                        event.currentTarget
+                    );
+                });
+            });
+        } catch (error) {
+            console.error('Error loading image style mapping summary:', error);
+            container.innerHTML = '<p class="error-message">Failed to load image style mapping summary.</p>';
+        }
     }
 
     // --- Content Moderation Section ---
@@ -1507,6 +1939,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
                 dialogController.close();
                 await loadItemsForSelectedList(currentListName);
+                await loadImageStyleMappingSummary();
             } catch (error) {
                 console.error("Error saving dynamic list item:", error);
                 let errorDetail = error.message;
@@ -1546,6 +1979,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     displayAdminMessage(`Item ID ${itemId} deleted successfully.`, 'success'); // Global message
                     dialogController.close();
                     await loadItemsForSelectedList(currentListName);
+                    await loadImageStyleMappingSummary();
                 } catch (error) {
                     console.error("Error deleting item:", error);
                     let errorDetail = error.message;
@@ -1658,6 +2092,220 @@ document.addEventListener("DOMContentLoaded", function () {
             else if (rate >= 0.4) successRateCard.style.boxShadow = '0 0 0 2px rgba(200,140,0,0.4)';
             else successRateCard.style.boxShadow = '0 0 0 2px rgba(200,0,0,0.4)';
         }
+    }
+
+    async function loadAdminBroadcastsSection() {
+        adminViewPanel.innerHTML = `
+            <h2>Admin Broadcasts</h2>
+            <p class="subtle-text">Send a minimal broadcast record to all active users. This implementation logs the send action for admin operations without external delivery infrastructure.</p>
+            <div class="admin-card" style="border:1px solid var(--border-color,#444); padding:16px; border-radius:8px; background:var(--panel-bg,#1f1f1f); margin-bottom:16px;">
+                <form id="admin-broadcast-form" class="admin-form">
+                    <div id="admin-broadcast-form-errors" class="error-message" style="display:none; margin-bottom:12px;"></div>
+                    <div class="form-group">
+                        <label for="admin-broadcast-title">Broadcast title</label>
+                        <input type="text" id="admin-broadcast-title" name="title" class="admin-form-control" maxlength="200" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-broadcast-message">Message</label>
+                        <textarea id="admin-broadcast-message" name="message" class="admin-form-control" rows="5" maxlength="4000" required></textarea>
+                    </div>
+                    <div class="modal-actions" style="justify-content:flex-start;">
+                        <button type="submit" id="admin-broadcast-submit" class="admin-button">Send broadcast</button>
+                    </div>
+                </form>
+            </div>
+            <section aria-live="polite">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                    <h3 style="margin:0;">Recent Broadcasts</h3>
+                    <button id="refresh-admin-broadcasts-btn" class="admin-button-secondary">Refresh history</button>
+                </div>
+                <div id="admin-broadcasts-list" style="margin-top:12px;"><p>Loading broadcasts...</p></div>
+            </section>
+        `;
+
+        document.getElementById('admin-broadcast-form')?.addEventListener('submit', handleAdminBroadcastSubmit);
+        document.getElementById('refresh-admin-broadcasts-btn')?.addEventListener('click', () => {
+            refreshAdminBroadcastHistory();
+        });
+
+        await refreshAdminBroadcastHistory();
+    }
+
+    async function handleAdminBroadcastSubmit(event) {
+        event.preventDefault();
+        const titleInput = document.getElementById('admin-broadcast-title');
+        const messageInput = document.getElementById('admin-broadcast-message');
+        const submitButton = document.getElementById('admin-broadcast-submit');
+        const errorEl = document.getElementById('admin-broadcast-form-errors');
+
+        const title = titleInput?.value?.trim() || '';
+        const message = messageInput?.value?.trim() || '';
+
+        if (!title || !message) {
+            if (errorEl) {
+                errorEl.textContent = 'Title and message are required.';
+                errorEl.style.display = 'block';
+            }
+            return;
+        }
+
+        if (errorEl) {
+            errorEl.textContent = '';
+            errorEl.style.display = 'none';
+        }
+
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Sending...';
+        }
+
+        try {
+            const broadcast = await apiRequest('/api/v1/admin/broadcasts', 'POST', {
+                title,
+                message,
+            });
+            displayAdminMessage(`Broadcast sent to ${broadcast.recipient_count} active users.`, 'success');
+            if (titleInput) titleInput.value = '';
+            if (messageInput) messageInput.value = '';
+            await refreshAdminBroadcastHistory();
+        } catch (error) {
+            console.error('Failed to send broadcast:', error);
+            if (errorEl) {
+                errorEl.textContent = error.message || 'Failed to send broadcast.';
+                errorEl.style.display = 'block';
+            }
+            displayAdminMessage('Failed to send broadcast.', 'error');
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Send broadcast';
+            }
+        }
+    }
+
+    async function refreshAdminBroadcastHistory() {
+        const container = document.getElementById('admin-broadcasts-list');
+        if (!container) return;
+
+        container.setAttribute('aria-busy', 'true');
+        container.innerHTML = '<p>Loading broadcasts...</p>';
+
+        try {
+            const broadcasts = await apiRequest('/api/v1/admin/broadcasts', 'GET');
+            if (!Array.isArray(broadcasts) || broadcasts.length === 0) {
+                container.innerHTML = '<p>No broadcasts sent yet.</p>';
+                return;
+            }
+
+            container.innerHTML = broadcasts.map((broadcast) => `
+                <article class="admin-card" style="border:1px solid var(--border-color,#444); padding:12px; border-radius:8px; background:var(--panel-bg,#1f1f1f); margin-bottom:12px;">
+                    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                        <div>
+                            <h4 style="margin:0 0 6px 0;">${escapeHTML(broadcast.title)}</h4>
+                            <p style="margin:0 0 8px 0; white-space:pre-wrap;">${escapeHTML(broadcast.message)}</p>
+                        </div>
+                        <div class="subtle-text" style="font-size:0.9rem; min-width:180px;">
+                            <div>Status: ${escapeHTML(broadcast.status)}</div>
+                            <div>Audience: ${escapeHTML(broadcast.target_scope)}</div>
+                            <div>Recipients: ${escapeHTML(String(broadcast.recipient_count))}</div>
+                            <div>Sent: ${escapeHTML(new Date(broadcast.sent_at).toLocaleString())}</div>
+                        </div>
+                    </div>
+                </article>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load broadcasts:', error);
+            container.innerHTML = `<p class="error-message">Failed to load broadcasts: ${escapeHTML(error.message || 'Unknown error')}</p>`;
+        } finally {
+            container.removeAttribute('aria-busy');
+        }
+    }
+
+    async function loadAdminAnalyticsSection() {
+        adminViewPanel.innerHTML = `
+            <h2>Analytics</h2>
+            <p class="subtle-text">Recent product usage summaries for the last 7 or 30 days.</p>
+            <div class="table-responsive-container" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+                <button id="refresh-admin-analytics-btn" class="admin-button">Refresh analytics</button>
+                <span id="admin-analytics-last-updated" class="subtle-text" style="font-size:0.85rem;">Last updated: -</span>
+            </div>
+            <div id="admin-analytics-empty" class="subtle-text" style="display:none; margin-top:12px;">No recent broadcast or product activity has been recorded yet.</div>
+            <div id="admin-analytics-content" class="cards-grid" style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;"><p>Loading analytics...</p></div>
+            <div id="admin-analytics-error" class="error-message" style="display:none;"></div>
+        `;
+
+        document.getElementById('refresh-admin-analytics-btn')?.addEventListener('click', () => {
+            refreshAdminAnalytics();
+        });
+
+        await refreshAdminAnalytics();
+    }
+
+    async function refreshAdminAnalytics() {
+        const container = document.getElementById('admin-analytics-content');
+        const errorEl = document.getElementById('admin-analytics-error');
+        const emptyEl = document.getElementById('admin-analytics-empty');
+        if (!container || !errorEl || !emptyEl) return;
+
+        container.setAttribute('aria-busy', 'true');
+        container.style.opacity = '0.6';
+
+        try {
+            const analytics = await apiRequest('/api/v1/admin/analytics', 'GET');
+            renderAdminAnalytics(analytics);
+            errorEl.textContent = '';
+            errorEl.style.display = 'none';
+
+            const activityTotal = [
+                analytics.users_registered_last_7d,
+                analytics.stories_created_last_7d,
+                analytics.stories_generated_last_7d,
+                analytics.characters_created_last_7d,
+                analytics.broadcasts_sent_last_30d,
+            ].reduce((sum, value) => sum + Number(value || 0), 0);
+            emptyEl.style.display = activityTotal === 0 ? 'block' : 'none';
+
+            const ts = new Date().toLocaleTimeString();
+            const lastUpdated = document.getElementById('admin-analytics-last-updated');
+            if (lastUpdated) {
+                lastUpdated.textContent = `Last updated: ${ts}`;
+            }
+            displayAdminMessage('Admin analytics updated.', 'success');
+        } catch (error) {
+            console.error('Failed to load analytics:', error);
+            errorEl.textContent = 'Failed to load analytics: ' + (error.message || 'Unknown error');
+            errorEl.style.display = 'block';
+            container.innerHTML = '<p>Analytics are unavailable right now.</p>';
+            emptyEl.style.display = 'none';
+            displayAdminMessage('Failed to refresh analytics.', 'error');
+        } finally {
+            container.removeAttribute('aria-busy');
+            container.style.opacity = '1';
+        }
+    }
+
+    function renderAdminAnalytics(analytics) {
+        const container = document.getElementById('admin-analytics-content');
+        if (!container) return;
+
+        const fmtPct = (value) => (value === null || value === undefined ? '-' : `${(value * 100).toFixed(1)}%`);
+        const cards = [
+            { label: 'New Users (7d)', value: analytics.users_registered_last_7d },
+            { label: 'Stories Created (7d)', value: analytics.stories_created_last_7d },
+            { label: 'Stories Generated (7d)', value: analytics.stories_generated_last_7d },
+            { label: 'Characters Created (7d)', value: analytics.characters_created_last_7d },
+            { label: 'Active Story Authors (7d)', value: analytics.active_story_authors_last_7d },
+            { label: 'Generation Success Rate (7d)', value: fmtPct(analytics.generation_success_rate_last_7d) },
+            { label: 'Broadcasts Sent (30d)', value: analytics.broadcasts_sent_last_30d },
+            { label: 'Broadcast Recipients (30d)', value: analytics.broadcast_recipients_last_30d },
+        ];
+
+        container.innerHTML = cards.map((card) => `
+            <div class="admin-card" style="border:1px solid var(--border-color,#444); padding:12px; border-radius:8px; background:var(--panel-bg,#1f1f1f); display:flex; flex-direction:column; gap:4px;">
+                <div class="admin-card-label" style="font-weight:600;">${escapeHTML(card.label)}</div>
+                <div class="admin-card-value" style="font-size:1rem; opacity:0.9;">${escapeHTML(String(card.value))}</div>
+            </div>
+        `).join('');
     }
 
     // Expose functions to global scope for inline onclick handlers
@@ -1849,6 +2497,24 @@ function displayAdminMessage(message, type = 'info', modalId = null, { toast = f
             node.addEventListener('click', () => { clearTimeout(t); if (node.parentNode) node.parentNode.removeChild(node); });
         }
     }
+}
+
+function extractApiErrorDetail(error) {
+    if (!error) {
+        return 'Unknown error';
+    }
+
+    const detail = error.response && error.response.detail;
+    if (Array.isArray(detail)) {
+        return detail.map((item) => item.msg || JSON.stringify(item)).join(' ');
+    }
+    if (typeof detail === 'string' && detail.trim()) {
+        return detail;
+    }
+    if (detail && typeof detail === 'object') {
+        return JSON.stringify(detail);
+    }
+    return error.message || 'Unknown error';
 }
 
 function ensureAdminStatusRegion(messageArea) {

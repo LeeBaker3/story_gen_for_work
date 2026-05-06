@@ -48,6 +48,58 @@ def _text_position_guidance(text_position: str) -> str:
     )
 
 
+def _editor_preference_guidance(
+    editor_settings: dict,
+    page_number,
+) -> str:
+    """Return additional image prompt guidance for wizard layout preferences."""
+
+    guidance_parts = []
+
+    image_fit = str(editor_settings.get("image_fit") or "").strip().lower()
+    if image_fit == "fill page":
+        guidance_parts.append(
+            "Compose the artwork to fill the page edge-to-edge while keeping "
+            "important subjects away from crop-sensitive edges."
+        )
+    elif image_fit == "keep artwork contained":
+        guidance_parts.append(
+            "Keep the main action comfortably inset with safe margins so the "
+            "artwork can sit contained without awkward cropping."
+        )
+
+    readability_treatment = str(
+        editor_settings.get("readability_treatment") or ""
+    ).strip().lower()
+    if readability_treatment == "high-contrast box":
+        guidance_parts.append(
+            "Leave enough tonal separation behind the text area for a high-"
+            "contrast text box."
+        )
+    elif readability_treatment == "soft shadow":
+        guidance_parts.append(
+            "Keep moderate local contrast around the text area so a soft text "
+            "shadow remains readable."
+        )
+    elif readability_treatment == "subtle gradient band":
+        guidance_parts.append(
+            "Leave a gentle tonal transition behind the text area so a subtle "
+            "gradient band can improve readability."
+        )
+
+    is_title_page = str(page_number).strip().lower() == "title"
+    cover_title_placement = str(
+        editor_settings.get("cover_title_placement") or ""
+    ).strip().lower()
+    if is_title_page and cover_title_placement in {"top", "center", "bottom"}:
+        guidance_parts.append(
+            f"Reserve a cleaner {cover_title_placement} area for the cover "
+            "title placement."
+        )
+
+    return " ".join(guidance_parts)
+
+
 def _format_task_error_message(error: Exception) -> str:
     """Return the most useful error message for a failed generation task."""
 
@@ -215,12 +267,17 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 backoff = max(0.1, float(
                     getattr(_settings, 'retry_backoff_base', 1.0)))
                 page_image_url = None
+                preference_guidance = _editor_preference_guidance(
+                    editor_settings,
+                    raw_page_num,
+                )
                 for attempt in range(attempts):
                     if attempt > 0:
                         if telemetry_enabled:
                             PAGE_IMAGE_RETRIES_TOTAL.inc()
                             retry_counts_by_page[str(page_num_int)] = (
-                                retry_counts_by_page.get(str(page_num_int), 0) + 1
+                                retry_counts_by_page.get(
+                                    str(page_num_int), 0) + 1
                             )
                             total_retries += 1
                             crud.update_story_generation_task(
@@ -231,7 +288,15 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                                 failed_pages_count=failed_pages,
                             )
                     page_image_url = await ai_services.generate_image_for_page(
-                        page_content=f"{image_description}. {text_position_guidance}",
+                        page_content=" ".join(
+                            part
+                            for part in [
+                                image_description,
+                                text_position_guidance,
+                                preference_guidance,
+                            ]
+                            if part
+                        ),
                         style_reference=image_style,
                         characters_in_scene=characters_in_scene,
                         db=db,

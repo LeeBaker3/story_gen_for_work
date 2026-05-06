@@ -2,7 +2,7 @@ import { fireEvent, waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
 function mountWizardDom() {
-    document.body.innerHTML = `
+  document.body.innerHTML = `
     <header>
       <nav>
         <div class="nav-buttons">
@@ -67,127 +67,127 @@ function mountWizardDom() {
 }
 
 describe('wizard required-field validation', () => {
-    beforeEach(async () => {
-        window.localStorage.setItem('authToken', 't');
-        mountWizardDom();
-        // Mock dynamic lists requests that may occur on init
-        global.fetch = jest.fn(async (url) => {
-            const u = String(url);
-            if (u.includes('/api/v1/dynamic-lists/genres')) {
-                return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
-            }
-            if (u.includes('/api/v1/dynamic-lists/image_styles')) {
-                return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
-            }
-            if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
-                return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
-            }
-            if (u.includes('/api/v1/dynamic-lists/text_density')) {
-                return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
-            }
-            if (u.includes('/api/v1/dynamic-lists/genders')) {
-                return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
-            }
-            return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
-        });
-        await import('../../frontend/script.js');
-        document.dispatchEvent(new Event('DOMContentLoaded'));
-        // Ensure we are on the creation section
-        document.getElementById('nav-create-story').click();
-        // Allow populateAllDropdowns async tasks to settle
-        await new Promise(r => setTimeout(r, 0));
-        await waitFor(() => {
-            expect(document.getElementById('step-0-basics').style.display).toBe('block');
-        });
+  beforeEach(async () => {
+    window.localStorage.setItem('authToken', 't');
+    mountWizardDom();
+    // Mock dynamic lists requests that may occur on init
+    global.fetch = jest.fn(async (url) => {
+      const u = String(url);
+      if (u.includes('/api/v1/dynamic-lists/genres')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/text_density')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/genders')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+      }
+      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
     });
-
-    test('step 0: missing genre/outline blocks Next, marks fields invalid, and focuses the first invalid control', () => {
-        const next = document.getElementById('wizard-next');
-        // Ensure fields are empty/missing
-        document.getElementById('story-genre').value = '';
-        document.getElementById('story-outline').value = '';
-
-        fireEvent.click(next);
-
-        // Should remain on step 0
-        expect(document.getElementById('step-1-characters').style.display).toBe('none');
-      expect(document.activeElement).toBe(document.getElementById('story-genre'));
-      expect(document.getElementById('story-genre')).toHaveAttribute('aria-invalid', 'true');
-      expect(document.getElementById('story-outline')).toHaveAttribute('aria-invalid', 'true');
-      expect(document.getElementById('story-genre-error').textContent).toMatch(/select a genre/i);
-      expect(document.getElementById('story-outline-error').textContent).toMatch(/enter a story outline/i);
-        // Warning shown
-        const snackbar = document.getElementById('snackbar');
-        expect(snackbar.style.display).toBe('block');
-        expect(snackbar.textContent).toMatch(/please select a genre/i);
-
-      document.getElementById('story-genre').value = 'Fantasy';
-      fireEvent.change(document.getElementById('story-genre'));
-      expect(document.getElementById('story-genre')).not.toHaveAttribute('aria-invalid');
-      expect(document.getElementById('story-genre-error').textContent).toBe('');
+    await import('../../frontend/script.js');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    // Ensure we are on the creation section
+    document.getElementById('nav-create-story').click();
+    // Allow populateAllDropdowns async tasks to settle
+    await new Promise(r => setTimeout(r, 0));
+    await waitFor(() => {
+      expect(document.getElementById('step-0-basics').style.display).toBe('block');
     });
+  });
 
-    test('step 1: no character names blocks Next, marks the character name invalid, and focuses it', () => {
-        const next = document.getElementById('wizard-next');
-        // Make step 0 valid, then go to step 1
-        document.getElementById('story-genre').value = 'Fantasy';
-        document.getElementById('story-outline').value = 'Outline';
-        fireEvent.click(next); // to step 1
-        expect(document.getElementById('step-1-characters').style.display).toBe('block');
+  test('step 0: missing genre/outline blocks Next, marks fields invalid, and focuses the first invalid control', () => {
+    const next = document.getElementById('wizard-next');
+    // Ensure fields are empty/missing
+    document.getElementById('story-genre').value = '';
+    document.getElementById('story-outline').value = '';
 
-        // Ensure name empty
-        document.getElementById('char-name-1').value = '';
-        fireEvent.click(next);
+    fireEvent.click(next);
 
-        // Should remain on step 1
-        expect(document.getElementById('step-2-options').style.display).toBe('none');
-        expect(document.activeElement).toBe(document.getElementById('char-name-1'));
-        expect(document.getElementById('char-name-1')).toHaveAttribute('aria-invalid', 'true');
-        expect(document.getElementById('main-characters-error').textContent).toMatch(/at least one character name/i);
-        const snackbar = document.getElementById('snackbar');
-        expect(snackbar.style.display).toBe('block');
-        expect(snackbar.textContent).toMatch(/add at least one character name/i);
+    // Should remain on step 0
+    expect(document.getElementById('step-1-characters').style.display).toBe('none');
+    expect(document.activeElement).toBe(document.getElementById('story-genre'));
+    expect(document.getElementById('story-genre')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-outline')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-genre-error').textContent).toMatch(/select a genre/i);
+    expect(document.getElementById('story-outline-error').textContent).toMatch(/enter a story outline/i);
+    // Warning shown
+    const snackbar = document.getElementById('snackbar');
+    expect(snackbar.style.display).toBe('block');
+    expect(snackbar.textContent).toMatch(/please select a genre/i);
 
-        document.getElementById('char-name-1').value = 'Alice';
-        fireEvent.input(document.getElementById('char-name-1'));
-        expect(document.getElementById('char-name-1')).not.toHaveAttribute('aria-invalid');
-        expect(document.getElementById('main-characters-error').textContent).toBe('');
-    });
+    document.getElementById('story-genre').value = 'Fantasy';
+    fireEvent.change(document.getElementById('story-genre'));
+    expect(document.getElementById('story-genre')).not.toHaveAttribute('aria-invalid');
+    expect(document.getElementById('story-genre-error').textContent).toBe('');
+  });
 
-      test('step 2: missing options block Next, marks required controls invalid, and focuses the first invalid control', () => {
-        const next = document.getElementById('wizard-next');
-        // Step 0 valid
-        document.getElementById('story-genre').value = 'Fantasy';
-        document.getElementById('story-outline').value = 'Outline';
-        fireEvent.click(next); // -> step 1
-        // Provide a character name
-        document.getElementById('char-name-1').value = 'Alice';
-        fireEvent.click(next); // -> step 2
-        expect(document.getElementById('step-2-options').style.display).toBe('block');
+  test('step 1: no character names blocks Next, marks the character name invalid, and focuses it', () => {
+    const next = document.getElementById('wizard-next');
+    // Make step 0 valid, then go to step 1
+    document.getElementById('story-genre').value = 'Fantasy';
+    document.getElementById('story-outline').value = 'Outline';
+    fireEvent.click(next); // to step 1
+    expect(document.getElementById('step-1-characters').style.display).toBe('block');
 
-        // Clear required options
-        document.getElementById('story-num-pages').value = '';
-        document.getElementById('story-image-style').value = '';
-        document.getElementById('story-word-to-picture-ratio').value = '';
-        document.getElementById('story-text-density').value = '';
+    // Ensure name empty
+    document.getElementById('char-name-1').value = '';
+    fireEvent.click(next);
 
-        fireEvent.click(next);
-        // Should remain on step 2
-        expect(document.getElementById('step-3-review').style.display).toBe('none');
-        expect(document.activeElement).toBe(document.getElementById('story-num-pages'));
-        expect(document.getElementById('story-num-pages')).toHaveAttribute('aria-invalid', 'true');
-        expect(document.getElementById('story-image-style')).toHaveAttribute('aria-invalid', 'true');
-        expect(document.getElementById('story-word-to-picture-ratio')).toHaveAttribute('aria-invalid', 'true');
-        expect(document.getElementById('story-text-density')).toHaveAttribute('aria-invalid', 'true');
-        expect(document.getElementById('story-num-pages-error').textContent).toMatch(/number of pages/i);
-        expect(document.getElementById('story-image-style-error').textContent).toMatch(/image style/i);
-        const snackbar = document.getElementById('snackbar');
-        expect(snackbar.style.display).toBe('block');
-        expect(snackbar.textContent).toMatch(/please complete options/i);
+    // Should remain on step 1
+    expect(document.getElementById('step-2-options').style.display).toBe('none');
+    expect(document.activeElement).toBe(document.getElementById('char-name-1'));
+    expect(document.getElementById('char-name-1')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('main-characters-error').textContent).toMatch(/at least one character name/i);
+    const snackbar = document.getElementById('snackbar');
+    expect(snackbar.style.display).toBe('block');
+    expect(snackbar.textContent).toMatch(/add at least one character name/i);
 
-        document.getElementById('story-num-pages').value = '5';
-        fireEvent.input(document.getElementById('story-num-pages'));
-        expect(document.getElementById('story-num-pages')).not.toHaveAttribute('aria-invalid');
-        expect(document.getElementById('story-num-pages-error').textContent).toBe('');
-    });
+    document.getElementById('char-name-1').value = 'Alice';
+    fireEvent.input(document.getElementById('char-name-1'));
+    expect(document.getElementById('char-name-1')).not.toHaveAttribute('aria-invalid');
+    expect(document.getElementById('main-characters-error').textContent).toBe('');
+  });
+
+  test('step 2: missing options block Next, marks required controls invalid, and focuses the first invalid control', () => {
+    const next = document.getElementById('wizard-next');
+    // Step 0 valid
+    document.getElementById('story-genre').value = 'Fantasy';
+    document.getElementById('story-outline').value = 'Outline';
+    fireEvent.click(next); // -> step 1
+    // Provide a character name
+    document.getElementById('char-name-1').value = 'Alice';
+    fireEvent.click(next); // -> step 2
+    expect(document.getElementById('step-2-options').style.display).toBe('block');
+
+    // Clear required options
+    document.getElementById('story-num-pages').value = '';
+    document.getElementById('story-image-style').value = '';
+    document.getElementById('story-word-to-picture-ratio').value = '';
+    document.getElementById('story-text-density').value = '';
+
+    fireEvent.click(next);
+    // Should remain on step 2
+    expect(document.getElementById('step-3-review').style.display).toBe('none');
+    expect(document.activeElement).toBe(document.getElementById('story-num-pages'));
+    expect(document.getElementById('story-num-pages')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-image-style')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-word-to-picture-ratio')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-text-density')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('story-num-pages-error').textContent).toMatch(/number of pages/i);
+    expect(document.getElementById('story-image-style-error').textContent).toMatch(/image style/i);
+    const snackbar = document.getElementById('snackbar');
+    expect(snackbar.style.display).toBe('block');
+    expect(snackbar.textContent).toMatch(/please complete options/i);
+
+    document.getElementById('story-num-pages').value = '5';
+    fireEvent.input(document.getElementById('story-num-pages'));
+    expect(document.getElementById('story-num-pages')).not.toHaveAttribute('aria-invalid');
+    expect(document.getElementById('story-num-pages-error').textContent).toBe('');
+  });
 });

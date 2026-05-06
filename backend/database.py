@@ -40,6 +40,8 @@ class User(Base):
     # Soft delete flag for admin-controlled deletions
     is_deleted = Column(Boolean, default=False)
     role = Column(String, default="user")  # New field (e.g., "user", "admin")
+    password_reset_token_hash = Column(String, nullable=True, index=True)
+    password_reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
@@ -52,6 +54,8 @@ class Story(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
+    cover_subtitle = Column(String, nullable=True)
+    cover_author = Column(String, nullable=True)
     story_outline = Column(Text, nullable=True)  # Changed from outline
     genre = Column(String, nullable=False)
     main_characters = Column(JSON, nullable=True)
@@ -154,8 +158,10 @@ class StoryGenerationTask(Base):
     )
 
     id = Column(String, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    story_id = Column(Integer, ForeignKey('stories.id'),
+                      nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'),
+                     nullable=False, index=True)
     status = Column(String, nullable=False, default='pending', index=True)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
@@ -180,6 +186,22 @@ class StoryGenerationTask(Base):
 
     story = relationship("Story")
     user = relationship("User")
+
+
+class AdminBroadcast(Base):
+    __tablename__ = "admin_broadcasts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    target_scope = Column(String, nullable=False, default="all_active_users")
+    status = Column(String, nullable=False, default="sent")
+    recipient_count = Column(Integer, nullable=False, default=0)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sent_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    created_by = relationship("User")
 
 
 # --- Characters Domain (Phase 2) ---
@@ -258,6 +280,7 @@ def create_db_and_tables():
     _ensure_soft_delete_and_moderation_columns()
     _ensure_story_metadata_columns()
     _ensure_story_editor_columns()
+    _ensure_user_password_reset_columns()
 
 
 def _ensure_story_generation_task_new_columns():
@@ -345,6 +368,8 @@ def _ensure_story_metadata_columns():
     tables_required_cols = {
         "stories": {
             "writing_style": "TEXT NULL",
+            "cover_subtitle": "TEXT NULL",
+            "cover_author": "TEXT NULL",
         },
     }
 
@@ -400,3 +425,31 @@ def _ensure_story_editor_columns():
                             pass
             except Exception:
                 pass
+
+
+def _ensure_user_password_reset_columns():
+    """Idempotently add password reset columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    required_columns = {
+        "password_reset_token_hash": "TEXT NULL",
+        "password_reset_token_expires_at": "TIMESTAMP NULL",
+    }
+
+    with engine.connect() as conn:
+        try:
+            existing = set()
+            for row in conn.execute(text("PRAGMA table_info(users)")):
+                existing.add(row[1])
+            for col, ddl in required_columns.items():
+                if col not in existing:
+                    try:
+                        conn.execute(
+                            text(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass

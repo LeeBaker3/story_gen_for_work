@@ -20,7 +20,8 @@ async def test_generate_image_for_page_uses_dynamic_default_style_and_prompt_mod
     ai_services._settings.enable_image_style_mapping = True
     mock_to_thread.return_value = b"img"
 
-    db_session.add(DynamicList(list_name="image_styles", list_label="Image Styles"))
+    db_session.add(DynamicList(
+        list_name="image_styles", list_label="Image Styles"))
     db_session.add_all(
         [
             DynamicListItem(
@@ -29,7 +30,8 @@ async def test_generate_image_for_page_uses_dynamic_default_style_and_prompt_mod
                 item_label="Watercolor",
                 is_active=True,
                 sort_order=1,
-                additional_config={"prompt_modifier": "soft watercolor painting"},
+                additional_config={
+                    "prompt_modifier": "soft watercolor painting"},
             ),
             DynamicListItem(
                 list_name="image_styles",
@@ -87,7 +89,8 @@ async def test_generate_character_reference_image_uses_prompt_modifier_when_enab
     ai_services._settings.enable_image_style_mapping = True
     mock_to_thread.return_value = b"fake_image_data"
 
-    db_session.add(DynamicList(list_name="image_styles", list_label="Image Styles"))
+    db_session.add(DynamicList(
+        list_name="image_styles", list_label="Image Styles"))
     db_session.add(
         DynamicListItem(
             list_name="image_styles",

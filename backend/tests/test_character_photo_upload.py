@@ -144,7 +144,8 @@ def test_upload_character_photo_rejects_invalid_image_bytes(
     expected_path = os.path.join(
         private_dir, "uploads", f"user_{user_id}", "characters", str(char_id)
     )
-    remaining = os.listdir(expected_path) if os.path.isdir(expected_path) else []
+    remaining = os.listdir(expected_path) if os.path.isdir(
+        expected_path) else []
     assert remaining == []
 
 
@@ -214,7 +215,8 @@ def test_generate_from_photo_keeps_output_inside_character_directory_for_travers
     )
     assert upload_resp.status_code == 200, upload_resp.text
 
-    monkeypatch.setattr(ai_services, "generate_image", lambda *args, **kwargs: b"fakepngbytes")
+    monkeypatch.setattr(ai_services, "generate_image",
+                        lambda *args, **kwargs: b"fakepngbytes")
 
     generate_resp = client.post(
         f"/api/v1/characters/{char_id}/generate-from-photo",

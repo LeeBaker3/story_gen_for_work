@@ -16,50 +16,46 @@ function createDeferred() {
 }
 
 function createSavedStory(body) {
+    const baseStory = createStoryFixture();
+    const payloadPages = Array.isArray(body.pages) && body.pages.length > 0
+        ? body.pages
+        : baseStory.pages;
+
     return {
         id: 321,
-        title: body.title,
+        title: body.title ?? baseStory.title,
+        cover_subtitle: body.cover_subtitle ?? '',
+        cover_author: body.cover_author ?? '',
         genre: 'Fantasy',
         story_outline: 'Outline',
         main_characters: [],
-        num_pages: 2,
+        num_pages: Math.max(payloadPages.length - 1, 0),
         tone: null,
         setting: null,
         image_style: 'Default',
         word_to_picture_ratio: 'One image per page',
         text_density: 'Concise (~30-50 words)',
-        editor_settings: body.editor_settings,
-        pages: [
-            {
-                id: 11,
+        editor_settings: body.editor_settings ?? baseStory.editor_settings,
+        pages: payloadPages.map((page, index) => {
+            const basePage = baseStory.pages.find((item) => item.id === page.id) || {};
+            const resolvedText = page.text ?? (index === 0 ? (body.title ?? baseStory.title) : (basePage.text || ''));
+            const resolvedImagePath = page.image_path ?? basePage.image_path ?? null;
+            return {
+                id: page.id ?? 200 + index,
                 story_id: 321,
-                page_number: 0,
-                text: body.title,
-                image_description: 'Cover art',
-                image_path: 'images/user_1/story_321/cover.png',
+                page_number: page.page_number ?? index,
+                text: resolvedText,
+                image_description: page.image_description ?? basePage.image_description ?? null,
+                image_path: resolvedImagePath,
                 editor_state: {
-                    original_text: 'Original Title',
-                    original_image_path: 'images/user_1/story_321/cover.png',
+                    original_text: page.editor_state?.original_text ?? basePage.editor_state?.original_text ?? resolvedText,
+                    original_image_path: page.editor_state?.original_image_path ?? basePage.editor_state?.original_image_path ?? resolvedImagePath,
+                    ...(page.editor_state || {}),
                 },
                 created_at: '2026-04-27T12:00:00Z',
                 updated_at: '2026-04-27T12:00:00Z',
-            },
-            {
-                id: 12,
-                story_id: 321,
-                page_number: 1,
-                text: body.pages?.find((page) => page.id === 12)?.text || 'Page one text',
-                image_description: 'Dragon scene',
-                image_path: 'images/user_1/story_321/page1.png',
-                editor_state: {
-                    original_text: 'Page one text',
-                    original_image_path: 'images/user_1/story_321/page1.png',
-                    ...(body.pages?.find((page) => page.id === 12)?.editor_state || {}),
-                },
-                created_at: '2026-04-27T12:00:00Z',
-                updated_at: '2026-04-27T12:00:00Z',
-            },
-        ],
+            };
+        }),
         created_at: '2026-04-27T12:00:00Z',
         updated_at: '2026-04-27T12:00:00Z',
         owner_id: 1,
@@ -83,6 +79,8 @@ function createStoryFixture() {
     return {
         id: 321,
         title: 'Original Title',
+        cover_subtitle: '',
+        cover_author: '',
         genre: 'Fantasy',
         story_outline: 'Outline',
         main_characters: [],
@@ -97,8 +95,10 @@ function createStoryFixture() {
             font_size: 28,
             font_color: '#ffffff',
             text_position: 'bottom',
+            text_alignment: 'center',
             text_box_opacity: 0.6,
             layout_mode: 'full-page-overlay',
+            readability_treatment: '',
         },
         pages: [
             {
@@ -168,6 +168,15 @@ function mountEditorDom() {
         <h2>Login</h2>
         <form id="login-form"></form>
         <form id="signup-form" style="display:none;"></form>
+                <form id="forgot-password-form" style="display:none;"></form>
+                <form id="reset-password-form" style="display:none;"></form>
+                <a id="show-signup-link" href="#">Show signup</a>
+                <a id="show-login-link" href="#">Show login</a>
+                <a id="show-forgot-password-link" href="#">Forgot password</a>
+                <a id="show-reset-password-link" href="#">Reset password</a>
+                <a id="forgot-password-back-to-login-link" href="#">Back to login</a>
+                <a id="reset-password-back-to-login-link" href="#">Back to login</a>
+                <a id="reset-password-request-link" href="#">Request reset</a>
       </section>
       <section id="story-creation-section" style="display:none;">
                 <form id="story-creation-form">
@@ -177,6 +186,7 @@ function mountEditorDom() {
                     <input id="story-num-pages" type="number" value="2" />
                     <input id="story-tone" type="text" />
                     <input id="story-setting" type="text" />
+                    <select id="story-writing-style"><option value="">Select...</option><option value="Classic">Classic</option></select>
                     <select id="story-word-to-picture-ratio"><option value="">Select...</option><option value="One image per page">One image per page</option></select>
                     <select id="story-text-density"><option value="">Select...</option><option value="Concise (~30-50 words)">Concise (~30-50 words)</option></select>
                     <select id="story-image-style"><option value="">Select...</option><option value="Default">Default</option></select>
@@ -220,8 +230,21 @@ function mountEditorDom() {
       </section>
       <section id="story-preview-section" style="display:block;">
         <div id="story-preview-content"></div>
+                <button id="preview-pdf-button" style="display:none;">Preview</button>
         <button id="export-pdf-button" style="display:none;">Export</button>
       </section>
+            <div id="pdf-preview-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+            <div id="pdf-preview-modal" class="modal" aria-hidden="true">
+                <div class="modal-content">
+                    <button id="pdf-preview-close" type="button">Close</button>
+                    <p id="pdf-preview-status"></p>
+                    <div id="pdf-preview-frame-container" hidden>
+                        <iframe id="pdf-preview-frame" title="Story PDF preview"></iframe>
+                    </div>
+                    <div id="pdf-preview-error" hidden></div>
+                    <button id="pdf-preview-download" type="button" disabled>Download PDF</button>
+                </div>
+            </div>
       <section id="browse-stories-section" style="display:none;"><div id="user-stories-list"></div></section>
       <section id="characters-section" style="display:none;"></section>
       <section id="message-area"><p id="api-message"></p></section>
@@ -247,7 +270,7 @@ describe('story editor MVP', () => {
             window.URL.revokeObjectURL = jest.fn();
         }
         jest.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:story-page-image');
-        jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
+        jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => { });
 
         global.fetch = jest.fn(async (url, options = {}) => {
             const value = String(url);
@@ -300,12 +323,33 @@ describe('story editor MVP', () => {
                 };
             }
 
-            if (value.includes('/api/v1/stories/321/pages/11/image') || value.includes('/api/v1/stories/321/pages/12/image')) {
+            if (value.match(/\/api\/v1\/stories\/321\/pages\/\d+\/image$/) && method === 'GET') {
                 return {
                     ok: true,
                     status: 200,
                     blob: async () => new Blob(['image-bytes'], { type: 'image/png' }),
                     headers: { get: (name) => name === 'content-type' ? 'image/png' : null },
+                };
+            }
+
+            if (value.includes('/api/v1/stories/321/pdf')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+                    headers: {
+                        get: (name) => {
+                            if (name === 'content-disposition') {
+                                return value.includes('disposition=inline')
+                                    ? 'inline; filename=Original Title.pdf'
+                                    : 'attachment; filename=Original Title.pdf';
+                            }
+                            if (name === 'content-type') {
+                                return 'application/pdf';
+                            }
+                            return null;
+                        },
+                    },
                 };
             }
 
@@ -348,10 +392,14 @@ describe('story editor MVP', () => {
         );
 
         const titleInput = document.getElementById('story-editor-title');
+        const subtitleInput = document.getElementById('story-editor-cover-subtitle');
+        const authorInput = document.getElementById('story-editor-cover-author');
         expect(titleInput).not.toBeNull();
         expect(document.querySelectorAll('.story-editor-page-card').length).toBe(2);
 
         fireEvent.input(titleInput, { target: { value: 'Edited Title' } });
+        fireEvent.input(subtitleInput, { target: { value: 'A hopeful subtitle' } });
+        fireEvent.input(authorInput, { target: { value: 'Test Author' } });
         const pageTextareas = document.querySelectorAll('[data-page-field="text"]');
         fireEvent.input(pageTextareas[1], { target: { value: 'Edited page body' } });
 
@@ -374,7 +422,102 @@ describe('story editor MVP', () => {
             expect(saveCalls.length).toBeGreaterThanOrEqual(2);
         });
 
+        const latestSaveCall = global.fetch.mock.calls.filter(
+            ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+        ).at(-1);
+        const latestPayload = JSON.parse(latestSaveCall[1].body);
+        expect(latestPayload.cover_subtitle).toBe('A hopeful subtitle');
+        expect(latestPayload.cover_author).toBe('Test Author');
+        expect(document.querySelector('.story-editor-cover-subtitle').textContent).toBe('A hopeful subtitle');
+        expect(document.querySelector('.story-editor-cover-author').textContent).toBe('By Test Author');
+
         expect(document.getElementById('export-pdf-button').style.display).toBe('inline-block');
+        expect(document.getElementById('preview-pdf-button').style.display).toBe('inline-block');
+    });
+
+    test('opens a PDF preview modal and allows downloading the previewed file', async () => {
+        window.__TEST_API__.displayStory(createStoryFixture(), { mode: 'preview' });
+
+        await waitFor(() => {
+            expect(document.getElementById('preview-pdf-button').style.display).toBe('inline-block');
+        });
+
+        const appendSpy = jest.spyOn(document.body, 'appendChild');
+        const removeSpy = jest.spyOn(document.body, 'removeChild');
+        const anchorClickSpy = jest
+            .spyOn(HTMLAnchorElement.prototype, 'click')
+            .mockImplementation(() => { });
+
+        fireEvent.click(document.getElementById('preview-pdf-button'));
+
+        await waitFor(() => {
+            expect(global.fetch).toHaveBeenCalledWith(
+                expect.stringContaining('/api/v1/stories/321/pdf?disposition=inline'),
+                expect.objectContaining({
+                    method: 'GET',
+                    headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+                }),
+            );
+            expect(document.getElementById('pdf-preview-modal').classList.contains('open')).toBe(true);
+            expect(document.getElementById('pdf-preview-frame').getAttribute('src')).toBe('blob:story-page-image');
+            expect(document.getElementById('pdf-preview-download').disabled).toBe(false);
+        });
+
+        fireEvent.click(document.getElementById('pdf-preview-download'));
+
+        expect(appendSpy).toHaveBeenCalled();
+        expect(removeSpy).toHaveBeenCalled();
+        expect(anchorClickSpy).toHaveBeenCalled();
+        expect(document.getElementById('api-message').textContent).toMatch(/pdf downloaded from preview/i);
+    });
+
+    test('shows a clear error state when PDF preview generation fails', async () => {
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
+        window.__TEST_API__.displayStory(createStoryFixture(), { mode: 'preview' });
+
+        const defaultFetch = global.fetch.getMockImplementation();
+        global.fetch.mockImplementation((url, options = {}) => {
+            if (String(url).includes('/api/v1/stories/321/pdf')) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 500,
+                    statusText: 'Server Error',
+                    json: async () => ({ detail: 'Failed to generate PDF' }),
+                    text: async () => 'Failed to generate PDF',
+                    headers: { get: () => 'application/json' },
+                });
+            }
+            return defaultFetch(url, options);
+        });
+
+        fireEvent.click(document.getElementById('preview-pdf-button'));
+
+        await waitFor(() => {
+            expect(document.getElementById('pdf-preview-error').hidden).toBe(false);
+            expect(document.getElementById('pdf-preview-error').textContent).toMatch(/error previewing pdf/i);
+            expect(document.getElementById('pdf-preview-download').disabled).toBe(true);
+            expect(document.getElementById('api-message').textContent).toMatch(/error previewing pdf/i);
+        });
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            '[PDFPreview] Error preparing PDF preview:',
+            expect.any(Error),
+        );
+    });
+
+    test('shows persisted cover subtitle and author in preview mode', async () => {
+        const story = createStoryFixture();
+        story.cover_subtitle = 'A saved preview subtitle';
+        story.cover_author = 'Preview Author';
+
+        window.__TEST_API__.displayStory(story, { mode: 'preview' });
+
+        await waitFor(() => {
+            expect(document.querySelector('.story-editor-page-card--preview')).not.toBeNull();
+        });
+
+        expect(document.querySelector('.story-editor-cover-subtitle').textContent).toBe('A saved preview subtitle');
+        expect(document.querySelector('.story-editor-cover-author').textContent).toBe('By Preview Author');
     });
 
     test('finalized stories open in preview first and can toggle into and out of edit mode', async () => {
@@ -429,8 +572,114 @@ describe('story editor MVP', () => {
         expect(document.getElementById('story-editor-retry-save-button').style.display).toBe('none');
     });
 
+    test('supports bounded undo and redo across title, metadata, page text, and layout edits', async () => {
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        const titleInput = document.getElementById('story-editor-title');
+        const subtitleInput = document.getElementById('story-editor-cover-subtitle');
+        const authorInput = document.getElementById('story-editor-cover-author');
+        const layoutSelect = document.getElementById('story-editor-layout-mode');
+        const pageTextarea = document.querySelector('[data-page-field="text"][data-page-id="12"]');
+
+        expect(document.getElementById('story-editor-undo-button').disabled).toBe(true);
+        expect(document.getElementById('story-editor-redo-button').disabled).toBe(true);
+
+        fireEvent.input(titleInput, { target: { value: 'History Title' } });
+        fireEvent.input(subtitleInput, { target: { value: 'History Subtitle' } });
+        fireEvent.input(authorInput, { target: { value: 'History Author' } });
+        fireEvent.input(layoutSelect, { target: { value: 'vertical-split' } });
+        fireEvent.input(pageTextarea, { target: { value: 'History page text' } });
+
+        expect(document.getElementById('story-editor-undo-button').disabled).toBe(false);
+
+        fireEvent.keyDown(pageTextarea, { key: 'z', ctrlKey: true });
+        expect(document.querySelector('[data-page-field="text"][data-page-id="12"]').value).toBe('Page one text');
+
+        fireEvent.click(document.getElementById('story-editor-undo-button'));
+        expect(document.getElementById('story-editor-layout-mode').value).toBe('full-page-overlay');
+
+        fireEvent.click(document.getElementById('story-editor-undo-button'));
+        expect(document.getElementById('story-editor-cover-author').value).toBe('');
+
+        fireEvent.click(document.getElementById('story-editor-undo-button'));
+        expect(document.getElementById('story-editor-cover-subtitle').value).toBe('');
+
+        fireEvent.click(document.getElementById('story-editor-undo-button'));
+        expect(document.getElementById('story-editor-title').value).toBe('Original Title');
+        expect(document.getElementById('story-editor-undo-button').disabled).toBe(true);
+
+        fireEvent.keyDown(document.getElementById('story-editor-title'), {
+            key: 'z',
+            ctrlKey: true,
+            shiftKey: true,
+        });
+        expect(document.getElementById('story-editor-title').value).toBe('History Title');
+
+        fireEvent.click(document.getElementById('story-editor-redo-button'));
+        expect(document.getElementById('story-editor-cover-subtitle').value).toBe('History Subtitle');
+
+        fireEvent.click(document.getElementById('story-editor-redo-button'));
+        expect(document.getElementById('story-editor-cover-author').value).toBe('History Author');
+
+        fireEvent.keyDown(document.getElementById('story-editor-layout-mode'), {
+            key: 'y',
+            ctrlKey: true,
+        });
+        expect(document.getElementById('story-editor-layout-mode').value).toBe('vertical-split');
+
+        fireEvent.click(document.getElementById('story-editor-redo-button'));
+        expect(document.querySelector('[data-page-field="text"][data-page-id="12"]').value).toBe('History page text');
+        expect(document.getElementById('story-editor-redo-button').disabled).toBe(true);
+    });
+
+    test('bounds story editor history to the most recent 50 changes', async () => {
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        for (let index = 1; index <= 55; index += 1) {
+            fireEvent.input(document.getElementById('story-editor-title'), {
+                target: { value: `Title ${index}` },
+            });
+        }
+
+        for (let index = 0; index < 50; index += 1) {
+            fireEvent.click(document.getElementById('story-editor-undo-button'));
+        }
+
+        expect(document.getElementById('story-editor-title').value).toBe('Title 5');
+        expect(document.getElementById('story-editor-undo-button').disabled).toBe(true);
+    });
+
+    test('keeps autosave coherent after undo reverts a pending title edit', async () => {
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        fireEvent.input(document.getElementById('story-editor-title'), {
+            target: { value: 'Autosave edit' },
+        });
+        fireEvent.click(document.getElementById('story-editor-undo-button'));
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls.length).toBeGreaterThan(0);
+        });
+
+        const latestSaveCall = [...global.fetch.mock.calls]
+            .reverse()
+            .find(([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT');
+        const payload = JSON.parse(latestSaveCall[1].body);
+
+        expect(payload.title).toBe('Original Title');
+
+        await waitFor(() => {
+            expect(document.getElementById('story-editor-save-status').dataset.state).toBe('saved');
+        });
+    });
+
     test('keeps failed save state visible and offers retry affordance', async () => {
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
         let saveAttempts = 0;
         saveEditorResponse = (body) => {
             saveAttempts += 1;
@@ -546,7 +795,7 @@ describe('story editor MVP', () => {
     });
 
     test('returns to unsaved and remains editable after a save failure', async () => {
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
         let saveAttempts = 0;
         saveEditorResponse = (body) => {
             saveAttempts += 1;
@@ -589,7 +838,7 @@ describe('story editor MVP', () => {
     });
 
     test('shows an error message when regenerate image fails', async () => {
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
         pageActionResponse = () => ({
             ok: false,
             status: 500,
@@ -713,6 +962,202 @@ describe('story editor MVP', () => {
                     }),
                 }),
             ])
+        );
+    });
+
+    test('applies explicit text alignment, readability treatment, and curated colour swatches', async () => {
+        const story = createStoryFixture();
+
+        window.__TEST_API__.displayStory(story);
+
+        const storyAlignmentSelect = document.getElementById('story-editor-text-alignment');
+        const readabilitySelect = document.getElementById('story-editor-readability-treatment');
+        const pageAlignmentSelect = document.querySelector('[data-page-field="text_alignment"][data-page-id="12"]');
+        const storyPreviewCard = document.querySelector('.story-editor-page-preview[data-page-id="12"] .story-editor-text-card');
+
+        fireEvent.input(storyAlignmentSelect, { target: { value: 'right' } });
+        fireEvent.input(readabilitySelect, { target: { value: 'High-contrast box' } });
+        fireEvent.input(pageAlignmentSelect, { target: { value: 'left' } });
+        fireEvent.click(document.querySelector('[data-color-swatch-target="story-editor-font-color"][data-color-value="#1f2937"]'));
+
+        expect(storyPreviewCard.style.textAlign).toBe('left');
+        expect(storyPreviewCard.dataset.readabilityTreatment).toBe('High-contrast box');
+        expect(document.getElementById('story-editor-font-color').value.toLowerCase()).toBe('#1f2937');
+
+        await jest.advanceTimersByTimeAsync(900);
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls.length).toBeGreaterThan(0);
+        });
+
+        const latestSaveCall = [...global.fetch.mock.calls]
+            .reverse()
+            .find(([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT');
+        const payload = JSON.parse(latestSaveCall[1].body);
+
+        expect(payload.editor_settings.text_alignment).toBe('right');
+        expect(payload.editor_settings.readability_treatment).toBe('High-contrast box');
+        expect(payload.editor_settings.font_color.toLowerCase()).toBe('#1f2937');
+        expect(payload.pages).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: 12,
+                    editor_state: expect.objectContaining({
+                        text_alignment: 'left',
+                    }),
+                }),
+            ]),
+        );
+    });
+
+    test('updates low-contrast and overflow warnings as typography changes', async () => {
+        const story = createStoryFixture();
+
+        window.__TEST_API__.displayStory(story);
+
+        const storyColorInput = document.getElementById('story-editor-font-color');
+        const readabilitySelect = document.getElementById('story-editor-readability-treatment');
+        const opacityInput = document.getElementById('story-editor-text-opacity');
+        const pageFontSizeInput = document.querySelector('[data-page-field="font_size"][data-page-id="12"]');
+        const pageTextInput = document.querySelector('[data-page-field="text"][data-page-id="12"]');
+        const warningsContainer = document.querySelector('.story-editor-page-warnings[data-page-id="12"]');
+
+        fireEvent.input(storyColorInput, { target: { value: '#ffffff' } });
+        fireEvent.input(opacityInput, { target: { value: '0.1' } });
+        fireEvent.input(pageFontSizeInput, { target: { value: '56' } });
+        fireEvent.input(pageTextInput, {
+            target: {
+                value: 'This is a deliberately long page of text that should exceed the available text box space when the font is very large. '.repeat(8),
+            },
+        });
+
+        expect(warningsContainer.textContent).toContain('Low contrast warning');
+        expect(warningsContainer.textContent).toContain('Text overflow warning');
+
+        fireEvent.input(readabilitySelect, { target: { value: 'High-contrast box' } });
+        fireEvent.input(storyColorInput, { target: { value: '#ffffff' } });
+        fireEvent.input(pageFontSizeInput, { target: { value: '20' } });
+        fireEvent.input(pageTextInput, { target: { value: 'A short readable line.' } });
+
+        await waitFor(() => {
+            expect(warningsContainer.textContent).toBe('');
+        });
+    });
+
+    test('supports structural page mutations and saves an authoritative page sequence', async () => {
+        const story = createStoryFixture();
+        story.pages.push({
+            id: 13,
+            story_id: 321,
+            page_number: 2,
+            text: 'Page two text',
+            image_description: 'Castle scene',
+            image_path: 'images/user_1/story_321/page2.png',
+            editor_state: {
+                original_text: 'Page two text',
+                original_image_path: 'images/user_1/story_321/page2.png',
+            },
+            created_at: '2026-04-27T12:00:00Z',
+            updated_at: '2026-04-27T12:00:00Z',
+        });
+
+        window.__TEST_API__.displayStory(story);
+
+        fireEvent.click(document.querySelector('[data-action="move-up"][data-page-id="13"]'));
+        expect(document.querySelectorAll('[data-page-field="text"]')[1].value).toBe('Page two text');
+
+        fireEvent.click(document.querySelector('[data-action="add-page"][data-page-id="13"]'));
+        let textareas = [...document.querySelectorAll('[data-page-field="text"]')];
+        let addedTextarea = textareas.find((input) => input.value === '');
+        expect(addedTextarea).toBeTruthy();
+        fireEvent.input(addedTextarea, { target: { value: 'Inserted bridge page' } });
+
+        fireEvent.click(document.querySelector('[data-action="duplicate-page"][data-page-id="13"]'));
+        expect(document.querySelectorAll('[data-page-field="text"]')).toHaveLength(5);
+
+        const pageOneTextarea = document.querySelector('[data-page-field="text"][data-page-id="12"]');
+        pageOneTextarea.setSelectionRange(4, 4);
+        fireEvent.click(document.querySelector('[data-action="split-page"][data-page-id="12"]'));
+        expect(document.querySelectorAll('[data-page-field="text"]')).toHaveLength(6);
+
+        textareas = [...document.querySelectorAll('[data-page-field="text"]')];
+        const insertedCard = textareas
+            .find((input) => input.value === 'Inserted bridge page')
+            .closest('.story-editor-page-card');
+        fireEvent.click(insertedCard.querySelector('[data-action="merge-page"]'));
+        expect(document.querySelectorAll('[data-page-field="text"]')).toHaveLength(5);
+        expect([...document.querySelectorAll('[data-page-field="text"]')].some((input) => input.value.includes('Inserted bridge page\n\nPage'))).toBe(true);
+
+        const duplicatedCard = [...document.querySelectorAll('.story-editor-page-card')]
+            .find((card) => {
+                const textarea = card.querySelector('[data-page-field="text"]');
+                const pageId = Number(textarea?.dataset.pageId || '0');
+                return pageId < 0 && textarea?.value === 'Page two text';
+            });
+        fireEvent.click(duplicatedCard.querySelector('[data-action="delete-page"]'));
+        expect(document.querySelectorAll('[data-page-field="text"]')).toHaveLength(4);
+
+        fireEvent.click(document.getElementById('story-editor-save-button'));
+
+        await waitFor(() => {
+            const saveCalls = global.fetch.mock.calls.filter(
+                ([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT'
+            );
+            expect(saveCalls.length).toBeGreaterThan(0);
+        });
+
+        const latestSaveCall = [...global.fetch.mock.calls]
+            .reverse()
+            .find(([url, options]) => String(url).includes('/api/v1/stories/321/editor') && String(options?.method || 'GET').toUpperCase() === 'PUT');
+        const payload = JSON.parse(latestSaveCall[1].body);
+
+        expect(payload.replace_pages).toBe(true);
+        expect(payload.pages.map((page) => page.page_number)).toEqual([0, 1, 2, 3]);
+        expect(payload.pages[1].text).toBe('Page two text');
+        expect(payload.pages[2].text).toContain('Inserted bridge page');
+        expect(payload.pages[3].text).toBe('one text');
+        expect(document.querySelectorAll('.story-editor-page-card')).toHaveLength(4);
+    });
+
+    test('regenerates a single page text without replacing the rest of the story', async () => {
+        pageActionResponse = (url) => {
+            if (String(url).includes('/regenerate-text')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        ...createStoryFixture().pages[1],
+                        text: 'Freshly regenerated page text',
+                        image_description: 'Updated prompt',
+                    }),
+                    headers: { get: () => 'application/json' },
+                };
+            }
+
+            const story = createStoryFixture();
+            return {
+                ok: true,
+                status: 200,
+                json: async () => story.pages.find((page) => page.id === 12),
+                headers: { get: () => 'application/json' },
+            };
+        };
+
+        window.__TEST_API__.displayStory(createStoryFixture());
+
+        fireEvent.click(document.querySelector('[data-action="regen-text"][data-page-id="12"]'));
+
+        await waitFor(() => {
+            expect(document.querySelector('[data-page-field="text"][data-page-id="12"]').value).toBe('Freshly regenerated page text');
+        });
+
+        expect(document.querySelector('.story-editor-page-preview[data-page-id="12"] .story-editor-text-card-content').textContent).toContain('Freshly regenerated page text');
+        expect(global.fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/api/v1/stories/321/pages/12/regenerate-text'),
+            expect.objectContaining({ method: 'POST' }),
         );
     });
 });

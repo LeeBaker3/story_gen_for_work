@@ -13,7 +13,6 @@ from .logging_config import app_logger, error_logger
 router = APIRouter(prefix="/characters", tags=["characters"])
 
 
-
 def _ext_from_upload(upload: UploadFile) -> str:
     """Map supported image content types (and extensions) to a safe extension."""
     content_type = (upload.content_type or "").lower().strip()
@@ -385,7 +384,8 @@ async def generate_reference_image_from_photo(
 
     parts = []
     if style_reference:
-        parts.append(f"A {style_reference} style character portrait of {ch.name}")
+        parts.append(
+            f"A {style_reference} style character portrait of {ch.name}")
     else:
         parts.append(f"A character portrait of {ch.name}")
     parts.append(description)

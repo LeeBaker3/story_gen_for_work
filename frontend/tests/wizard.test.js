@@ -20,7 +20,19 @@ function mountWizardDom() {
       </nav>
     </header>
     <main>
-    <section id="auth-section" style="display:none;"></section>
+    <section id="auth-section" style="display:none;">
+      <form id="login-form"></form>
+      <form id="signup-form" style="display:none;"></form>
+      <form id="forgot-password-form" style="display:none;"></form>
+      <form id="reset-password-form" style="display:none;"></form>
+      <a id="show-signup-link" href="#">Show signup</a>
+      <a id="show-login-link" href="#">Show login</a>
+      <a id="show-forgot-password-link" href="#">Forgot password</a>
+      <a id="show-reset-password-link" href="#">Reset password</a>
+      <a id="forgot-password-back-to-login-link" href="#">Back to login</a>
+      <a id="reset-password-back-to-login-link" href="#">Back to login</a>
+      <a id="reset-password-request-link" href="#">Request reset</a>
+    </section>
       <section id="story-creation-section" style="display:none;">
         <div id="wizard-steps">
           <button type="button" class="wizard-step" data-step="0" aria-current="step">Basics</button>
@@ -66,6 +78,7 @@ function mountWizardDom() {
           </div>
           <div id="step-2-options" class="wizard-step-panel" style="display:none;">
             <input id="story-num-pages" type="number" value="3" />
+            <select id="story-writing-style"><option value="">Select...</option><option value="Playful">Playful</option></select>
             <select id="story-image-style"><option value="">Select...</option><option value="Cartoon">Cartoon</option></select>
             <div class="dropdown-recovery">
               <div id="story-image-style-recovery" class="inline-status inline-status--error dropdown-recovery-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></div>
@@ -84,6 +97,23 @@ function mountWizardDom() {
               <option value="full-page-overlay">Full-page overlay</option>
               <option value="horizontal-split">Horizontal split</option>
               <option value="vertical-split">Vertical split</option>
+            </select>
+            <select id="story-image-fit">
+              <option value="">Default framing</option>
+              <option value="Fill page">Fill page</option>
+              <option value="Keep artwork contained">Keep artwork contained</option>
+            </select>
+            <select id="story-cover-title-placement">
+              <option value="">Default title placement</option>
+              <option value="Top">Top</option>
+              <option value="Center">Center</option>
+              <option value="Bottom">Bottom</option>
+            </select>
+            <select id="story-readability-treatment">
+              <option value="">Default readability treatment</option>
+              <option value="High-contrast box">High-contrast box</option>
+              <option value="Soft shadow">Soft shadow</option>
+              <option value="Subtle gradient band">Subtle gradient band</option>
             </select>
             <select id="story-default-text-position-v"></select>
             <select id="story-default-text-position-h"></select>
@@ -109,8 +139,21 @@ function mountWizardDom() {
       </section>
       <section id="story-preview-section" style="display:none;">
         <div id="story-preview-content"></div>
+        <button id="preview-pdf-button" style="display:none;">Preview PDF</button>
         <button id="export-pdf-button" style="display:none;">Export PDF</button>
       </section>
+      <div id="pdf-preview-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+      <div id="pdf-preview-modal" class="modal" aria-hidden="true">
+        <div class="modal-content">
+          <button id="pdf-preview-close" type="button">Close</button>
+          <p id="pdf-preview-status"></p>
+          <div id="pdf-preview-frame-container" hidden>
+            <iframe id="pdf-preview-frame" title="Story PDF preview"></iframe>
+          </div>
+          <div id="pdf-preview-error" hidden></div>
+          <button id="pdf-preview-download" type="button" disabled>Download PDF</button>
+        </div>
+      </div>
       <section id="browse-stories-section" style="display:none;"></section>
       <section id="characters-section" style="display:none;"></section>
       <section id="message-area"><p id="api-message"></p></section>
@@ -132,11 +175,15 @@ function createGeneratedStoryFixture() {
     tone: 'Warm',
     setting: 'Forest',
     image_style: 'Cartoon',
+    writing_style: 'Playful',
     word_to_picture_ratio: 'One image per page',
     text_density: 'Concise (~30-50 words)',
     editor_settings: {
       page_format: 'square-storybook',
       layout_mode: 'vertical-split',
+      image_fit: 'Keep artwork contained',
+      cover_title_placement: 'Top',
+      readability_treatment: 'High-contrast box',
       text_position: 'top-center',
       font_family: 'classic',
       font_size: 30,
@@ -195,8 +242,8 @@ describe('wizard navigation', () => {
       window.URL.revokeObjectURL = jest.fn();
     }
     jest.spyOn(window.URL, 'createObjectURL').mockImplementation(() => 'blob:loop-asset');
-    jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {});
-    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    jest.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => { });
+    jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => { });
     // Mock dynamic lists to allow selects to have valid options
     global.fetch = jest.fn(async (url) => {
       const u = String(url);
@@ -205,6 +252,9 @@ describe('wizard navigation', () => {
       }
       if (u.includes('/api/v1/dynamic-lists/image_styles')) {
         return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
       }
       if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
         return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
@@ -265,6 +315,7 @@ describe('wizard navigation', () => {
     await new Promise(r => setTimeout(r, 0));
     const genreSel = document.getElementById('story-genre');
     const imgStyleSel = document.getElementById('story-image-style');
+    const writingStyleSel = document.getElementById('story-writing-style');
     const ratioSel = document.getElementById('story-word-to-picture-ratio');
     const densitySel = document.getElementById('story-text-density');
     const textPositionVSel = document.getElementById('story-default-text-position-v');
@@ -272,6 +323,7 @@ describe('wizard navigation', () => {
     const fontFamilySel = document.getElementById('story-default-font-family');
     if (genreSel) genreSel.innerHTML += '<option value="Fantasy">Fantasy</option>';
     if (imgStyleSel) imgStyleSel.innerHTML += '<option value="Cartoon">Cartoon</option>';
+    if (writingStyleSel) writingStyleSel.innerHTML += '<option value="Playful">Playful</option>';
     if (ratioSel) ratioSel.innerHTML += '<option value="One image per page">One image per page</option>';
     if (densitySel) densitySel.innerHTML += '<option value="Concise (~30-50 words)">Concise (~30-50 words)</option>';
     if (textPositionVSel && !textPositionVSel.querySelector('option[value="top"]')) {
@@ -334,12 +386,13 @@ describe('wizard navigation', () => {
 
     expect(document.querySelector('label[for="story-title"]').textContent).toBe('Story Title');
     expect(document.querySelector('label[for="story-tone"]').textContent).toBe('Tone');
+    expect(document.querySelector('label[for="story-writing-style"]').textContent).toBe('Writing Style');
     expect(document.querySelector('label[for="char-age-1"]').textContent).toBe('Age');
   });
 
   test('failed critical dropdowns disable, show inline recovery, and retry successfully', async () => {
     const fetchMock = global.fetch;
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
 
     try {
       fetchMock.mockImplementation(async (url) => {
@@ -361,6 +414,9 @@ describe('wizard navigation', () => {
             headers: { get: () => 'application/json' },
             text: async () => 'image styles unavailable',
           };
+        }
+        if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
         }
         if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
           return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
@@ -394,6 +450,9 @@ describe('wizard navigation', () => {
         }
         if (u.includes('/api/v1/dynamic-lists/image_styles')) {
           return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
         }
         if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
           return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
@@ -501,7 +560,11 @@ describe('wizard navigation', () => {
 
     expect(document.getElementById('step-0-basics').style.display).toBe('block');
     expect(steps[0].getAttribute('aria-current')).toBe('step');
+    expect(document.getElementById('story-writing-style').value).toBe('Playful');
     expect(document.getElementById('story-layout-mode').value).toBe('vertical-split');
+    expect(document.getElementById('story-image-fit').value).toBe('Keep artwork contained');
+    expect(document.getElementById('story-cover-title-placement').value).toBe('Top');
+    expect(document.getElementById('story-readability-treatment').value).toBe('High-contrast box');
     expect(steps[1].disabled).toBe(false);
     expect(steps[2].disabled).toBe(false);
     expect(steps[3].disabled).toBe(false);
@@ -596,6 +659,9 @@ describe('wizard navigation', () => {
       }
       if (u.includes('/api/v1/dynamic-lists/image_styles')) {
         return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+      }
+      if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+        return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
       }
       if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
         return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
@@ -728,6 +794,9 @@ describe('wizard navigation', () => {
         if (u.includes('/api/v1/dynamic-lists/image_styles')) {
           return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
         }
+        if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
+        }
         if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
           return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
         }
@@ -803,8 +872,12 @@ describe('wizard navigation', () => {
     }
   });
 
-  test('review step summarizes selected page format', () => {
+  test('review step summarizes selected page format and new preferences', () => {
     document.getElementById('story-page-format').value = 'landscape';
+    document.getElementById('story-writing-style').value = 'Playful';
+    document.getElementById('story-image-fit').value = 'Fill page';
+    document.getElementById('story-cover-title-placement').value = 'Bottom';
+    document.getElementById('story-readability-treatment').value = 'Soft shadow';
 
     const next = document.getElementById('wizard-next');
     fireEvent.click(next);
@@ -813,218 +886,236 @@ describe('wizard navigation', () => {
 
     const review = document.getElementById('review-container');
     expect(review.textContent).toContain('Page format: Landscape');
+    expect(review.textContent).toContain('Writing style: Playful');
+    expect(review.textContent).toContain('Image framing: Fill page');
+    expect(review.textContent).toContain('Cover title placement: Bottom');
+    expect(review.textContent).toContain('Readability treatment: Soft shadow');
   });
 
   test('draft save failure preserves form state and sends editor settings payload', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
 
     try {
-    document.getElementById('story-title').value = 'Draft Title';
-    document.getElementById('story-genre').value = 'Fantasy';
-    document.getElementById('story-outline').value = 'Draft outline';
-    document.getElementById('story-tone').value = 'Warm';
-    document.getElementById('story-setting').value = 'Forest';
-    document.getElementById('story-num-pages').value = '7';
-    document.getElementById('story-page-format').value = 'a4';
-    document.getElementById('story-layout-mode').value = 'horizontal-split';
-    document.getElementById('story-default-text-position-v').value = 'top';
-    document.getElementById('story-default-text-position-h').value = 'right';
-    document.getElementById('story-default-font-family').value = 'classic';
-    document.getElementById('story-default-font-size').value = '32';
-    document.getElementById('story-default-font-color').value = '#abcdef';
-    document.getElementById('story-default-text-box-opacity').value = '0.3';
+      document.getElementById('story-title').value = 'Draft Title';
+      document.getElementById('story-genre').value = 'Fantasy';
+      document.getElementById('story-outline').value = 'Draft outline';
+      document.getElementById('story-tone').value = 'Warm';
+      document.getElementById('story-setting').value = 'Forest';
+      document.getElementById('story-writing-style').value = 'Playful';
+      document.getElementById('story-num-pages').value = '7';
+      document.getElementById('story-page-format').value = 'a4';
+      document.getElementById('story-layout-mode').value = 'horizontal-split';
+      document.getElementById('story-image-fit').value = 'Keep artwork contained';
+      document.getElementById('story-cover-title-placement').value = 'Top';
+      document.getElementById('story-readability-treatment').value = 'High-contrast box';
+      document.getElementById('story-default-text-position-v').value = 'top';
+      document.getElementById('story-default-text-position-h').value = 'right';
+      document.getElementById('story-default-font-family').value = 'classic';
+      document.getElementById('story-default-font-size').value = '32';
+      document.getElementById('story-default-font-color').value = '#abcdef';
+      document.getElementById('story-default-text-box-opacity').value = '0.3';
 
-    const fetchMock = global.fetch;
-    fetchMock.mockImplementation(async (url, options = {}) => {
-      const u = String(url);
-      if (u.includes('/stories/drafts/') && options.method === 'POST') {
-        return {
-          ok: false,
-          status: 500,
-          json: async () => ({ detail: 'Draft exploded' }),
-          headers: { get: () => 'application/json' },
-          text: async () => 'Draft exploded',
-        };
-      }
-      if (u.includes('/api/v1/dynamic-lists/genres')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/image_styles')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/text_density')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/font_families')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/genders')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
-      }
-      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
-    });
+      const fetchMock = global.fetch;
+      fetchMock.mockImplementation(async (url, options = {}) => {
+        const u = String(url);
+        if (u.includes('/stories/drafts/') && options.method === 'POST') {
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({ detail: 'Draft exploded' }),
+            headers: { get: () => 'application/json' },
+            text: async () => 'Draft exploded',
+          };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genres')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/writing_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Playful', item_label: 'Playful' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_density')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/font_families')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genders')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+        }
+        return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+      });
 
-    fireEvent.click(document.getElementById('save-draft-button'));
+      fireEvent.click(document.getElementById('save-draft-button'));
 
-    await waitFor(() => {
-      const draftRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST');
-      expect(draftRequest).toBeTruthy();
-    });
+      await waitFor(() => {
+        const draftRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST');
+        expect(draftRequest).toBeTruthy();
+      });
 
-    const [, requestOptions] = fetchMock.mock.calls.find(
-      ([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST'
-    );
-    const payload = JSON.parse(requestOptions.body);
+      const [, requestOptions] = fetchMock.mock.calls.find(
+        ([url, options]) => String(url).includes('/stories/drafts/') && options?.method === 'POST'
+      );
+      const payload = JSON.parse(requestOptions.body);
 
-    expect(payload.editor_settings).toEqual({
-      page_format: 'a4',
-      layout_mode: 'horizontal-split',
-      text_position: 'top-right',
-      font_family: 'classic',
-      font_size: 32,
-      font_color: '#abcdef',
-      text_box_opacity: 0.3,
-    });
-    await waitFor(() => {
-      expect(document.getElementById('api-message').textContent).toMatch(/draft saving failed: draft exploded/i);
-    });
-    expect(document.getElementById('story-title').value).toBe('Draft Title');
-    expect(document.getElementById('story-outline').value).toBe('Draft outline');
-    expect(document.getElementById('story-genre').value).toBe('Fantasy');
+      expect(payload.editor_settings).toEqual({
+        page_format: 'a4',
+        layout_mode: 'horizontal-split',
+        image_fit: 'Keep artwork contained',
+        cover_title_placement: 'Top',
+        readability_treatment: 'High-contrast box',
+        text_position: 'top-right',
+        font_family: 'classic',
+        font_size: 32,
+        font_color: '#abcdef',
+        text_box_opacity: 0.3,
+      });
+      expect(payload.writing_style).toBe('Playful');
+      await waitFor(() => {
+        expect(document.getElementById('api-message').textContent).toMatch(/draft saving failed: draft exploded/i);
+      });
+      expect(document.getElementById('story-title').value).toBe('Draft Title');
+      expect(document.getElementById('story-outline').value).toBe('Draft outline');
+      expect(document.getElementById('story-genre').value).toBe('Fantasy');
     } finally {
       consoleErrorSpy.mockRestore();
     }
   });
 
   test('story start failure preserves form state and includes selected library character ids', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
 
     try {
-    document.getElementById('story-title').value = 'Library Story';
-    document.getElementById('story-genre').value = 'Fantasy';
-    document.getElementById('story-outline').value = 'A fox saves the village';
-    document.getElementById('story-num-pages').value = '6';
-    document.getElementById('story-page-format').value = 'square-storybook';
-    document.getElementById('story-layout-mode').value = 'vertical-split';
-    document.getElementById('story-default-text-position-v').value = 'middle';
-    document.getElementById('story-default-text-position-h').value = 'left';
-    document.getElementById('story-default-font-family').value = 'classic';
-    document.getElementById('story-default-font-size').value = '30';
-    document.getElementById('story-default-font-color').value = '#334455';
-    document.getElementById('story-default-text-box-opacity').value = '0.5';
+      document.getElementById('story-title').value = 'Library Story';
+      document.getElementById('story-genre').value = 'Fantasy';
+      document.getElementById('story-outline').value = 'A fox saves the village';
+      document.getElementById('story-num-pages').value = '6';
+      document.getElementById('story-page-format').value = 'square-storybook';
+      document.getElementById('story-layout-mode').value = 'vertical-split';
+      document.getElementById('story-default-text-position-v').value = 'middle';
+      document.getElementById('story-default-text-position-h').value = 'left';
+      document.getElementById('story-default-font-family').value = 'classic';
+      document.getElementById('story-default-font-size').value = '30';
+      document.getElementById('story-default-font-color').value = '#334455';
+      document.getElementById('story-default-text-box-opacity').value = '0.5';
 
-    const fetchMock = global.fetch;
-    fetchMock.mockImplementation(async (url, options = {}) => {
-      const u = String(url);
-      if (u.includes('/api/v1/stories/') && options.method === 'POST') {
-        return {
-          ok: false,
-          status: 500,
-          json: async () => ({ detail: 'Story start exploded' }),
-          headers: { get: () => 'application/json' },
-          text: async () => 'Story start exploded',
-        };
-      }
-      if (u.includes('/api/v1/characters/?')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            items: [
-              {
-                id: 101,
-                name: 'Library Fox',
-                thumbnail_path: 'images/library-fox.png',
-                description: 'Quick and curious',
-              },
-            ],
-            total: 1,
-          }),
-          headers: { get: () => 'application/json' },
-        };
-      }
-      if (u.includes('/api/v1/characters/101')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            id: 101,
-            name: 'Library Fox',
-            age: 7,
-            gender: 'female',
-            description: 'Quick and curious',
-            clothing_style: 'Travel cloak',
-            key_traits: 'Brave',
-          }),
-          headers: { get: () => 'application/json' },
-        };
-      }
-      if (u.includes('/api/v1/dynamic-lists/genres')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/image_styles')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/text_density')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/font_families')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
-      }
-      if (u.includes('/api/v1/dynamic-lists/genders')) {
-        return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
-      }
-      return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
-    });
+      const fetchMock = global.fetch;
+      fetchMock.mockImplementation(async (url, options = {}) => {
+        const u = String(url);
+        if (u.includes('/api/v1/stories/') && options.method === 'POST') {
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({ detail: 'Story start exploded' }),
+            headers: { get: () => 'application/json' },
+            text: async () => 'Story start exploded',
+          };
+        }
+        if (u.includes('/api/v1/characters/?')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              items: [
+                {
+                  id: 101,
+                  name: 'Library Fox',
+                  thumbnail_path: 'images/library-fox.png',
+                  description: 'Quick and curious',
+                },
+              ],
+              total: 1,
+            }),
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/characters/101')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              id: 101,
+              name: 'Library Fox',
+              age: 7,
+              gender: 'female',
+              description: 'Quick and curious',
+              clothing_style: 'Travel cloak',
+              key_traits: 'Brave',
+            }),
+            headers: { get: () => 'application/json' },
+          };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genres')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Fantasy', item_label: 'Fantasy' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/image_styles')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Cartoon', item_label: 'Cartoon' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/word_to_picture_ratio')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'One image per page', item_label: 'One image per page' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/text_density')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'Concise (~30-50 words)', item_label: 'Concise (~30-50 words)' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/font_families')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'storybook', item_label: 'Storybook' }, { item_value: 'classic', item_label: 'Classic' }], headers: { get: () => 'application/json' } };
+        }
+        if (u.includes('/api/v1/dynamic-lists/genders')) {
+          return { ok: true, status: 200, json: async () => [{ item_value: 'female', item_label: 'Female' }], headers: { get: () => 'application/json' } };
+        }
+        return { ok: true, status: 200, json: async () => ({}), headers: { get: () => 'application/json' } };
+      });
 
-    fireEvent.click(document.getElementById('wizard-next'));
+      fireEvent.click(document.getElementById('wizard-next'));
 
-    await waitFor(() => {
-      expect(document.querySelector('.character-card[data-id="101"]')).not.toBeNull();
-    });
+      await waitFor(() => {
+        expect(document.querySelector('.character-card[data-id="101"]')).not.toBeNull();
+      });
 
-    fireEvent.click(document.querySelector('.character-card[data-id="101"]'));
+      fireEvent.click(document.querySelector('.character-card[data-id="101"]'));
 
-    await waitFor(() => {
+      await waitFor(() => {
+        expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
+      });
+
+      fireEvent.click(document.getElementById('wizard-next'));
+      fireEvent.click(document.getElementById('wizard-next'));
+      fireEvent.click(document.getElementById('generate-story-button'));
+
+      await waitFor(() => {
+        const storyRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST');
+        expect(storyRequest).toBeTruthy();
+      });
+
+      const [, requestOptions] = fetchMock.mock.calls.find(
+        ([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST'
+      );
+      const payload = JSON.parse(requestOptions.body);
+
+      expect(payload.character_ids).toEqual([101]);
+      expect(payload.editor_settings).toEqual({
+        page_format: 'square-storybook',
+        layout_mode: 'vertical-split',
+        text_position: 'middle-left',
+        font_family: 'classic',
+        font_size: 30,
+        font_color: '#334455',
+        text_box_opacity: 0.5,
+      });
+      await waitFor(() => {
+        expect(document.getElementById('api-message').textContent).toMatch(/story start exploded/i);
+      });
+      expect(document.getElementById('story-title').value).toBe('Library Story');
+      expect(document.getElementById('story-outline').value).toBe('A fox saves the village');
       expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
-    });
-
-    fireEvent.click(document.getElementById('wizard-next'));
-    fireEvent.click(document.getElementById('wizard-next'));
-    fireEvent.click(document.getElementById('generate-story-button'));
-
-    await waitFor(() => {
-      const storyRequest = fetchMock.mock.calls.find(([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST');
-      expect(storyRequest).toBeTruthy();
-    });
-
-    const [, requestOptions] = fetchMock.mock.calls.find(
-      ([url, options]) => String(url).includes('/api/v1/stories/') && options?.method === 'POST'
-    );
-    const payload = JSON.parse(requestOptions.body);
-
-    expect(payload.character_ids).toEqual([101]);
-    expect(payload.editor_settings).toEqual({
-      page_format: 'square-storybook',
-      layout_mode: 'vertical-split',
-      text_position: 'middle-left',
-      font_family: 'classic',
-      font_size: 30,
-      font_color: '#334455',
-      text_box_opacity: 0.5,
-    });
-    await waitFor(() => {
-      expect(document.getElementById('api-message').textContent).toMatch(/story start exploded/i);
-    });
-    expect(document.getElementById('story-title').value).toBe('Library Story');
-    expect(document.getElementById('story-outline').value).toBe('A fox saves the village');
-    expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
     } finally {
       consoleErrorSpy.mockRestore();
     }

@@ -15,6 +15,12 @@ Key minimums for local dev
 - MOUNT_FRONTEND_STATIC=true
 - MOUNT_DATA_STATIC=true
 
+Optional low-cost local AI example
+- OPENAI_API_KEY=dummy-local-key
+- OPENAI_BASE_URL=http://localhost:11434/v1
+- TEXT_MODEL=gpt-oss:20b
+- ENABLE_IMAGE_GENERATION=false
+
 ## Environment variables
 
 Core
@@ -37,13 +43,24 @@ Logging
 
 OpenAI models and retries
 - OPENAI_API_KEY: API key for OpenAI
+- OPENAI_BASE_URL: optional shared OpenAI-compatible base URL override for local/self-hosted providers (default: hosted OpenAI)
+- OPENAI_TEXT_BASE_URL: optional text-generation base URL override; takes precedence over OPENAI_BASE_URL
+- OPENAI_IMAGE_BASE_URL: optional image-generation base URL override; takes precedence over OPENAI_BASE_URL
+- OPENAI_TEXT_PROVIDER: optional diagnostic label for the active text provider (default: inferred from base URL)
+- OPENAI_IMAGE_PROVIDER: optional diagnostic label for the active image provider (default: inferred from base URL)
 - TEXT_MODEL: LLM for story text (default: gpt-5.4-mini)
 - IMAGE_MODEL: image model (default: gpt-image-2)
+- ENABLE_IMAGE_GENERATION: "1"/"true" to enable AI image generation; set to false for lower-cost local dev/test text-only workflows (default: true)
 - USE_OPENAI_RESPONSES_API: "1"/"true" to use the Responses API for story text generation (default: false)
 - OPENAI_TEXT_ENABLE_FALLBACK: "1"/"true" to fall back to the other text path if the primary fails (default: false)
 - RETRY_MAX_ATTEMPTS: API retry attempts (default: 3)
 - RETRY_BACKOFF_BASE: exponential backoff base seconds (default: 1.5)
 - ENABLE_IMAGE_STYLE_MAPPING: "1"/"true" to map friendly style names to richer prompts (default: false)
+
+Provider notes
+- If no base URL override is supplied, both text and image generation use hosted OpenAI defaults.
+- For local OpenAI-compatible text providers, point OPENAI_BASE_URL or OPENAI_TEXT_BASE_URL at the local endpoint and keep IMAGE generation disabled unless that provider also supports the image API your workflow needs.
+- Admin monitoring exposes the active provider labels and normalized base URLs at `/api/v1/admin/monitoring/config` without exposing secrets.
 
 Authentication
 - LOGIN_RATE_LIMIT: rate limit applied to login attempts (default: 10/minute)

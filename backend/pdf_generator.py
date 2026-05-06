@@ -47,6 +47,12 @@ FONT_FAMILY_MAP = {
     "large print": "Helvetica-Bold",
 }
 VALID_LAYOUT_MODES = {mode.value for mode in LayoutMode}
+VALID_TEXT_ALIGNMENTS = {"left", "center", "right"}
+READABILITY_TREATMENT_MAP = {
+    "high-contrast box": "High-contrast box",
+    "soft shadow": "Soft shadow",
+    "subtle gradient band": "Subtle gradient band",
+}
 
 
 def _resolve_story_editor_settings(story_data: StoryModel) -> Dict[str, Any]:
@@ -78,7 +84,14 @@ def _effective_page_settings(story_data: StoryModel, page: Any) -> Dict[str, Any
 
     settings = _resolve_story_editor_settings(story_data)
     state = _resolve_page_editor_state(page)
-    for key in ("text_position", "font_family", "font_size", "font_color"):
+    for key in (
+        "text_position",
+        "text_alignment",
+        "font_family",
+        "font_size",
+        "font_color",
+        "text_box_opacity",
+    ):
         value = state.get(key)
         if value not in (None, ""):
             settings[key] = value
@@ -116,6 +129,135 @@ def _resolve_font_name(font_family: Any) -> str:
 
     key = str(font_family or "storybook").strip().lower()
     return FONT_FAMILY_MAP.get(key, "Helvetica-Bold")
+
+
+def _normalize_text_alignment(value: Any, text_position: Any = None) -> str:
+    """Return a supported text alignment, falling back to placement."""
+
+    normalized = str(value or "").strip().lower()
+    if normalized in VALID_TEXT_ALIGNMENTS:
+        return normalized
+
+    position = _OLD_POSITION_MAP.get(
+        str(text_position or "bottom-center").strip().lower(),
+        str(text_position or "bottom-center").strip().lower(),
+    )
+    parts = position.split("-", 1)
+    horizontal = parts[1] if len(parts) == 2 else "center"
+    if horizontal in VALID_TEXT_ALIGNMENTS:
+        return horizontal
+    return "center"
+
+
+def _normalize_readability_treatment(value: Any) -> str:
+    """Return a supported readability treatment label."""
+
+    key = str(value or "").strip().lower()
+    return READABILITY_TREATMENT_MAP.get(key, "")
+
+
+def _resolve_background_opacity(settings: Dict[str, Any]) -> float:
+    """Return the effective overlay opacity for readability treatments."""
+
+    try:
+        opacity = max(0.0, min(1.0, float(settings.get("text_box_opacity", 0.6))))
+    except Exception:
+        opacity = 0.6
+
+    treatment = _normalize_readability_treatment(
+        settings.get("readability_treatment")
+    )
+    if treatment == "High-contrast box":
+        return max(opacity, 0.82)
+    if treatment == "Subtle gradient band":
+        return max(opacity, 0.52)
+    if treatment == "Soft shadow":
+        return max(opacity * 0.35, 0.14)
+    return opacity
+
+
+def _draw_text_background(
+    pdf: canvas.Canvas,
+    box_x: float,
+    box_y: float,
+    box_width: float,
+    box_height: float,
+    settings: Dict[str, Any],
+) -> None:
+    """Draw the readability treatment background behind story text."""
+
+    opacity = _resolve_background_opacity(settings)
+    treatment = _normalize_readability_treatment(
+        settings.get("readability_treatment")
+    )
+
+    pdf.saveState()
+    if treatment == "Subtle gradient band":
+        band_alphas = [
+            opacity * 0.35,
+            opacity * 0.6,
+            opacity,
+            opacity * 0.6,
+            opacity * 0.35,
+        ]
+        band_height = box_height / len(band_alphas)
+        for index, band_alpha in enumerate(band_alphas):
+            pdf.setFillColor(Color(0, 0, 0, alpha=band_alpha))
+            pdf.rect(
+                box_x,
+                box_y + (band_height * index),
+                box_width,
+                band_height + 0.5,
+                stroke=0,
+                fill=1,
+            )
+    else:
+        pdf.setFillColor(Color(0, 0, 0, alpha=opacity))
+        pdf.roundRect(box_x, box_y, box_width, box_height, 10, stroke=0, fill=1)
+    pdf.restoreState()
+
+
+def _draw_aligned_text_line(
+    pdf: canvas.Canvas,
+    line: str,
+    box_x: float,
+    box_width: float,
+    text_y: float,
+    alignment: str,
+    padding: float = 12,
+) -> None:
+    """Draw one line of text using the requested alignment."""
+
+    if alignment == "right":
+        pdf.drawRightString(box_x + box_width - padding, text_y, line)
+        return
+    if alignment == "center":
+        pdf.drawCentredString(box_x + (box_width / 2.0), text_y, line)
+        return
+    pdf.drawString(box_x + padding, text_y, line)
+
+
+def _draw_shadowed_text_line(
+    pdf: canvas.Canvas,
+    line: str,
+    box_x: float,
+    box_width: float,
+    text_y: float,
+    alignment: str,
+) -> None:
+    """Draw a soft readability shadow before the foreground text."""
+
+    pdf.saveState()
+    pdf.setFillColor(Color(0, 0, 0, alpha=0.7))
+    _draw_aligned_text_line(
+        pdf,
+        line,
+        box_x + 1.5,
+        box_width,
+        text_y - 1.5,
+        alignment,
+    )
+    pdf.restoreState()
 
 
 def _resolve_image_path(image_path: str) -> str:
@@ -256,7 +398,8 @@ def _draw_full_page_image(
     """Draw an image full-bleed, cropped to fill the entire page."""
 
     page_width, page_height = page_size
-    _draw_image_cover(pdf, full_image_path, (0.0, 0.0, page_width, page_height))
+    _draw_image_cover(pdf, full_image_path,
+                      (0.0, 0.0, page_width, page_height))
 
 
 def _draw_placeholder_background(
@@ -288,13 +431,14 @@ def _draw_text_overlay(
         page_size,
         region=region,
     )
-    opacity = settings.get("text_box_opacity", 0.6)
-    try:
-        opacity = max(0.0, min(1.0, float(opacity)))
-    except Exception:
-        opacity = 0.6
-
     font_name = _resolve_font_name(settings.get("font_family"))
+    text_alignment = _normalize_text_alignment(
+        settings.get("text_alignment"),
+        settings.get("text_position"),
+    )
+    readability_treatment = _normalize_readability_treatment(
+        settings.get("readability_treatment")
+    )
     try:
         font_size = int(settings.get("font_size")
                         or EDITOR_DEFAULTS["font_size"])
@@ -315,10 +459,7 @@ def _draw_text_overlay(
         wrapped_lines = simpleSplit(
             text or "", font_name, font_size, max_text_width)
 
-    pdf.saveState()
-    pdf.setFillColor(Color(0, 0, 0, alpha=opacity))
-    pdf.roundRect(box_x, box_y, box_width, box_height, 10, stroke=0, fill=1)
-    pdf.restoreState()
+    _draw_text_background(pdf, box_x, box_y, box_width, box_height, settings)
 
     pdf.saveState()
     pdf.setFillColor(_safe_hex_color(settings.get("font_color")))
@@ -327,13 +468,160 @@ def _draw_text_overlay(
     text_y = box_y + box_height - 16 - \
         ((box_height - 24 - content_height) / 2.0)
     for line in wrapped_lines:
-        if is_title_page:
-            line_width = stringWidth(line, font_name, font_size)
-            text_x = box_x + (box_width - line_width) / 2.0
-        else:
-            text_x = box_x + 12
-        pdf.drawString(text_x, text_y, line)
+        if readability_treatment == "Soft shadow":
+            _draw_shadowed_text_line(
+                pdf,
+                line,
+                box_x,
+                box_width,
+                text_y,
+                text_alignment,
+            )
+        _draw_aligned_text_line(
+            pdf,
+            line,
+            box_x,
+            box_width,
+            text_y,
+            text_alignment,
+        )
         text_y -= line_height
+    pdf.restoreState()
+
+
+def _draw_title_page_overlay(
+    pdf: canvas.Canvas,
+    story_data: StoryModel,
+    title: str,
+    settings: Dict[str, Any],
+    page_size: Tuple[float, float],
+    region: Tuple[float, float, float, float] | None = None,
+) -> None:
+    """Draw the title page cover text with optional subtitle and author."""
+
+    box_x, box_y, box_width, box_height = _text_box_geometry(
+        settings.get("text_position", "bottom"),
+        page_size,
+        region=region,
+    )
+    font_name = _resolve_font_name(settings.get("font_family"))
+    text_alignment = _normalize_text_alignment(
+        settings.get("text_alignment"),
+        settings.get("text_position"),
+    )
+    readability_treatment = _normalize_readability_treatment(
+        settings.get("readability_treatment")
+    )
+    subtitle = str(getattr(story_data, "cover_subtitle", "") or "").strip()
+    author = str(getattr(story_data, "cover_author", "") or "").strip()
+
+    title_font_size = max(
+        int(settings.get("font_size") or EDITOR_DEFAULTS["font_size"]) + 8,
+        34,
+    )
+    subtitle_font_size = max(title_font_size - 10, 18)
+    author_font_size = max(title_font_size - 12, 16)
+    max_text_width = box_width - 24
+
+    title_lines = simpleSplit(title or "", font_name, title_font_size, max_text_width)
+    subtitle_lines = (
+        simpleSplit(subtitle, "Helvetica", subtitle_font_size, max_text_width)
+        if subtitle
+        else []
+    )
+    author_lines = (
+        simpleSplit(f"By {author}", "Helvetica-Oblique", author_font_size, max_text_width)
+        if author
+        else []
+    )
+
+    title_line_height = title_font_size * 1.25
+    subtitle_line_height = subtitle_font_size * 1.3
+    author_line_height = author_font_size * 1.3
+    content_height = (
+        len(title_lines) * title_line_height
+        + (len(subtitle_lines) * subtitle_line_height if subtitle_lines else 0)
+        + (len(author_lines) * author_line_height if author_lines else 0)
+    )
+    if subtitle_lines:
+        content_height += title_font_size * 0.45
+    if author_lines:
+        content_height += author_font_size * 0.8
+
+    _draw_text_background(pdf, box_x, box_y, box_width, box_height, settings)
+
+    text_y = box_y + box_height - 16 - ((box_height - 24 - content_height) / 2.0)
+    font_color = _safe_hex_color(settings.get("font_color"))
+
+    pdf.saveState()
+    pdf.setFillColor(font_color)
+    pdf.setFont(font_name, title_font_size)
+    for line in title_lines:
+        if readability_treatment == "Soft shadow":
+            _draw_shadowed_text_line(
+                pdf,
+                line,
+                box_x,
+                box_width,
+                text_y,
+                text_alignment,
+            )
+        _draw_aligned_text_line(
+            pdf,
+            line,
+            box_x,
+            box_width,
+            text_y,
+            text_alignment,
+        )
+        text_y -= title_line_height
+
+    if subtitle_lines:
+        text_y -= title_font_size * 0.45
+        pdf.setFont("Helvetica", subtitle_font_size)
+        for line in subtitle_lines:
+            if readability_treatment == "Soft shadow":
+                _draw_shadowed_text_line(
+                    pdf,
+                    line,
+                    box_x,
+                    box_width,
+                    text_y,
+                    text_alignment,
+                )
+            _draw_aligned_text_line(
+                pdf,
+                line,
+                box_x,
+                box_width,
+                text_y,
+                text_alignment,
+            )
+            text_y -= subtitle_line_height
+
+    if author_lines:
+        text_y -= author_font_size * 0.8
+        pdf.setFont("Helvetica-Oblique", author_font_size)
+        for line in author_lines:
+            if readability_treatment == "Soft shadow":
+                _draw_shadowed_text_line(
+                    pdf,
+                    line,
+                    box_x,
+                    box_width,
+                    text_y,
+                    text_alignment,
+                )
+            _draw_aligned_text_line(
+                pdf,
+                line,
+                box_x,
+                box_width,
+                text_y,
+                text_alignment,
+            )
+            text_y -= author_line_height
+
     pdf.restoreState()
 
 
@@ -354,12 +642,12 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
     )
     if not sorted_pages:
         _draw_placeholder_background(pdf, page_size)
-        _draw_text_overlay(
+        _draw_title_page_overlay(
             pdf,
+            story_data,
             getattr(story_data, "title", "Untitled Story"),
             _resolve_story_editor_settings(story_data),
             page_size,
-            is_title_page=True,
         )
         pdf.showPage()
     else:
@@ -382,7 +670,8 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
 
             try:
                 if full_image_path and os.path.exists(full_image_path):
-                    _draw_image_cover(pdf, full_image_path, layout_regions["image"])
+                    _draw_image_cover(pdf, full_image_path,
+                                      layout_regions["image"])
             except Exception as exc:
                 error_logger.error(
                     "Failed to draw image for story %s page %s: %s",
@@ -394,14 +683,24 @@ def create_story_pdf(story_data: StoryModel) -> bytes:
 
             text_value = getattr(page, "text", None) or getattr(
                 story_data, "title", "")
-            _draw_text_overlay(
-                pdf,
-                text_value,
-                page_settings,
-                page_size,
-                is_title_page=(page_number == 0),
-                region=layout_regions["text"],
-            )
+            if page_number == 0:
+                _draw_title_page_overlay(
+                    pdf,
+                    story_data,
+                    text_value,
+                    page_settings,
+                    page_size,
+                    region=layout_regions["text"],
+                )
+            else:
+                _draw_text_overlay(
+                    pdf,
+                    text_value,
+                    page_settings,
+                    page_size,
+                    is_title_page=False,
+                    region=layout_regions["text"],
+                )
             pdf.showPage()
 
     pdf.save()

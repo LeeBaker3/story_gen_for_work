@@ -44,7 +44,7 @@ def test_get_openai_image_style_reads_dynamic_list_mapping(db_session):
 
 
 @patch("backend.ai_services._truncate_prompt", side_effect=lambda p, max_length=4000: p)
-@patch("backend.ai_services.client")
+@patch("backend.ai_services.image_client")
 def test_generate_image_passes_style_when_supported(mock_openai_client, _mock_truncate):
     """If the model supports `style`, it should be passed through.
 
@@ -77,7 +77,7 @@ def test_generate_image_passes_style_when_supported(mock_openai_client, _mock_tr
 
 
 @patch("backend.ai_services._truncate_prompt", side_effect=lambda p, max_length=4000: p)
-@patch("backend.ai_services.client")
+@patch("backend.ai_services.image_client")
 def test_generate_image_retries_without_style_on_type_error(
     mock_openai_client, _mock_truncate
 ):

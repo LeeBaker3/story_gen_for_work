@@ -8,7 +8,7 @@ accessible only to authenticated admin users.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 import os
 from fastapi.responses import PlainTextResponse, FileResponse, Response
-from typing import List, Optional
+from typing import Dict, List, Optional
 import sys
 import platform
 import shutil
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from backend.auth import get_current_admin_user
 from backend.logging_config import app_logger, error_logger
 from backend.settings import get_settings
-from backend import ai_services
+from backend import ai_services, schemas, settings as settings_module
 from backend.metrics import APP_LOG_FILES_TOTAL
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -34,6 +34,139 @@ monitoring_router = APIRouter(
 
 # Record process start time for uptime calculation
 PROCESS_START_TIME = time.time()
+
+ADMIN_CONFIG_FIELD_METADATA: Dict[str, schemas.AdminConfigFieldMetadata] = {
+    "openai_text_provider": schemas.AdminConfigFieldMetadata(
+        label="Text provider",
+        input_type="text",
+        help_text="Non-secret provider label used for diagnostics and text client routing.",
+    ),
+    "openai_text_base_url": schemas.AdminConfigFieldMetadata(
+        label="Text base URL",
+        input_type="url",
+        help_text="OpenAI-compatible base URL for future text requests.",
+        can_clear=True,
+    ),
+    "openai_image_provider": schemas.AdminConfigFieldMetadata(
+        label="Image provider",
+        input_type="text",
+        help_text="Non-secret provider label used for diagnostics and image client routing.",
+    ),
+    "openai_image_base_url": schemas.AdminConfigFieldMetadata(
+        label="Image base URL",
+        input_type="url",
+        help_text="OpenAI-compatible base URL for future image requests.",
+        can_clear=True,
+    ),
+    "text_model": schemas.AdminConfigFieldMetadata(
+        label="Text model",
+        input_type="text",
+        help_text="Model name used for future story text generation requests.",
+    ),
+    "image_model": schemas.AdminConfigFieldMetadata(
+        label="Image model",
+        input_type="text",
+        help_text="Model name used for future image generation requests.",
+    ),
+    "enable_image_generation": schemas.AdminConfigFieldMetadata(
+        label="Enable image generation",
+        input_type="checkbox",
+        help_text="Turns AI image generation on or off for future requests.",
+    ),
+    "use_openai_responses_api": schemas.AdminConfigFieldMetadata(
+        label="Use OpenAI Responses API",
+        input_type="checkbox",
+        help_text="Switches future text generation to the Responses API path.",
+    ),
+    "openai_text_enable_fallback": schemas.AdminConfigFieldMetadata(
+        label="Enable text fallback",
+        input_type="checkbox",
+        help_text="Allows the text path to fall back to the alternate OpenAI API on failure.",
+    ),
+    "enable_image_style_mapping": schemas.AdminConfigFieldMetadata(
+        label="Enable image style mapping",
+        input_type="checkbox",
+        help_text="Controls whether admin image style mapping rules are applied.",
+    ),
+}
+
+ADMIN_CONFIG_UPDATE_NOTES = [
+    "Only a safe non-secret subset is editable here.",
+    "Changes are stored in private_data/admin_config_overrides.json and override environment defaults for future requests.",
+    "Sensitive values such as OPENAI_API_KEY stay masked and cannot be read or edited from this screen.",
+    "Long-running or in-flight tasks keep the config they started with; updated values apply to new requests after save.",
+]
+
+
+def _build_config_diagnostics_payload(
+    settings: Optional[settings_module.BaseSettings] = None,
+) -> dict:
+    """Build the safe config diagnostics payload shared by GET and PATCH."""
+
+    effective_settings = settings or get_settings()
+    raw_key = (
+        effective_settings.openai_api_key
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    )
+    key_present = bool(raw_key)
+    masked = f"{raw_key[:7]}******" if key_present else ""
+    client_initialized = getattr(ai_services, "client", None) is not None
+    image_client_initialized = (
+        getattr(ai_services, "image_client", None) is not None
+    )
+
+    payload = {
+        "openai_key_present": key_present,
+        "openai_key_masked": masked,
+        "openai_text_provider": effective_settings.openai_text_provider,
+        "openai_text_base_url": effective_settings.openai_text_base_url,
+        "openai_image_provider": effective_settings.openai_image_provider,
+        "openai_image_base_url": effective_settings.openai_image_base_url,
+        "text_model": effective_settings.text_model,
+        "image_model": effective_settings.image_model,
+        "enable_image_generation": effective_settings.enable_image_generation,
+        "use_openai_responses_api": effective_settings.use_openai_responses_api,
+        "openai_text_enable_fallback": getattr(
+            effective_settings, "openai_text_enable_fallback", False
+        ),
+        "run_env": effective_settings.run_env,
+        "enable_image_style_mapping": effective_settings.enable_image_style_mapping,
+        "mount_frontend_static": effective_settings.mount_frontend_static,
+        "mount_data_static": effective_settings.mount_data_static,
+        "frontend_static_dir_exists": os.path.isdir(
+            effective_settings.frontend_static_dir
+        ) if effective_settings.frontend_static_dir else False,
+        "data_dir_exists": os.path.isdir(effective_settings.data_dir)
+        if effective_settings.data_dir else False,
+        "logs_dir_exists": os.path.isdir(LOG_DIRECTORY)
+        if LOG_DIRECTORY else False,
+        "client_initialized": client_initialized,
+        "image_client_initialized": image_client_initialized,
+        "editable_values": {
+            field_name: getattr(effective_settings, field_name)
+            for field_name in settings_module.ADMIN_CONFIG_EDITABLE_FIELDS
+        },
+        "editable_field_metadata": {
+            field_name: field_meta.model_dump()
+            for field_name, field_meta in ADMIN_CONFIG_FIELD_METADATA.items()
+        },
+        "config_update_notes": list(ADMIN_CONFIG_UPDATE_NOTES),
+        "override_storage": {
+            "relative_path": getattr(
+                effective_settings,
+                "admin_config_override_relative_path",
+                os.path.join("private_data", settings_module.ADMIN_CONFIG_OVERRIDE_FILENAME),
+            ),
+            "has_overrides": bool(
+                getattr(effective_settings, "admin_config_overrides", {})
+            ),
+            "applied_fields": list(
+                getattr(effective_settings, "config_overrides_applied", [])
+            ),
+        },
+    }
+    return payload
 
 
 @monitoring_router.get("/logs/", response_model=List[str])
@@ -233,38 +366,45 @@ def config_diagnostics():
     Exposes only non-sensitive, masked details useful for debugging configuration issues.
     """
     try:
-        settings = _settings
-        raw_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY") or ""
-        key_present = bool(raw_key)
-        # Only reveal a tiny prefix for debugging (avoid leaking the full key)
-        masked = f"{raw_key[:7]}******" if key_present else ""
-
-        # Check if the OpenAI client is initialized without making any calls
-        client_initialized = getattr(ai_services, "client", None) is not None
-
-        return {
-            "openai_key_present": key_present,
-            "openai_key_masked": masked,
-            "text_model": settings.text_model,
-            "image_model": settings.image_model,
-            "use_openai_responses_api": settings.use_openai_responses_api,
-            "openai_text_enable_fallback": getattr(
-                settings, "openai_text_enable_fallback", False
-            ),
-            "run_env": settings.run_env,
-            "enable_image_style_mapping": settings.enable_image_style_mapping,
-            "mount_frontend_static": settings.mount_frontend_static,
-            "mount_data_static": settings.mount_data_static,
-            "frontend_static_dir_exists": os.path.isdir(
-                settings.frontend_static_dir
-            ) if settings.frontend_static_dir else False,
-            "data_dir_exists": os.path.isdir(settings.data_dir)
-            if settings.data_dir else False,
-            "logs_dir_exists": os.path.isdir(LOG_DIRECTORY)
-            if LOG_DIRECTORY else False,
-            "client_initialized": client_initialized,
-        }
+        return _build_config_diagnostics_payload()
     except Exception:
         error_logger.exception("Failed to build config diagnostics")
         raise HTTPException(
             status_code=500, detail="Failed to load diagnostics")
+
+
+@monitoring_router.patch("/config")
+def update_config(
+    config_update: schemas.AdminConfigUpdate,
+):
+    """Persist and apply the safe admin-editable configuration subset."""
+
+    try:
+        updates = config_update.model_dump(exclude_unset=True)
+        persisted = settings_module.save_admin_config_overrides(updates)
+        settings_module.reset_settings_cache()
+        refreshed_settings = get_settings()
+        ai_services.refresh_runtime_config()
+
+        payload = _build_config_diagnostics_payload(refreshed_settings)
+        payload["update_summary"] = {
+            "updated_fields": sorted(
+                [field for field, value in updates.items() if value is not None]
+            ),
+            "cleared_fields": sorted(
+                [field for field, value in updates.items() if value is None]
+            ),
+            "persisted_fields": sorted(persisted.keys()),
+        }
+        return payload
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception:
+        error_logger.exception("Failed to update admin config overrides")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update configuration",
+        )

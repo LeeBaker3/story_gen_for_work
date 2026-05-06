@@ -1,8 +1,9 @@
-from pydantic import BaseModel, ConfigDict  # Added ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator  # Added ConfigDict
 from typing import Any, Dict, List, Optional
 from enum import Enum  # Added for StoryGenre
 from datetime import datetime  # Ensure datetime is imported
 from pydantic import Field
+from urllib.parse import urlparse
 
 
 class UserRole(str, Enum):  # Added UserRole Enum
@@ -115,6 +116,7 @@ class StoryEditorSettings(BaseModel):
     font_size: int = Field(default=EDITOR_DEFAULTS["font_size"])
     font_color: str = Field(default=EDITOR_DEFAULTS["font_color"])
     text_position: str = Field(default=EDITOR_DEFAULTS["text_position"])
+    text_alignment: Optional[str] = Field(None, max_length=20)
     text_box_opacity: float = Field(
         default=EDITOR_DEFAULTS["text_box_opacity"],
         ge=0.0,
@@ -122,12 +124,16 @@ class StoryEditorSettings(BaseModel):
     )
     page_format: str = Field(default=EDITOR_DEFAULTS["page_format"])
     layout_mode: LayoutMode = Field(default=EDITOR_DEFAULTS["layout_mode"])
+    image_fit: Optional[str] = Field(None, max_length=100)
+    cover_title_placement: Optional[str] = Field(None, max_length=100)
+    readability_treatment: Optional[str] = Field(None, max_length=100)
 
 
 class PageEditorState(BaseModel):
     original_text: Optional[str] = None
     original_image_path: Optional[str] = None
     text_position: Optional[str] = None
+    text_alignment: Optional[str] = None
     font_family: Optional[str] = None
     font_size: Optional[int] = None
     font_color: Optional[str] = None
@@ -154,6 +160,8 @@ class Page(PageBase):
 
 class StoryBase(BaseModel):
     title: str = Field(..., max_length=200)
+    cover_subtitle: Optional[str] = Field(None, max_length=200)
+    cover_author: Optional[str] = Field(None, max_length=200)
     genre: str
     story_outline: str = Field(..., max_length=5000)
     # User's initial outline
@@ -268,6 +276,31 @@ class Token(BaseModel):
     token_type: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    identifier: str = Field(..., min_length=1, max_length=255)
+
+
+class ForgotPasswordResponse(BaseModel):
+    detail: str
+    reset_token_preview: Optional[str] = None
+
+
+class ResetPasswordConfirm(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=1)
+    confirm_password: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_password_confirmation(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class MessageResponse(BaseModel):
+    detail: str
+
+
 class TokenData(BaseModel):
     username: Optional[str] = None
 
@@ -324,6 +357,30 @@ class DynamicListCreate(DynamicListBase):
 class DynamicListUpdate(BaseModel):
     list_label: Optional[str] = None  # User-friendly label
     description: Optional[str] = None
+
+
+class AdminImageStyleMappingRule(BaseModel):
+    """Describe the effective OpenAI style mapping for one business style."""
+
+    business_style: str
+    image_style_item_id: Optional[int] = None
+    image_style_item_label: Optional[str] = None
+    image_style_item_active: bool = False
+    mapping_item_id: Optional[int] = None
+    mapping_item_label: Optional[str] = None
+    mapping_item_active: bool = False
+    configured_openai_style: Optional[str] = None
+    effective_openai_style: str
+    source: str
+    sort_order: int = 0
+
+
+class AdminImageStyleMappingState(BaseModel):
+    """Summarize the image style mapping state visible in admin tooling."""
+
+    mapping_feature_enabled: bool
+    default_openai_style: str
+    rules: List[AdminImageStyleMappingRule] = Field(default_factory=list)
 
 
 class DynamicList(DynamicListBase):
@@ -390,14 +447,20 @@ class StoryGenerationTask(StoryGenerationTaskBase):
 
 
 class StoryEditorPageUpdate(BaseModel):
-    id: int
+    id: Optional[int] = None
+    page_number: Optional[int] = None
     text: Optional[str] = None
+    image_description: Optional[str] = None
+    image_path: Optional[str] = None
     editor_state: Optional[PageEditorState] = None
 
 
 class StoryEditorUpdate(BaseModel):
     title: Optional[str] = None
+    cover_subtitle: Optional[str] = Field(None, max_length=200)
+    cover_author: Optional[str] = Field(None, max_length=200)
     editor_settings: Optional[StoryEditorSettings] = None
+    replace_pages: bool = False
     pages: List[StoryEditorPageUpdate] = []
 
 
@@ -511,6 +574,117 @@ class AdminStats(BaseModel):
     success_rate_last_24h: Optional[float] = None  # 0-1 ratio
     # Average attempts across completed tasks in the last 24h (nullable)
     avg_attempts_last_24h: Optional[float] = None
+
+
+class AdminBroadcastBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    message: str = Field(..., min_length=1, max_length=4000)
+
+    @field_validator("title", "message")
+    @classmethod
+    def _normalize_broadcast_text(cls, value: str) -> str:
+        """Trim broadcast text fields and reject blank values."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Broadcast fields cannot be empty.")
+        return normalized
+
+
+class AdminBroadcastCreate(AdminBroadcastBase):
+    pass
+
+
+class AdminBroadcast(AdminBroadcastBase):
+    id: int
+    target_scope: str
+    status: str
+    recipient_count: int
+    created_by_user_id: int
+    created_at: datetime
+    sent_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminAnalyticsSummary(BaseModel):
+    users_registered_last_7d: int
+    stories_created_last_7d: int
+    stories_generated_last_7d: int
+    characters_created_last_7d: int
+    active_story_authors_last_7d: int
+    generation_success_rate_last_7d: Optional[float] = None
+    broadcasts_sent_last_30d: int
+    broadcast_recipients_last_30d: int
+
+
+class AdminConfigUpdate(BaseModel):
+    """Validated safe subset of runtime configuration editable by admins."""
+
+    openai_text_provider: Optional[str] = Field(None, max_length=50)
+    openai_text_base_url: Optional[str] = Field(None, max_length=255)
+    openai_image_provider: Optional[str] = Field(None, max_length=50)
+    openai_image_base_url: Optional[str] = Field(None, max_length=255)
+    text_model: Optional[str] = Field(None, max_length=100)
+    image_model: Optional[str] = Field(None, max_length=100)
+    enable_image_generation: Optional[bool] = None
+    use_openai_responses_api: Optional[bool] = None
+    openai_text_enable_fallback: Optional[bool] = None
+    enable_image_style_mapping: Optional[bool] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator(
+        "openai_text_provider",
+        "openai_image_provider",
+        "openai_text_base_url",
+        "openai_image_base_url",
+        "text_model",
+        "image_model",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_string(cls, value: Optional[str]) -> Optional[str]:
+        """Trim optional string values and treat blanks as cleared overrides."""
+
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("openai_text_provider", "openai_image_provider")
+    @classmethod
+    def _validate_provider(cls, value: Optional[str]) -> Optional[str]:
+        """Restrict provider labels to a small safe character set."""
+
+        if value is None:
+            return value
+        if not all(char.isalnum() or char in {"-", "_"} for char in value):
+            raise ValueError(
+                "Provider values may only use letters, numbers, hyphens, or underscores."
+            )
+        return value
+
+    @field_validator("openai_text_base_url", "openai_image_base_url")
+    @classmethod
+    def _validate_base_url(cls, value: Optional[str]) -> Optional[str]:
+        """Allow only http(s) OpenAI-compatible base URLs."""
+
+        if value is None:
+            return value
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Base URL must be a valid http or https URL.")
+        return value.rstrip("/")
+
+
+class AdminConfigFieldMetadata(BaseModel):
+    """Frontend metadata for an editable admin config field."""
+
+    label: str
+    input_type: str
+    help_text: str
+    can_clear: bool = False
 
 
 # --- Admin Moderation Requests ---

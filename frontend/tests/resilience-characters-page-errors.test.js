@@ -168,7 +168,7 @@ describe('wizard character library: load failure shows inline error', () => {
     global.fetch = jest.fn(async (url) => {
       const u = String(url);
       if (u.includes('/api/v1/dynamic-lists/')) {
-  return { ok: true, status: 200, json: async () => ([{ item_value: 'fantasy', item_label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
+        return { ok: true, status: 200, json: async () => ([{ item_value: 'fantasy', item_label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
       }
       if (u.match(/\/api\/v1\/characters\/?\?/)) {
         // Library list load fails
@@ -183,17 +183,17 @@ describe('wizard character library: load failure shows inline error', () => {
 
   test('shows inline error message when library load fails', async () => {
     // Enter create flow and go to step 1
-  document.getElementById('nav-create-story').click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  // Fill minimal valid fields to pass step-0 validation
-  document.getElementById('story-genre').value = 'fantasy';
-  document.getElementById('story-outline').value = 'Outline text';
-  document.getElementById('wizard-next').click();
+    document.getElementById('nav-create-story').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Fill minimal valid fields to pass step-0 validation
+    document.getElementById('story-genre').value = 'fantasy';
+    document.getElementById('story-outline').value = 'Outline text';
+    document.getElementById('wizard-next').click();
 
     await waitFor(() => {
-  const list = document.getElementById('character-list');
-  expect(list).toBeTruthy();
-  expect(list.textContent).toMatch(/Failed to load characters/i);
+      const list = document.getElementById('character-list');
+      expect(list).toBeTruthy();
+      expect(list.textContent).toMatch(/Failed to load characters/i);
     });
   });
 });

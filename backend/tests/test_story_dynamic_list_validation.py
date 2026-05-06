@@ -32,10 +32,12 @@ def _ensure_dynamic_list_item(
 ) -> None:
     """Ensure a dynamic-list item exists with the requested active state."""
 
-    parent = db_session.query(DynamicList).filter_by(list_name=list_name).first()
+    parent = db_session.query(DynamicList).filter_by(
+        list_name=list_name).first()
     if parent is None:
         db_session.add(
-            DynamicList(list_name=list_name, list_label=list_name.replace("_", " "))
+            DynamicList(list_name=list_name,
+                        list_label=list_name.replace("_", " "))
         )
         db_session.commit()
 
@@ -242,7 +244,8 @@ def test_story_inputs_reject_invalid_or_inactive_dynamic_list_values(
 
     response = client.post(
         path,
-        json=_story_payload(title=f"Rejected {field_name}", **{field_name: field_value}),
+        json=_story_payload(
+            title=f"Rejected {field_name}", **{field_name: field_value}),
         headers=regular_user_auth_headers,
     )
 

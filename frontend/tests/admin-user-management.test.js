@@ -6,7 +6,7 @@ import { fireEvent, waitFor } from '@testing-library/dom';
 import { jest } from '@jest/globals';
 
 function setupDOM() {
-  document.body.innerHTML = `
+    document.body.innerHTML = `
     <div id="admin-message-area"></div>
     <div id="snackbar" style="display:none"></div>
     <aside id="admin-sidebar"><ul>
@@ -17,238 +17,238 @@ function setupDOM() {
 }
 
 beforeEach(() => {
-  setupDOM();
-  window.localStorage.setItem('authToken', 'test-token');
-  window.__adminXssTriggered = 0;
+    setupDOM();
+    window.localStorage.setItem('authToken', 'test-token');
+    window.__adminXssTriggered = 0;
 });
 
 afterEach(() => {
-  jest.resetAllMocks();
+    jest.resetAllMocks();
 });
 
 function installApiMock({ users, userRole = 'admin' }) {
-  global.Response = function (body, init = {}) {
-    return {
-      ok: (init.status || 200) >= 200 && (init.status || 200) < 300,
-      status: init.status || 200,
-      json: async () => {
-        try {
-          return JSON.parse(body);
-        } catch {
-          return {};
-        }
-      },
-      text: async () => body,
-      headers: {
-        get: () => (init.headers && init.headers['Content-Type']) ||
-          'application/json'
-      }
+    global.Response = function (body, init = {}) {
+        return {
+            ok: (init.status || 200) >= 200 && (init.status || 200) < 300,
+            status: init.status || 200,
+            json: async () => {
+                try {
+                    return JSON.parse(body);
+                } catch {
+                    return {};
+                }
+            },
+            text: async () => body,
+            headers: {
+                get: () => (init.headers && init.headers['Content-Type']) ||
+                    'application/json'
+            }
+        };
     };
-  };
 
-  let currentUsers = users.map((user) => ({ ...user }));
+    let currentUsers = users.map((user) => ({ ...user }));
 
-  window.fetch = jest.fn(async (url, options = {}) => {
-    if (url.endsWith('/api/v1/users/me/')) {
-      return new Response(
-        JSON.stringify({ id: 999, username: 'admin', role: userRole }),
-        { status: 200 }
-      );
-    }
+    window.fetch = jest.fn(async (url, options = {}) => {
+        if (url.endsWith('/api/v1/users/me/')) {
+            return new Response(
+                JSON.stringify({ id: 999, username: 'admin', role: userRole }),
+                { status: 200 }
+            );
+        }
 
-    if (url.endsWith('/api/v1/admin/management/users/')) {
-      return new Response(JSON.stringify(currentUsers), { status: 200 });
-    }
+        if (url.endsWith('/api/v1/admin/management/users/')) {
+            return new Response(JSON.stringify(currentUsers), { status: 200 });
+        }
 
-    const singleUserMatch = url.match(/\/api\/v1\/admin\/management\/users\/(\d+)$/);
-    if (singleUserMatch) {
-      const userId = Number(singleUserMatch[1]);
-      if (options.method === 'DELETE') {
-        currentUsers = currentUsers.filter((entry) => entry.id !== userId);
-        return new Response('', { status: 204 });
-      }
+        const singleUserMatch = url.match(/\/api\/v1\/admin\/management\/users\/(\d+)$/);
+        if (singleUserMatch) {
+            const userId = Number(singleUserMatch[1]);
+            if (options.method === 'DELETE') {
+                currentUsers = currentUsers.filter((entry) => entry.id !== userId);
+                return new Response('', { status: 204 });
+            }
 
-      const user = currentUsers.find((entry) => entry.id === userId);
-      if (user) {
-        return new Response(JSON.stringify(user), { status: 200 });
-      }
-    }
+            const user = currentUsers.find((entry) => entry.id === userId);
+            if (user) {
+                return new Response(JSON.stringify(user), { status: 200 });
+            }
+        }
 
-    return new Response(JSON.stringify({ detail: 'not found' }), { status: 404 });
-  });
+        return new Response(JSON.stringify({ detail: 'not found' }), { status: 404 });
+    });
 }
 
 async function loadAdminScript() {
-  jest.resetModules();
-  await import('../admin_script.js');
-  document.dispatchEvent(new Event('DOMContentLoaded'));
+    jest.resetModules();
+    await import('../admin_script.js');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
 }
 
 function clickUserManagementNav() {
-  const link = document.querySelector('[data-section="user-management"]');
-  fireEvent.click(link);
+    const link = document.querySelector('[data-section="user-management"]');
+    fireEvent.click(link);
 }
 
 test('escapes username and email when rendering the admin user table', async () => {
-  installApiMock({
-    users: [
-      {
-        id: 7,
-        username: '<img src=x data-xss="username">',
-        email: '" autofocus onfocus="window.__adminXssTriggered=1',
-        role: 'user',
-        is_active: true,
-      }
-    ]
-  });
+    installApiMock({
+        users: [
+            {
+                id: 7,
+                username: '<img src=x data-xss="username">',
+                email: '" autofocus onfocus="window.__adminXssTriggered=1',
+                role: 'user',
+                is_active: true,
+            }
+        ]
+    });
 
-  await loadAdminScript();
-  clickUserManagementNav();
+    await loadAdminScript();
+    clickUserManagementNav();
 
-  await waitFor(() => {
-    expect(document.querySelector('#user-list-table-container table')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('#user-list-table-container table')).toBeTruthy();
+    });
 
-  const container = document.getElementById('user-list-table-container');
-  expect(container.querySelector('img[data-xss="username"]')).toBeNull();
-  expect(container.textContent).toContain('<img src=x data-xss="username">');
-  expect(container.textContent).toContain('" autofocus onfocus="window.__adminXssTriggered=1');
+    const container = document.getElementById('user-list-table-container');
+    expect(container.querySelector('img[data-xss="username"]')).toBeNull();
+    expect(container.textContent).toContain('<img src=x data-xss="username">');
+    expect(container.textContent).toContain('" autofocus onfocus="window.__adminXssTriggered=1');
 });
 
 test('escapes username and email in the edit user modal input values', async () => {
-  installApiMock({
-    users: [
-      {
-        id: 9,
-        username: '<svg onload="window.__adminXssTriggered=1">',
-        email: '" autofocus onfocus="window.__adminXssTriggered=1',
-        role: 'user',
-        is_active: true,
-      }
-    ]
-  });
+    installApiMock({
+        users: [
+            {
+                id: 9,
+                username: '<svg onload="window.__adminXssTriggered=1">',
+                email: '" autofocus onfocus="window.__adminXssTriggered=1',
+                role: 'user',
+                is_active: true,
+            }
+        ]
+    });
 
-  await loadAdminScript();
-  clickUserManagementNav();
+    await loadAdminScript();
+    clickUserManagementNav();
 
-  await waitFor(() => {
-    expect(document.querySelector('.user-edit-details-btn')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('.user-edit-details-btn')).toBeTruthy();
+    });
 
-  fireEvent.click(document.querySelector('.user-edit-details-btn'));
+    fireEvent.click(document.querySelector('.user-edit-details-btn'));
 
-  await waitFor(() => {
-    expect(document.getElementById('editUserDetailsForm')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.getElementById('editUserDetailsForm')).toBeTruthy();
+    });
 
-  const usernameInput = document.getElementById('edit_username');
-  const emailInput = document.getElementById('edit_email');
+    const usernameInput = document.getElementById('edit_username');
+    const emailInput = document.getElementById('edit_email');
 
-  expect(usernameInput.value).toBe('<svg onload="window.__adminXssTriggered=1">');
-  expect(emailInput.value).toBe('" autofocus onfocus="window.__adminXssTriggered=1');
-  expect(usernameInput.getAttribute('onload')).toBeNull();
-  expect(emailInput.getAttribute('autofocus')).toBeNull();
-  expect(emailInput.getAttribute('onfocus')).toBeNull();
+    expect(usernameInput.value).toBe('<svg onload="window.__adminXssTriggered=1">');
+    expect(emailInput.value).toBe('" autofocus onfocus="window.__adminXssTriggered=1');
+    expect(usernameInput.getAttribute('onload')).toBeNull();
+    expect(emailInput.getAttribute('autofocus')).toBeNull();
+    expect(emailInput.getAttribute('onfocus')).toBeNull();
 
-  fireEvent.focus(emailInput);
-  expect(window.__adminXssTriggered).toBe(0);
+    fireEvent.focus(emailInput);
+    expect(window.__adminXssTriggered).toBe(0);
 });
 
 test('edit user modal exposes dialog semantics, traps focus, and restores focus on close', async () => {
-  installApiMock({
-    users: [
-      {
-        id: 12,
-        username: 'Modal User',
-        email: 'modal@example.com',
-        role: 'user',
-        is_active: true,
-      }
-    ]
-  });
+    installApiMock({
+        users: [
+            {
+                id: 12,
+                username: 'Modal User',
+                email: 'modal@example.com',
+                role: 'user',
+                is_active: true,
+            }
+        ]
+    });
 
-  await loadAdminScript();
-  clickUserManagementNav();
+    await loadAdminScript();
+    clickUserManagementNav();
 
-  await waitFor(() => {
-    expect(document.querySelector('.user-edit-details-btn')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('.user-edit-details-btn')).toBeTruthy();
+    });
 
-  const triggerButton = document.querySelector('.user-edit-details-btn');
-  fireEvent.click(triggerButton);
+    const triggerButton = document.querySelector('.user-edit-details-btn');
+    fireEvent.click(triggerButton);
 
-  await waitFor(() => {
-    expect(document.getElementById('editUserDetailsModal')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.getElementById('editUserDetailsModal')).toBeTruthy();
+    });
 
-  const dialog = document.getElementById('editUserDetailsModal');
-  const title = dialog.querySelector('h2');
-  const usernameInput = document.getElementById('edit_username');
-  const cancelButton = dialog.querySelector('.admin-button-secondary');
-  const closeButton = dialog.querySelector('.close-button');
+    const dialog = document.getElementById('editUserDetailsModal');
+    const title = dialog.querySelector('h2');
+    const usernameInput = document.getElementById('edit_username');
+    const cancelButton = dialog.querySelector('.admin-button-secondary');
+    const closeButton = dialog.querySelector('.close-button');
 
-  expect(dialog.getAttribute('role')).toBe('dialog');
-  expect(dialog.getAttribute('aria-modal')).toBe('true');
-  expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
-  expect(document.activeElement).toBe(usernameInput);
+    expect(dialog.getAttribute('role')).toBe('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
+    expect(document.activeElement).toBe(usernameInput);
 
-  closeButton.focus();
-  fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
-  expect(document.activeElement).toBe(cancelButton);
+    closeButton.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(cancelButton);
 
-  fireEvent.keyDown(dialog, { key: 'Tab' });
-  expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(closeButton);
 
-  fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
 
-  await waitFor(() => {
-    expect(document.getElementById('editUserDetailsModal')).toBeNull();
-  });
-  expect(document.activeElement).toBe(triggerButton);
+    await waitFor(() => {
+        expect(document.getElementById('editUserDetailsModal')).toBeNull();
+    });
+    expect(document.activeElement).toBe(triggerButton);
 });
 
 test('delete user uses admin confirmation modal before soft delete', async () => {
-  const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
-  installApiMock({
-    users: [
-      {
-        id: 20,
-        username: 'Delete Me',
-        email: 'delete@example.com',
-        role: 'user',
-        is_active: true,
-      },
-      {
-        id: 21,
-        username: 'Keep Me',
-        email: 'keep@example.com',
-        role: 'user',
-        is_active: true,
-      }
-    ]
-  });
+    const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
+    installApiMock({
+        users: [
+            {
+                id: 20,
+                username: 'Delete Me',
+                email: 'delete@example.com',
+                role: 'user',
+                is_active: true,
+            },
+            {
+                id: 21,
+                username: 'Keep Me',
+                email: 'keep@example.com',
+                role: 'user',
+                is_active: true,
+            }
+        ]
+    });
 
-  await loadAdminScript();
-  clickUserManagementNav();
+    await loadAdminScript();
+    clickUserManagementNav();
 
-  await waitFor(() => {
-    expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeTruthy();
+    });
 
-  fireEvent.click(document.querySelector('.user-delete-btn[data-user-id="20"]'));
+    fireEvent.click(document.querySelector('.user-delete-btn[data-user-id="20"]'));
 
-  await waitFor(() => {
-    expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('[id^="adminActionDialog-"]')).toBeTruthy();
+    });
 
-  const dialog = document.querySelector('[id^="adminActionDialog-"]');
-  expect(dialog.textContent).toContain('Delete user 20?');
-  fireEvent.click(dialog.querySelector('.admin-button-danger'));
+    const dialog = document.querySelector('[id^="adminActionDialog-"]');
+    expect(dialog.textContent).toContain('Delete user 20?');
+    fireEvent.click(dialog.querySelector('.admin-button-danger'));
 
-  await waitFor(() => {
-    expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeNull();
-    expect(document.querySelector('.user-delete-btn[data-user-id="21"]')).toBeTruthy();
-  });
+    await waitFor(() => {
+        expect(document.querySelector('.user-delete-btn[data-user-id="20"]')).toBeNull();
+        expect(document.querySelector('.user-delete-btn[data-user-id="21"]')).toBeTruthy();
+    });
 
-  expect(confirmSpy).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
 });

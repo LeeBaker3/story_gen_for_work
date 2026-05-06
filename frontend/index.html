@@ -41,6 +41,7 @@
                         <button type="button" id="toggle-login-password" aria-label="Show password" class="password-toggle">Show</button>
                     </div>
                     <button type="submit" class="action-button-info">Login</button>
+                    <p class="auth-switch-message"><a href="#" id="show-forgot-password-link">Forgot password?</a></p>
                     <p class="auth-switch-message">Don't have an account? <a href="#" id="show-signup-link">Sign up</a></p>
                 </form>
                 <!-- Signup Form -->
@@ -63,6 +64,33 @@
                     </div>
                     <button type="submit" id="signup-submit-button" class="action-button-info">Sign Up</button>
                     <p class="auth-switch-message">Already have an account? <a href="#" id="show-login-link">Login</a></p>
+                </form>
+                <form id="forgot-password-form" class="auth-form" style="display:none;">
+                    <h3>Forgot Password</h3>
+                    <label for="forgot-password-identifier">Email or Username:</label>
+                    <input type="text" id="forgot-password-identifier" name="identifier" required>
+                    <button type="submit" class="action-button-info">Send Reset Token</button>
+                    <p class="auth-switch-message">If the account exists, the app will issue a reset token. In local development, the reset form may be prefilled automatically.</p>
+                    <p class="auth-switch-message">Already have a reset token? <a href="#" id="show-reset-password-link">Reset password</a></p>
+                    <p class="auth-switch-message">Remembered your password? <a href="#" id="forgot-password-back-to-login-link">Back to login</a></p>
+                </form>
+                <form id="reset-password-form" class="auth-form" style="display:none;" novalidate>
+                    <h3>Reset Password</h3>
+                    <label for="reset-password-token">Reset Token:</label>
+                    <input type="text" id="reset-password-token" name="token" required>
+                    <label for="reset-password-new-password">New Password:</label>
+                    <div class="password-field">
+                        <input type="password" id="reset-password-new-password" name="new_password" required>
+                        <button type="button" id="toggle-reset-password" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <label for="reset-password-confirm-password">Confirm New Password:</label>
+                    <div class="password-field">
+                        <input type="password" id="reset-password-confirm-password" name="confirm_password" required>
+                        <button type="button" id="toggle-reset-password-confirm" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <button type="submit" class="action-button-info">Update Password</button>
+                    <p class="auth-switch-message">Need a token first? <a href="#" id="reset-password-request-link">Request one</a></p>
+                    <p class="auth-switch-message">Back to <a href="#" id="reset-password-back-to-login-link">login</a></p>
                 </form>
             </div>
         </section>
@@ -192,6 +220,12 @@
                         <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
                     </div>
                     <div>
+                        <label for="story-writing-style">Writing Style</label>
+                        <select id="story-writing-style" name="writing_style">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
                         <label for="story-image-style">Image Style <span class="required-badge">Required</span></label>
                         <select id="story-image-style" name="image_style" required aria-describedby="story-image-style-error">
                             <!-- Options will be populated dynamically -->
@@ -232,6 +266,32 @@
                             <option value="full-page-overlay" selected>Full-page overlay</option>
                             <option value="horizontal-split">Horizontal split</option>
                             <option value="vertical-split">Vertical split</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-image-fit">Image Framing</label>
+                        <select id="story-image-fit" name="image_fit">
+                            <option value="" selected>Default framing</option>
+                            <option value="Fill page">Fill page</option>
+                            <option value="Keep artwork contained">Keep artwork contained</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-cover-title-placement">Cover Title Placement</label>
+                        <select id="story-cover-title-placement" name="cover_title_placement">
+                            <option value="" selected>Default title placement</option>
+                            <option value="Top">Top</option>
+                            <option value="Center">Center</option>
+                            <option value="Bottom">Bottom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-readability-treatment">Readability Treatment</label>
+                        <select id="story-readability-treatment" name="readability_treatment">
+                            <option value="" selected>Default readability treatment</option>
+                            <option value="High-contrast box">High-contrast box</option>
+                            <option value="Soft shadow">Soft shadow</option>
+                            <option value="Subtle gradient band">Subtle gradient band</option>
                         </select>
                     </div>
                     <div>
@@ -422,8 +482,29 @@
             <div id="story-preview-content">
                 <!-- Generated story pages will be displayed here -->
             </div>
-            <button id="export-pdf-button" class="action-button-info" style="display:none;">Export as PDF</button>
+            <div class="story-preview-actions">
+                <button id="preview-pdf-button" class="action-button-secondary" style="display:none;">Preview PDF</button>
+                <button id="export-pdf-button" class="action-button-info" style="display:none;">Export as PDF</button>
+            </div>
         </section>
+
+        <div id="pdf-preview-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+        <div id="pdf-preview-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="pdf-preview-title" aria-hidden="true">
+            <div class="modal-content pdf-preview-modal-content">
+                <div class="modal-header">
+                    <h3 id="pdf-preview-title">PDF Preview</h3>
+                    <button type="button" id="pdf-preview-close" class="action-button-secondary">Close</button>
+                </div>
+                <p id="pdf-preview-status" class="pdf-preview-status" role="status" aria-live="polite">Preparing PDF preview...</p>
+                <div id="pdf-preview-frame-container" class="pdf-preview-frame-container" hidden>
+                    <iframe id="pdf-preview-frame" title="Story PDF preview" class="pdf-preview-frame"></iframe>
+                </div>
+                <div id="pdf-preview-error" class="pdf-preview-error" role="alert" hidden></div>
+                <div class="modal-actions">
+                    <button type="button" id="pdf-preview-download" class="action-button-primary" disabled>Download PDF</button>
+                </div>
+            </div>
+        </div>
 
         <section id="browse-stories-section" style="display:none;">
             <h2>My Stories</h2>

@@ -1,4 +1,6 @@
 import os
+import secrets
+from hashlib import sha256
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 
@@ -21,6 +23,7 @@ SECRET_KEY = os.getenv(
     "SECRET_KEY", "your-default-secret-key")  # Should be in .env
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -36,6 +39,66 @@ def verify_password(plain_password, hashed_password):
 
 def get_password_hash(password):
     return pwd_context.hash(password)
+
+
+def hash_password_reset_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_password_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def password_reset_expiry() -> datetime:
+    return datetime.now(UTC) + timedelta(
+        minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    )
+
+
+def should_expose_password_reset_token_preview() -> bool:
+    return os.getenv("TESTING") == "true" or os.getenv("RUN_ENV", "dev") != "prod"
+
+
+def issue_password_reset_token(db: Session, user: schemas.User) -> tuple[str, datetime]:
+    token = create_password_reset_token()
+    expires_at = password_reset_expiry()
+    crud.set_user_password_reset_token(
+        db,
+        user,
+        token_hash=hash_password_reset_token(token),
+        expires_at=expires_at,
+    )
+    return token, expires_at
+
+
+def issue_password_reset_token_preview() -> str:
+    return create_password_reset_token()
+
+
+def get_valid_password_reset_user(db: Session, token: str):
+    user = crud.get_user_by_password_reset_token_hash(
+        db,
+        hash_password_reset_token(token),
+    )
+    if not user:
+        return None
+
+    expires_at = user.password_reset_token_expires_at
+    if expires_at is None:
+        return None
+
+    if expires_at.tzinfo is None or expires_at.tzinfo.utcoffset(expires_at) is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    if expires_at < datetime.now(UTC):
+        crud.clear_user_password_reset_token(db, user)
+        return None
+
+    return user
+
+
+def reset_user_password(db: Session, user: schemas.User, new_password: str):
+    return crud.update_user_password(db, user, get_password_hash(new_password))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

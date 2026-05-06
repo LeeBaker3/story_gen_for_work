@@ -1,7 +1,7 @@
 import { fireEvent } from '@testing-library/dom';
 
 function mountWizardWithModal() {
-    document.body.innerHTML = `
+  document.body.innerHTML = `
     <header>
       <nav>
         <div class="nav-buttons">
@@ -52,30 +52,30 @@ function mountWizardWithModal() {
 }
 
 describe('wizard step indicator clicks', () => {
-    beforeEach(async () => {
-        window.localStorage.setItem('authToken', 't');
-        mountWizardWithModal();
-        await import('../../frontend/script.js');
-        document.dispatchEvent(new Event('DOMContentLoaded'));
-    });
+  beforeEach(async () => {
+    window.localStorage.setItem('authToken', 't');
+    mountWizardWithModal();
+    await import('../../frontend/script.js');
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+  });
 
-    test('clicking a reachable step pill navigates and closes any open character modal', () => {
-      fireEvent.click(document.getElementById('wizard-next'));
+  test('clicking a reachable step pill navigates and closes any open character modal', () => {
+    fireEvent.click(document.getElementById('wizard-next'));
 
-        // Simulate opening modal
-        const modal = document.getElementById('char-modal');
-        const backdrop = document.getElementById('char-modal-backdrop');
-        modal.classList.add('open');
-        backdrop.classList.add('open');
-        document.body.dataset.charModalState = 'open';
+    // Simulate opening modal
+    const modal = document.getElementById('char-modal');
+    const backdrop = document.getElementById('char-modal-backdrop');
+    modal.classList.add('open');
+    backdrop.classList.add('open');
+    document.body.dataset.charModalState = 'open';
 
-      // Click reachable step 0 pill
-      const step0 = Array.from(document.querySelectorAll('#wizard-steps .wizard-step')).find(d => d.getAttribute('data-step') === '0');
-      fireEvent.click(step0);
+    // Click reachable step 0 pill
+    const step0 = Array.from(document.querySelectorAll('#wizard-steps .wizard-step')).find(d => d.getAttribute('data-step') === '0');
+    fireEvent.click(step0);
 
-        expect(modal.classList.contains('open')).toBe(false);
-        expect(backdrop.classList.contains('open')).toBe(false);
-        expect(document.body.dataset.charModalState).toBeUndefined();
-      expect(document.getElementById('step-0-basics').style.display).toBe('block');
-    });
+    expect(modal.classList.contains('open')).toBe(false);
+    expect(backdrop.classList.contains('open')).toBe(false);
+    expect(document.body.dataset.charModalState).toBeUndefined();
+    expect(document.getElementById('step-0-basics').style.display).toBe('block');
+  });
 });

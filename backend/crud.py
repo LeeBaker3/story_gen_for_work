@@ -98,6 +98,7 @@ def validate_story_dynamic_list_values(
 
     return resolved_values
 
+
 def get_story_editor_settings(story: Story) -> Dict[str, Any]:
     """Return normalized document editor settings for a story."""
 
@@ -126,7 +127,14 @@ def get_effective_page_editor_settings(story: Story, page: Page) -> Dict[str, An
 
     settings = get_story_editor_settings(story)
     page_state = get_page_editor_state(page)
-    for key in ("text_position", "font_family", "font_size", "font_color"):
+    for key in (
+        "text_position",
+        "text_alignment",
+        "font_family",
+        "font_size",
+        "font_color",
+        "text_box_opacity",
+    ):
         value = page_state.get(key)
         if value not in (None, ""):
             settings[key] = value
@@ -171,6 +179,15 @@ def get_user_by_username(db: Session, username: str):
         User.username == username).first()
 
 
+def get_user_by_password_reset_token_hash(
+    db: Session,
+    token_hash: str,
+) -> Optional[User]:
+    return db.query(User).filter(
+        User.password_reset_token_hash == token_hash
+    ).first()
+
+
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = pwd_context.hash(user.password)
     db_user = User(
@@ -185,6 +202,40 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+def set_user_password_reset_token(
+    db: Session,
+    user: User,
+    *,
+    token_hash: str,
+    expires_at: datetime,
+) -> User:
+    user.password_reset_token_hash = token_hash
+    user.password_reset_token_expires_at = expires_at
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def clear_user_password_reset_token(db: Session, user: User) -> User:
+    user.password_reset_token_hash = None
+    user.password_reset_token_expires_at = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_password(db: Session, user: User, hashed_password: str) -> User:
+    user.hashed_password = hashed_password
+    user.password_reset_token_hash = None
+    user.password_reset_token_expires_at = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
 
 # Admin CRUD for Users
 
@@ -236,6 +287,8 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
 
     db_story = Story(
         title=final_title,  # Title can be None for drafts
+        cover_subtitle=story_data.cover_subtitle,
+        cover_author=story_data.cover_author,
         genre=resolved_values["genre"],
         # Changed from outline to story_outline
         story_outline=story_data.story_outline,
@@ -279,6 +332,8 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
 
     db_story_draft = Story(
         title=story_data.title,  # Can be None or a preliminary title
+        cover_subtitle=story_data.cover_subtitle,
+        cover_author=story_data.cover_author,
         genre=resolved_values["genre"],
         story_outline=story_data.story_outline,
         main_characters=jsonable_encoder(story_data.main_characters),
@@ -409,6 +464,101 @@ def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[S
     return None
 
 
+def _build_editor_state_for_page_update(
+    db_page: Optional[Page],
+    page_update: schemas.StoryEditorPageUpdate,
+    fallback_text: str,
+    fallback_image_path: Optional[str],
+) -> Dict[str, Any]:
+    """Build a page editor state while preserving restore baselines."""
+
+    state = get_page_editor_state(db_page) if db_page is not None else {}
+    if page_update.editor_state is not None:
+        state.update(page_update.editor_state.model_dump(exclude_none=True))
+    if not state.get("original_text"):
+        state["original_text"] = fallback_text
+    if not state.get("original_image_path"):
+        state["original_image_path"] = fallback_image_path
+    return state
+
+
+def _replace_story_editor_pages(
+    db: Session,
+    db_story: Story,
+    editor_update: schemas.StoryEditorUpdate,
+) -> None:
+    """Replace a story's page sequence using the editor payload order."""
+
+    existing_pages = {
+        page.id: page
+        for page in db.query(Page).filter(Page.story_id == db_story.id).all()
+    }
+    if not editor_update.pages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Editor page list cannot be empty.",
+        )
+
+    cover_page = next(
+        (page for page in existing_pages.values() if page.page_number == 0),
+        None,
+    )
+    first_page_id = editor_update.pages[0].id
+    if cover_page is not None and first_page_id != cover_page.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cover page must remain first.",
+        )
+
+    retained_page_ids = set()
+    for index, page_update in enumerate(editor_update.pages):
+        db_page = None
+        if page_update.id is not None:
+            db_page = existing_pages.get(page_update.id)
+            if db_page is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Page not found",
+                )
+            retained_page_ids.add(db_page.id)
+        else:
+            db_page = Page(story_id=db_story.id, page_number=index, text="")
+            db.add(db_page)
+
+        next_page_number = 0 if index == 0 else index
+        next_text = page_update.text if page_update.text is not None else db_page.text
+        next_image_description = (
+            page_update.image_description
+            if page_update.image_description is not None
+            else db_page.image_description
+        )
+        next_image_path = (
+            page_update.image_path
+            if page_update.image_path is not None
+            else db_page.image_path
+        )
+
+        db_page.page_number = next_page_number
+        db_page.text = next_text or ""
+        db_page.image_description = next_image_description
+        db_page.image_path = next_image_path
+        db_page.editor_state = _build_editor_state_for_page_update(
+            db_page if page_update.id is not None else None,
+            page_update,
+            fallback_text=db_page.text,
+            fallback_image_path=db_page.image_path,
+        )
+
+        if next_page_number == 0 and db_page.text.strip():
+            db_story.title = db_page.text.strip()
+
+    for page_id, db_page in existing_pages.items():
+        if page_id not in retained_page_ids:
+            db.delete(db_page)
+
+    db_story.num_pages = max(len(editor_update.pages) - 1, 0)
+
+
 def save_story_editor(
     db: Session,
     story_id: int,
@@ -431,12 +581,28 @@ def save_story_editor(
             title_page.text = db_story.title
             title_page.editor_state = get_page_editor_state(title_page)
 
+    if editor_update.cover_subtitle is not None:
+        db_story.cover_subtitle = editor_update.cover_subtitle.strip() or None
+
+    if editor_update.cover_author is not None:
+        db_story.cover_author = editor_update.cover_author.strip() or None
+
     if editor_update.editor_settings is not None:
         current_settings = get_story_editor_settings(db_story)
         current_settings.update(
             editor_update.editor_settings.model_dump(exclude_none=True)
         )
         db_story.editor_settings = current_settings
+
+    if editor_update.replace_pages:
+        _replace_story_editor_pages(
+            db=db,
+            db_story=db_story,
+            editor_update=editor_update,
+        )
+        db.commit()
+        db.refresh(db_story)
+        return db_story
 
     pages_by_id = {
         page.id: page
@@ -455,11 +621,12 @@ def save_story_editor(
             if db_page.page_number == 0:
                 db_story.title = page_update.text.strip() or db_story.title
 
-        state = get_page_editor_state(db_page)
-        if page_update.editor_state is not None:
-            state.update(
-                page_update.editor_state.model_dump(exclude_none=True))
-        db_page.editor_state = state
+        db_page.editor_state = _build_editor_state_for_page_update(
+            db_page,
+            page_update,
+            fallback_text=db_page.text,
+            fallback_image_path=db_page.image_path,
+        )
 
     db.commit()
     db.refresh(db_story)
@@ -1225,7 +1392,8 @@ def repair_public_character_thumbnail(db: Session, character: Character) -> str:
 
         ext = os.path.splitext(source_abs)[1].lower() or ".png"
         dest_rel_dir = os.path.join(
-            "images", f"user_{character.user_id}", "characters", str(character.id)
+            "images", f"user_{character.user_id}", "characters", str(
+                character.id)
         )
         dest_rel_path = os.path.join(dest_rel_dir, f"{uuid.uuid4()}{ext}")
 
