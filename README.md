@@ -161,6 +161,13 @@ Notes
 - Some tests rely on /static_content being mounted. If RUN_ENV=test is set, also set MOUNT_DATA_STATIC=true to enable static serving in tests.
  - Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
 
+UI E2E (real app + Playwright)
+- The browser harness lives under `backend/tests/e2e` and starts the real FastAPI app with `/static` mounted from `frontend/`.
+- Each run uses a temporary file-backed SQLite database plus temp data/private-data directories.
+- Seeded state includes one admin user, one regular user, and one completed story for deterministic library and admin checks.
+- Image generation is disabled in the E2E environment.
+- Run locally with `bash scripts/run-e2e-tests.sh`.
+
 ### OpenAI smoke test (manual)
 Use the real-API smoke test to validate your API key, text generation, and image endpoints:
 - Run: `python scripts/smoke_test_openai.py`

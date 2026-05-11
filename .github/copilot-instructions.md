@@ -38,6 +38,10 @@ Copilot should **maintain consistency between frontend and backend code** and fo
 - Maintain contract parity (types, field names, status codes) across backend and frontend.
 - Provide safe defaults and guard rails (input validation, error handling, timeouts).
 - Surface TODOs as code comments with clear next actions.
+- Maintain the UI E2E test frame as a first-class repo artifact. Keep it
+  exercising the frontend and backend together against a dedicated test
+  database, and update the frame whenever wizard, preview, editor, auth, or
+  story-generation flows change.
 - Co‑generate:
 	•	Endpoint code + model/schema + validation
 	•	Matching frontend API wrapper + UI wiring
@@ -134,6 +138,10 @@ Example:
 3. Run Tests & Linting
 - Run all unit tests (pytest, Jest).
 - Lint Python (flake8, black) and Frontend (TBC). Run and fix issues as needed
+- Run the UI E2E frame before merge-sensitive changes once it exists.
+- When the dedicated GitHub Actions E2E check is available, treat it as a
+	required merge gate for PRs that touch frontend, backend, or cross-stack
+	flows.
 
 
 4. Commit Format
