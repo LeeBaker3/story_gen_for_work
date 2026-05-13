@@ -16,8 +16,11 @@ from .metrics import (
 )
 
 
-def _text_position_guidance(text_position: str) -> str:
-    """Return prompt guidance to leave readable space for overlaid text."""
+def _text_position_guidance(
+    text_position: str,
+    layout_mode: str | None = None,
+) -> str:
+    """Return prompt guidance for readable text overlays by layout mode."""
 
     old_map = {
         "top": "top-center",
@@ -36,12 +39,30 @@ def _text_position_guidance(text_position: str) -> str:
     if horizontal not in {"left", "center", "right"}:
         horizontal = "center"
 
+    raw_layout_mode = layout_mode or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    if hasattr(raw_layout_mode, "value"):
+        raw_layout_mode = raw_layout_mode.value
+    normalized_layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        normalized_layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+
     if vertical == "middle" and horizontal == "center":
+        if is_full_page_overlay:
+            return (
+                "Keep the central area calmer, less visually busy, and "
+                "tonally supportive so story text can overlay clearly."
+            )
         return (
             "Keep the central area visually calm and uncluttered so story text "
             "can be placed there clearly."
         )
     area = f"{vertical} {horizontal}" if horizontal != "center" else vertical
+    if is_full_page_overlay:
+        return (
+            f"Keep the {area} area calmer, less visually busy, and tonally "
+            "supportive for overlaid story text."
+        )
     return (
         f"Leave clear, readable visual space in the {area} area of the "
         "composition for overlaid story text."
@@ -71,6 +92,16 @@ def _editor_preference_guidance(
     readability_treatment = str(
         editor_settings.get("readability_treatment") or ""
     ).strip().lower()
+    raw_layout_mode = (
+        editor_settings.get("layout_mode")
+        or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+    if hasattr(raw_layout_mode, "value"):
+        raw_layout_mode = raw_layout_mode.value
+    normalized_layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        normalized_layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
     if readability_treatment == "high-contrast box":
         guidance_parts.append(
             "Leave enough tonal separation behind the text area for a high-"
@@ -92,10 +123,16 @@ def _editor_preference_guidance(
         editor_settings.get("cover_title_placement") or ""
     ).strip().lower()
     if is_title_page and cover_title_placement in {"top", "center", "bottom"}:
-        guidance_parts.append(
-            f"Reserve a cleaner {cover_title_placement} area for the cover "
-            "title placement."
-        )
+        if is_full_page_overlay:
+            guidance_parts.append(
+                f"Keep the {cover_title_placement} area calmer and easier "
+                "to read for cover title placement."
+            )
+        else:
+            guidance_parts.append(
+                f"Reserve a cleaner {cover_title_placement} area for the "
+                "cover title placement."
+            )
 
     return " ".join(guidance_parts)
 
@@ -214,7 +251,8 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             f"Completed story content generation for task_id: {task_id}")
         editor_settings = story_content_input.get('editor_settings') or {}
         text_position_guidance = _text_position_guidance(
-            editor_settings.get('text_position', 'bottom')
+            editor_settings.get('text_position', 'bottom'),
+            editor_settings.get('layout_mode'),
         )
 
         # Step 3: Generate Page Images

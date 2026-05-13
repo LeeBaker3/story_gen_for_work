@@ -214,6 +214,7 @@ def test_generate_story_from_chatgpt_includes_new_wizard_preferences_in_prompt(
     story_input['writing_style'] = 'Playful'
     story_input['editor_settings'] = {
         'text_position': 'top-center',
+        'layout_mode': 'full-page-overlay',
         'image_fit': 'Keep artwork contained',
         'cover_title_placement': 'Top',
         'readability_treatment': 'High-contrast box',
@@ -225,7 +226,36 @@ def test_generate_story_from_chatgpt_includes_new_wizard_preferences_in_prompt(
     assert 'Optional writing style: Playful.' in prompt
     assert 'artwork can sit contained on the page without awkward cropping' in prompt
     assert 'high-contrast text box' in prompt
+    assert 'less visually busy, and tonally supportive for story text overlay' in prompt
+    assert 'keep the top area calmer and easier to read for title placement' in prompt.lower()
     assert 'title-page cover guidance' in prompt
+
+
+@patch('backend.ai_services._generate_story_text_via_chat_completions')
+@patch('backend.ai_services._use_openai_responses_api', return_value=False)
+@patch('backend.ai_services._ensure_client_available')
+def test_generate_story_from_chatgpt_keeps_reserved_section_guidance_for_split_layouts(
+    mock_ensure_client_available,
+    mock_use_openai_responses_api,
+    mock_generate_via_chat_completions,
+):
+    """Split layouts should keep stronger reserved-space prompt wording."""
+
+    mock_generate_via_chat_completions.return_value = (
+        '{"Title": "Moonlit Rescue", "Pages": []}'
+    )
+    story_input = _build_story_input()
+    story_input['editor_settings'] = {
+        'text_position': 'top-center',
+        'layout_mode': 'horizontal-split',
+        'cover_title_placement': 'Top',
+    }
+
+    ai_services.generate_story_from_chatgpt(story_input)
+
+    prompt = mock_generate_via_chat_completions.call_args.args[0]
+    assert 'clearly reserved text section for story text overlay' in prompt
+    assert 'reserve a cleaner top area for title placement' in prompt.lower()
 
 
 @patch('backend.ai_services._truncate_prompt', side_effect=lambda p, max_length=4000: p)

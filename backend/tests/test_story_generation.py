@@ -687,8 +687,8 @@ async def test_generate_story_as_background_task_passes_correct_references():
                 # Assert
                 # Check that generate_image_for_page was called with the correct arguments for each page
                 text_guidance = (
-                    " Leave clear, readable visual space in the bottom area "
-                    "of the composition for overlaid story text."
+                    " Keep the bottom area calmer, less visually busy, and "
+                    "tonally supportive for overlaid story text."
                 )
                 expected_calls = [
                     call(
@@ -1368,7 +1368,10 @@ async def test_generate_story_as_background_task_uses_wizard_text_position_guida
         image_style=schemas.ImageStyle.DEFAULT,
         word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
         text_density=schemas.TextDensity.STANDARD,
-        editor_settings=schemas.StoryEditorSettings(text_position="top"),
+        editor_settings=schemas.StoryEditorSettings(
+            text_position="top",
+            layout_mode=schemas.LayoutMode.FULL_PAGE_OVERLAY,
+        ),
     )
 
     with patch('backend.story_generation_service.database.get_db') as mock_get_db:
@@ -1403,6 +1406,8 @@ async def test_generate_story_as_background_task_uses_wizard_text_position_guida
                     "page_content"
                 ]
                 assert "top area" in page_content.lower()
+                assert "tonally supportive" in page_content.lower()
+                assert "readable visual space" not in page_content.lower()
 
 
 @pytest.mark.asyncio
@@ -1463,4 +1468,4 @@ async def test_generate_story_as_background_task_uses_new_editor_preference_guid
                 ]
                 assert "contained" in page_content.lower()
                 assert "high-contrast text box" in page_content.lower()
-                assert "cleaner top area" in page_content.lower()
+                assert "top area calmer and easier to read" in page_content.lower()

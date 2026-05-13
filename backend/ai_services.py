@@ -438,6 +438,16 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
 """
 
     editor_settings = story_input.get('editor_settings') or {}
+    raw_layout_mode = (
+        editor_settings.get('layout_mode')
+        or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+    if hasattr(raw_layout_mode, 'value'):
+        raw_layout_mode = raw_layout_mode.value
+    layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
     default_text_position = str(
         editor_settings.get('text_position', 'bottom')
     ).strip().lower()
@@ -462,10 +472,16 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         editor_settings.get('cover_title_placement') or ''
     ).strip().lower()
     if cover_title_placement in {'top', 'center', 'bottom'}:
-        cover_title_instruction = (
-            f'On the title page cover, leave the {cover_title_placement} area '
-            'cleaner and easier to read for title placement.'
-        )
+        if is_full_page_overlay:
+            cover_title_instruction = (
+                f'On the title page cover, keep the {cover_title_placement} '
+                'area calmer and easier to read for title placement.'
+            )
+        else:
+            cover_title_instruction = (
+                f'On the title page cover, reserve a cleaner '
+                f'{cover_title_placement} area for title placement.'
+            )
     else:
         cover_title_instruction = ''
 
@@ -490,11 +506,18 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
         readability_treatment, ''
     )
 
-    text_layout_instruction = (
-        f"Default page text placement is {default_text_position}. "
-        "Every Image_description should compose the artwork so this area stays readable "
-        "and less visually busy for story text overlay."
-    )
+    if is_full_page_overlay:
+        text_layout_instruction = (
+            f"Default page text placement is {default_text_position}. "
+            "Every Image_description should compose the artwork so this area stays calmer, "
+            "less visually busy, and tonally supportive for story text overlay."
+        )
+    else:
+        text_layout_instruction = (
+            f"Default page text placement is {default_text_position}. "
+            "Every Image_description should compose the artwork so this area stays readable "
+            "and can function as a clearly reserved text section for story text overlay."
+        )
     layout_preference_guidance = " ".join(
         instruction
         for instruction in [

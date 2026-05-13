@@ -951,6 +951,7 @@ def test_regenerate_story_page_image_uses_text_position_guidance(
             "font_color": "#ffffff",
             "text_position": "bottom",
             "text_box_opacity": 0.6,
+            "layout_mode": "full-page-overlay",
         },
     )
     db_session.add(story)
@@ -982,4 +983,7 @@ def test_regenerate_story_page_image_uses_text_position_guidance(
     assert response.status_code == 200, response.text
     assert response.json()[
         "image_path"] == "images/user_1/story_1/new-page1.png"
-    assert "top area" in mock_generate.await_args.kwargs["page_content"]
+    page_content = mock_generate.await_args.kwargs["page_content"].lower()
+    assert "top area" in page_content
+    assert "less visually busy" in page_content
+    assert "readable visual space" not in page_content

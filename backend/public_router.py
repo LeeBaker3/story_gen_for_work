@@ -542,7 +542,10 @@ async def regenerate_story_page_image_api(
     effective_settings = crud.get_effective_page_editor_settings(
         db_story, db_page)
     text_position = str(effective_settings.get("text_position") or "bottom")
-    guidance = story_generation_service._text_position_guidance(text_position)
+    guidance = story_generation_service._text_position_guidance(
+        text_position,
+        effective_settings.get("layout_mode"),
+    )
     style_reference = db_story.image_style or schemas.ImageStyle.DEFAULT.value
     base_prompt = db_page.image_description or db_page.text or db_story.title
     prompt_content = f"{base_prompt}. {guidance}"
