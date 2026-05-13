@@ -32,12 +32,25 @@ function mountWizardDom() {
         <textarea id="story-outline"></textarea>
       </section>
       <section id="step-1-characters" style="display:none;">
-        <div id="character-library-panel" style="display:none;">
-          <input id="character-search" />
-          <div id="character-list"></div>
-          <div id="character-pagination"></div>
+        <div id="main-characters-fieldset">
+          <div class="character-entry">
+            <input id="char-name-1" class="char-name" value="Robin" />
+            <button type="button" class="wizard-character-picker-trigger" data-character-index="1" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
+          </div>
         </div>
-        <div id="main-characters-fieldset"></div>
+        <div id="selected-characters-chipbar"><em>No existing characters selected.</em></div>
+        <button type="button" id="character-create-from-current-btn">Save form characters</button>
+        <div id="character-picker-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+        <div id="character-picker-modal" class="modal" aria-hidden="true">
+          <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-picker-title">
+            <h3 id="character-picker-title">Choose Existing Character</h3>
+            <button type="button" id="character-picker-close">Close</button>
+            <input id="character-search" />
+            <button type="button" id="character-sync-btn">Sync from stories</button>
+            <div id="character-list"></div>
+            <div id="character-pagination"></div>
+          </div>
+        </div>
       </section>
       <section id="step-2-options" style="display:none;"></section>
       <section id="step-3-review" style="display:none;"></section>
@@ -91,6 +104,8 @@ describe('wizard character library search debounce', () => {
 
     // Move to step 1 (Characters) to initialize the library and perform initial load
     document.getElementById('wizard-next').click();
+
+    fireEvent.click(document.querySelector('.wizard-character-picker-trigger[data-character-index="1"]'));
 
     await waitFor(() => {
       // Pagination should be rendered by initial load

@@ -142,12 +142,17 @@
                     <fieldset id="main-characters-fieldset" class="modern-fieldset">
                         <legend>Main Characters (at least 1)</legend>
                         <div class="character-entry">
-                            <div>
+                            <div class="character-entry-header">
+                                <h4 class="character-entry-title">Character 1</h4>
+                                <div class="character-entry-actions wizard-character-row-actions">
+                                    <button type="button" class="character-details-toggle action-button-info" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                                    <button type="button" class="wizard-character-picker-trigger action-button-secondary" data-character-index="1" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label for="char-name-1">Name <span class="required-badge">Required</span></label>
                                 <input type="text" id="char-name-1" name="char_name_1" class="char-name" required aria-describedby="main-characters-error">
                             </div>
-                            <!-- Collapsible section for character details -->
-                            <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
                             <div id="char-details-1" class="character-details-fields" style="display:none;">
                                 <div>
                                     <label for="char-age-1">Age</label>
@@ -176,26 +181,26 @@
                     </fieldset>
                     <div id="main-characters-error" class="field-error" role="alert" aria-live="polite"></div>
                     <button type="button" id="add-character-button" class="action-button-info">Add Another Character</button>
-                    <!-- Show character library in this step -->
-                    <div id="character-library-panel" style="display:none;" aria-label="Character library">
-                        <div class="library-header">
-                            <h3>Your Characters</h3>
-                            <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
-                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
-                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
-                <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
-                            </div>
+                    <div id="wizard-character-library-tools" class="wizard-character-library-tools" aria-label="Selected existing characters">
+                        <div id="selected-characters-chipbar" class="selected-characters-chipbar" aria-live="polite"><em>No existing characters selected.</em></div>
+                        <div class="wizard-character-library-actions">
+                            <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
                         </div>
-            <p class="character-hint">Tip: Click a card to load its details into the form. Cmd/Ctrl+Click to multi-select for reuse.</p>
-                        <div id="character-list" class="character-grid" aria-live="polite"></div>
-                        <div id="character-pagination" class="pagination-controls"></div>
-                        <div id="character-detail-modal" class="modal" style="display:none;">
-                            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-detail-title">
-                                <h4 id="character-detail-title"></h4>
-                                <div id="character-detail-body"></div>
-                                <button type="button" id="regenerate-character-image-btn" class="action-button-info">Regenerate Image</button>
-                                <button type="button" id="close-character-detail" class="action-button-secondary">Close</button>
+                    </div>
+                    <div id="character-picker-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+                    <div id="character-picker-modal" class="modal" aria-hidden="true">
+                        <div class="modal-content wizard-character-picker-modal-content" role="dialog" aria-modal="true" aria-labelledby="character-picker-title">
+                            <div class="modal-header">
+                                <h3 id="character-picker-title">Choose Existing Character</h3>
+                                <button type="button" id="character-picker-close" class="action-button-secondary">Close</button>
                             </div>
+                            <div class="library-header wizard-character-picker-controls">
+                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
+                                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
+                            </div>
+                            <p class="character-hint">Select one existing character to fill the current story row.</p>
+                            <div id="character-list" class="character-grid" aria-live="polite"></div>
+                            <div id="character-pagination" class="pagination-controls"></div>
                         </div>
                     </div>
                 </div>

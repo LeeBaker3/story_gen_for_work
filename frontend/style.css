@@ -1701,6 +1701,125 @@ button.wizard-step {
     animation: fadeInUp 480ms var(--easing);
 }
 
+.wizard-character-row-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: stretch;
+}
+
+.wizard-character-row-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 2.75rem;
+    text-align: center;
+    align-self: stretch;
+}
+
+.wizard-character-library-tools {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.9rem;
+}
+
+.wizard-character-library-actions {
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.selected-characters-chipbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+    box-shadow: var(--shadow-md);
+}
+
+.selected-character-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: 100%;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid rgba(79, 140, 255, 0.7);
+    border-radius: 999px;
+    background: rgba(35, 39, 47, 0.95);
+    color: var(--text);
+}
+
+.selected-character-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.selected-character-chip .remove-chip {
+    align-self: center;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1;
+    box-shadow: none;
+    text-transform: none;
+}
+
+.selected-character-chip .remove-chip:hover {
+    transform: none;
+    color: var(--text);
+}
+
+.wizard-character-picker-modal-content {
+    width: min(760px, calc(100% - 24px));
+    max-height: min(85vh, 760px);
+    min-height: 0;
+}
+
+.wizard-character-picker-modal-content #character-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    align-content: start;
+    margin-bottom: 0;
+    padding-right: 0.25rem;
+}
+
+.wizard-character-picker-modal-content #character-pagination {
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wizard-character-picker-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.wizard-character-picker-controls input[type="text"] {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.character-hint {
+    margin: 0;
+    color: var(--muted);
+}
+
 #character-library-panel .library-header {
     display: flex;
     gap: 0.75rem;
@@ -1762,9 +1881,23 @@ button.wizard-step {
     /* prevent inner content from overlapping adjacent grid cells */
 }
 
+button.character-card {
+    width: 100%;
+    height: 100%;
+    appearance: none;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+}
+
 .character-card:hover {
     border-color: var(--accent);
     box-shadow: 0 6px 14px -4px rgba(0, 0, 0, 0.55);
+}
+
+.character-card.selected {
+    border-color: #4f8cff;
+    background: #1f2937;
 }
 
 .character-card .thumb {
@@ -1794,6 +1927,10 @@ button.wizard-step {
 
 /* Clamp long names so action buttons align */
 .character-card .name {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
     min-height: 2.6em;
     /* space for up to two lines */
 }
@@ -2219,5 +2356,21 @@ button.wizard-step {
 
     #character-library-panel {
         padding: 0.85rem 1rem 1.1rem;
+    }
+
+    .wizard-character-library-actions {
+        justify-content: stretch;
+    }
+
+    .wizard-character-library-actions button,
+    .wizard-character-row-actions button,
+    .wizard-character-picker-controls button,
+    .wizard-character-picker-controls input[type="text"] {
+        width: 100%;
+    }
+
+    .selected-character-chip {
+        width: 100%;
+        justify-content: space-between;
     }
 }

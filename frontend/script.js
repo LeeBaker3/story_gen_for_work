@@ -369,8 +369,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminUserTableBody = document.getElementById("adminUserTableBody"); // ENSURED DECLARATION (MOVED HERE)
 
     let characterCount = 1;
-    // Which character form slot is currently active (focused) for library loading
-    let activeCharacterIndex = 1;
 
     // --- Character Library State (Phase 3) ---
     const characterLibraryState = {
@@ -379,19 +377,39 @@ document.addEventListener("DOMContentLoaded", function () {
         q: '',
         total: 0,
         items: [],
-        selectedIds: new Set(),
+        selectedByIndex: new Map(),
+        activeIndex: 1,
+        restoreFocusEl: null,
+        initialized: false,
     };
 
     function getLibraryEls() {
         const stepPanel = document.getElementById('step-1-characters');
         if (!stepPanel) return {};
-        return {
-            panel: stepPanel.querySelector('#character-library-panel'),
+        const elements = {
+            chipBar: stepPanel.querySelector('#selected-characters-chipbar'),
+            createFromCurrentBtn: stepPanel.querySelector('#character-create-from-current-btn'),
+            modal: stepPanel.querySelector('#character-picker-modal'),
+            backdrop: stepPanel.querySelector('#character-picker-backdrop'),
+            close: stepPanel.querySelector('#character-picker-close'),
+            title: stepPanel.querySelector('#character-picker-title'),
             search: stepPanel.querySelector('#character-search'),
+            syncBtn: stepPanel.querySelector('#character-sync-btn'),
             list: stepPanel.querySelector('#character-list'),
             pagination: stepPanel.querySelector('#character-pagination'),
-            detailModal: stepPanel.querySelector('#character-detail-modal'),
         };
+        const modalContent = elements.modal?.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.classList.add('wizard-character-picker-modal-content');
+        }
+        if (elements.list) {
+            elements.list.classList.add('character-grid');
+            elements.list.setAttribute('aria-live', 'polite');
+        }
+        if (elements.pagination) {
+            elements.pagination.classList.add('pagination-controls');
+        }
+        return elements;
     }
 
     function debounce(fn, wait = 350) {
@@ -400,6 +418,110 @@ document.addEventListener("DOMContentLoaded", function () {
             clearTimeout(t);
             t = setTimeout(() => fn(...args), wait);
         };
+    }
+
+    function getSelectedCharacterIds() {
+        return Array.from(
+            new Set(
+                Array.from(characterLibraryState.selectedByIndex.values())
+                    .map((item) => item?.id)
+                    .filter((id) => Number.isInteger(id)),
+            ),
+        );
+    }
+
+    function getCharacterSelectionLabel(selection, index) {
+        const name = String(selection?.name || '').trim();
+        if (name) {
+            return `Character ${index}: ${name}`;
+        }
+        if (Number.isInteger(selection?.id)) {
+            return `Character ${index}: #${selection.id}`;
+        }
+        return `Character ${index}`;
+    }
+
+    function renderCharacterSelectionChips() {
+        const { chipBar } = getLibraryEls();
+        if (!chipBar) {
+            return;
+        }
+
+        const selections = Array.from(characterLibraryState.selectedByIndex.entries())
+            .sort((left, right) => left[0] - right[0]);
+        if (selections.length === 0) {
+            chipBar.innerHTML = '<em>No existing characters selected.</em>';
+            return;
+        }
+
+        chipBar.innerHTML = selections.map(([index, selection]) => `
+            <span class="selected-character-chip" data-character-index="${index}">
+                <span class="selected-character-chip-label">${escapeHTML(getCharacterSelectionLabel(selection, index))}</span>
+                <button type="button" class="remove-chip" data-character-index="${index}" aria-label="Remove existing character from story row ${index}">×</button>
+            </span>
+        `).join('');
+
+        chipBar.querySelectorAll('.remove-chip').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                const index = Number.parseInt(
+                    event.currentTarget.getAttribute('data-character-index'),
+                    10,
+                );
+                if (Number.isNaN(index)) {
+                    return;
+                }
+                characterLibraryState.selectedByIndex.delete(index);
+                renderCharacterSelectionChips();
+                renderCharacterList();
+            });
+        });
+    }
+
+    function closeCharacterPickerModal(options = {}) {
+        const { restoreFocus = true } = options;
+        const { modal, backdrop } = getLibraryEls();
+        if (modal) {
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+        if (backdrop) {
+            backdrop.classList.remove('open');
+            backdrop.setAttribute('aria-hidden', 'true');
+        }
+        if (restoreFocus && characterLibraryState.restoreFocusEl instanceof HTMLElement) {
+            characterLibraryState.restoreFocusEl.focus();
+        }
+        characterLibraryState.restoreFocusEl = null;
+    }
+
+    async function openCharacterPickerModal(index, triggerButton) {
+        const { modal, backdrop, title, search } = getLibraryEls();
+        if (!modal || !backdrop) {
+            return;
+        }
+
+        characterLibraryState.activeIndex = index;
+        characterLibraryState.restoreFocusEl = triggerButton instanceof HTMLElement
+            ? triggerButton
+            : null;
+
+        if (title) {
+            title.textContent = `Choose Existing Character for Character ${index}`;
+        }
+
+        backdrop.classList.add('open');
+        backdrop.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        if (!characterLibraryState.initialized || characterLibraryState.items.length === 0) {
+            await loadCharacterLibrary();
+        } else {
+            renderCharacterList();
+            renderPagination();
+        }
+
+        search?.focus();
     }
 
     function syncCharacterDetailsDisclosure(toggleButton, detailsDiv) {
@@ -883,12 +1005,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (generateStoryButton) generateStoryButton.style.display = wizardStep === 3 ? 'inline-block' : 'none';
         // If on review, populate summary
         if (wizardStep === 3) populateReview();
-        // Ensure character library is visible in Characters step and initialized once
+        // Ensure the wizard character picker is wired when the Characters step is active.
         if (wizardStep === 1) {
             initCharacterLibraryUI();
         } else {
-            const { panel } = getLibraryEls();
-            if (panel) panel.style.display = 'none';
+            closeCharacterPickerModal({ restoreFocus: false });
         }
     }
 
@@ -2008,6 +2129,19 @@ document.addEventListener("DOMContentLoaded", function () {
         characterCount = 1; // Reset character count
         console.log("[resetFormAndState] characterCount reset to 1.");
 
+        characterLibraryState.page = 1;
+        characterLibraryState.q = '';
+        characterLibraryState.items = [];
+        characterLibraryState.total = 0;
+        characterLibraryState.selectedByIndex.clear();
+        characterLibraryState.activeIndex = 1;
+        const { search } = getLibraryEls();
+        if (search) {
+            search.value = '';
+        }
+        renderCharacterSelectionChips();
+        closeCharacterPickerModal({ restoreFocus: false });
+
         // Reset draft-specific state
         currentStoryId = null;
         currentStoryIsDraft = false;
@@ -2062,8 +2196,9 @@ document.addEventListener("DOMContentLoaded", function () {
             <hr>
             <div class="character-entry-header">
                 <h4 class="character-entry-title">Character ${characterCount}</h4>
-                <div class="character-entry-actions">
-                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
+                <div class="character-entry-actions wizard-character-row-actions">
+                    <button type="button" class="character-details-toggle action-button-info" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
+                    <button type="button" class="wizard-character-picker-trigger action-button-secondary" data-character-index="${characterCount}" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
                     <button type="button" class="remove-character-button action-button-danger" aria-label="Delete character ${characterCount} from this story">Delete from Story</button>
                 </div>
             </div>
@@ -4713,7 +4848,7 @@ document.addEventListener("DOMContentLoaded", function () {
             tone: document.getElementById("story-tone").value,
             setting: document.getElementById("story-setting").value,
             // Phase 3: add selected existing characters by id
-            character_ids: Array.from(characterLibraryState.selectedIds),
+            character_ids: getSelectedCharacterIds(),
             editor_settings: {
                 page_format: pageFormatVal,
                 layout_mode: layoutModeVal,
@@ -5293,6 +5428,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (index > 0) entry.remove();
         });
         characterCount = 0;
+        characterLibraryState.selectedByIndex.clear();
 
         if (storyData.main_characters && storyData.main_characters.length > 0) {
             storyData.main_characters.forEach((char, index) => {
@@ -5343,6 +5479,18 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
+        if (Array.isArray(storyData.character_ids)) {
+            storyData.character_ids.forEach((id, index) => {
+                if (Number.isInteger(id)) {
+                    characterLibraryState.selectedByIndex.set(index + 1, {
+                        id,
+                        name: `#${id}`,
+                    });
+                }
+            });
+        }
+        renderCharacterSelectionChips();
+
         if (isEditingDraft) {
             currentStoryId = storyData.id;
             currentStoryIsDraft = true;
@@ -5376,14 +5524,178 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
-    // ---- Character Library: rendering, selection, pagination ----
+    function fillCharacterFormFromItem(item, index) {
+        while (characterCount < index) addCharacterEntry();
+        const nameEl = document.getElementById(`char-name-${index}`);
+        const ageEl = document.getElementById(`char-age-${index}`);
+        const genderEl = document.getElementById(`char-gender-${index}`);
+        const physEl = document.getElementById(`char-physical-appearance-${index}`);
+        const clothEl = document.getElementById(`char-clothing-style-${index}`);
+        const traitsEl = document.getElementById(`char-key-traits-${index}`);
+
+        if (nameEl) nameEl.value = item?.name || '';
+        if (ageEl) ageEl.value = (item && item.age != null) ? item.age : '';
+        if (genderEl) {
+            if (genderEl.tagName === 'SELECT' && (!genderEl.options || genderEl.options.length <= 1)) {
+                try { populateDropdown(`char-gender-${index}`, 'genders'); } catch (e) { }
+            }
+            const val = item?.gender || '';
+            if (val) {
+                const options = Array.from(genderEl.options || []);
+                const match = options.find((option) => option.value.toLowerCase() === val.toLowerCase());
+                if (match) {
+                    genderEl.value = match.value;
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    genderEl.appendChild(opt);
+                    genderEl.value = val;
+                }
+            } else {
+                genderEl.value = '';
+            }
+        }
+        if (physEl) physEl.value = item?.description || item?.physical_appearance || '';
+        if (clothEl) clothEl.value = item?.clothing_style || '';
+        if (traitsEl) traitsEl.value = item?.key_traits || '';
+
+        const detailsDiv = document.getElementById(`char-details-${index}`);
+        const toggleBtn = document.getElementById(`char-details-toggle-${index}`);
+        if (detailsDiv && toggleBtn) {
+            detailsDiv.style.display = 'none';
+            syncCharacterDetailsDisclosure(toggleBtn, detailsDiv);
+        }
+    }
+
+    async function loadCharacterLibrary() {
+        const { list } = getLibraryEls();
+        if (!list) {
+            return;
+        }
+
+        try {
+            const params = new URLSearchParams();
+            if (characterLibraryState.q) params.set('q', characterLibraryState.q);
+            params.set('page', String(characterLibraryState.page));
+            params.set('page_size', String(characterLibraryState.pageSize));
+            const res = await apiRequest(`/api/v1/characters/?${params.toString()}`);
+            characterLibraryState.items = res?.items || [];
+            characterLibraryState.total = res?.total || 0;
+            characterLibraryState.initialized = true;
+            renderCharacterList();
+            renderPagination();
+        } catch (err) {
+            const msg = (err && err.message)
+                ? `Failed to load characters: ${escapeHTML(err.message)}`
+                : 'Failed to load characters.';
+            list.innerHTML = `<p class="error-message">${msg}</p>`;
+            console.error('[Character Library] Load failed:', err);
+        }
+    }
+
+    function renderCharacterList() {
+        const { list } = getLibraryEls();
+        if (!list) {
+            return;
+        }
+        if (!characterLibraryState.items.length) {
+            list.innerHTML = '<p>No characters found.</p>';
+            return;
+        }
+
+        const activeSelection = characterLibraryState.selectedByIndex.get(
+            characterLibraryState.activeIndex,
+        );
+        list.innerHTML = characterLibraryState.items.map((item) => {
+            const selected = activeSelection?.id === item.id;
+            const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
+            return `
+                <button type="button" class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" aria-pressed="${selected ? 'true' : 'false'}">
+                    <div class="thumb">
+                        ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail">` : '<div class="no-thumb">No image</div>'}
+                    </div>
+                    <div class="meta">
+                        <div class="name">
+                            <span>${escapeHTML(item.name)}</span>
+                            <span>#${item.id}</span>
+                        </div>
+                    </div>
+                </button>`;
+        }).join('');
+
+        list.querySelectorAll('.character-card').forEach((card) => {
+            card.addEventListener('click', async () => {
+                const id = parseInt(card.getAttribute('data-id'), 10);
+                const item = characterLibraryState.items.find((candidate) => candidate.id === id);
+                if (!item) {
+                    return;
+                }
+
+                let detail = item;
+                try {
+                    detail = await apiRequest(`/api/v1/characters/${id}`);
+                } catch (err) {
+                    console.warn('[Character Library] Failed to fetch detail for character', id, err);
+                }
+
+                const targetIdx = characterLibraryState.activeIndex || 1;
+                fillCharacterFormFromItem(detail || item, targetIdx);
+                characterLibraryState.selectedByIndex.set(targetIdx, {
+                    id,
+                    name: detail?.name || item.name || `#${id}`,
+                });
+                renderCharacterSelectionChips();
+                closeCharacterPickerModal();
+                displayMessage(`Loaded "${item?.name || 'Character'}" into Character ${targetIdx}.`, 'success', { persistMs: 2500 });
+            });
+        });
+    }
+
+    function renderPagination() {
+        const { pagination } = getLibraryEls();
+        if (!pagination) {
+            return;
+        }
+        const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
+        const cur = characterLibraryState.page;
+        pagination.innerHTML = `
+            <button id="lib-prev" ${cur <= 1 ? 'disabled' : ''} class="action-button-secondary">Prev</button>
+            <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
+            <button id="lib-next" ${cur >= totalPages ? 'disabled' : ''} class="action-button-secondary">Next</button>
+        `;
+        const prev = pagination.querySelector('#lib-prev');
+        const next = pagination.querySelector('#lib-next');
+        if (prev) prev.addEventListener('click', async () => {
+            if (characterLibraryState.page > 1) {
+                characterLibraryState.page -= 1;
+                await loadCharacterLibrary();
+            }
+        });
+        if (next) next.addEventListener('click', async () => {
+            if (characterLibraryState.page < totalPages) {
+                characterLibraryState.page += 1;
+                await loadCharacterLibrary();
+            }
+        });
+    }
+
+    // ---- Character Library: modal picker wiring ----
     async function initCharacterLibraryUI() {
-        const { panel, search, list, pagination } = getLibraryEls();
-        if (!panel || !list || !pagination) return;
-        // Show panel
-        panel.style.display = 'block';
-        // Wire Sync button once
-        const syncBtn = panel.querySelector('#character-sync-btn');
+        const {
+            createFromCurrentBtn,
+            close,
+            backdrop,
+            modal,
+            search,
+            syncBtn,
+            list,
+            pagination,
+        } = getLibraryEls();
+        if (!list || !pagination) return;
+
+        renderCharacterSelectionChips();
+
         if (syncBtn && !syncBtn._wired) {
             syncBtn.addEventListener('click', async () => {
                 try {
@@ -5398,14 +5710,12 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             syncBtn._wired = true;
         }
-        // Wire Create-from-current button
-        const createFromCurrentBtn = panel.querySelector('#character-create-from-current-btn');
+
         if (createFromCurrentBtn && !createFromCurrentBtn._wired) {
             createFromCurrentBtn.addEventListener('click', async () => {
                 try {
-                    // Build minimal characters from the current form entries (name only is fine)
                     const entries = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry'));
-                    const payloads = entries.map(entry => {
+                    const payloads = entries.map((entry) => {
                         const name = entry.querySelector('input[id^="char-name-"]')?.value?.trim();
                         const ageVal = entry.querySelector('input[id^="char-age-"]')?.value?.trim();
                         return {
@@ -5417,18 +5727,17 @@ document.addEventListener("DOMContentLoaded", function () {
                             key_traits: entry.querySelector('textarea[id^="char-key-traits-"]')?.value?.trim() || '',
                             image_style: document.getElementById('story-image-style')?.value || undefined,
                         };
-                    }).filter(c => c.name);
+                    }).filter((character) => character.name);
                     if (payloads.length === 0) {
                         displayMessage('Add at least one character name first.', 'warning');
                         return;
                     }
                     displayMessage('Saving characters to your library...', 'info');
-                    for (const p of payloads) {
+                    for (const payload of payloads) {
                         try {
-                            await apiRequest('/api/v1/characters/', 'POST', { ...p, generate_image: false });
+                            await apiRequest('/api/v1/characters/', 'POST', { ...payload, generate_image: false });
                         } catch (e) {
-                            // Continue saving others, but log errors
-                            console.error('[Create From Current] Failed to save character', p.name, e);
+                            console.error('[Create From Current] Failed to save character', payload.name, e);
                         }
                     }
                     await loadCharacterLibrary();
@@ -5440,31 +5749,6 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             createFromCurrentBtn._wired = true;
         }
-        // Selected chips bar
-        let chips = panel.querySelector('#selected-characters-chipbar');
-        if (!chips) {
-            chips = document.createElement('div');
-            chips.id = 'selected-characters-chipbar';
-            chips.style.margin = '6px 0 10px';
-            panel.insertBefore(chips, panel.firstChild);
-        }
-        const renderChips = () => {
-            const ids = Array.from(characterLibraryState.selectedIds);
-            if (ids.length === 0) {
-                chips.innerHTML = '<em>No existing characters selected.</em>';
-                return;
-            }
-            chips.innerHTML = ids.map(id => `<span class="chip" data-id="${id}" style="display:inline-block;padding:4px 8px;border:1px solid #4f8cff;border-radius:999px;margin:2px;color:#e5eaf2;background:#23272f;">#${id} <button data-id="${id}" class="remove-chip" style="margin-left:6px;background:transparent;border:none;color:#a6b0c3;cursor:pointer;">×</button></span>`).join('');
-            chips.querySelectorAll('.remove-chip').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = parseInt(e.currentTarget.getAttribute('data-id'), 10);
-                    characterLibraryState.selectedIds.delete(id);
-                    // Re-render list to reflect deselection
-                    renderCharacterList();
-                    renderChips();
-                });
-            });
-        };
 
         const onSearch = debounce(async () => {
             characterLibraryState.q = (search?.value || '').trim();
@@ -5475,152 +5759,32 @@ document.addEventListener("DOMContentLoaded", function () {
             search.addEventListener('input', onSearch);
             search._wired = true;
         }
-        await loadCharacterLibrary();
-
-        async function loadCharacterLibrary() {
-            try {
-                const params = new URLSearchParams();
-                if (characterLibraryState.q) params.set('q', characterLibraryState.q);
-                params.set('page', String(characterLibraryState.page));
-                params.set('page_size', String(characterLibraryState.pageSize));
-                const res = await apiRequest(`/api/v1/characters/?${params.toString()}`);
-                characterLibraryState.items = res?.items || [];
-                characterLibraryState.total = res?.total || 0;
-                renderCharacterList();
-                renderPagination();
-                renderChips();
-            } catch (err) {
-                const msg = (err && err.message) ? `Failed to load characters: ${escapeHTML(err.message)}` : 'Failed to load characters.';
-                list.innerHTML = `<p class="error-message">${msg}</p>`;
-                console.error('[Character Library] Load failed:', err);
-            }
+        if (close && !close._wired) {
+            close.addEventListener('click', () => closeCharacterPickerModal());
+            close._wired = true;
         }
-
-        function fillCharacterFormFromItem(item, index) {
-            // Ensure enough character entries exist
-            while (characterCount < index) addCharacterEntry();
-            const nameEl = document.getElementById(`char-name-${index}`);
-            const ageEl = document.getElementById(`char-age-${index}`);
-            const genderEl = document.getElementById(`char-gender-${index}`);
-            const physEl = document.getElementById(`char-physical-appearance-${index}`);
-            const clothEl = document.getElementById(`char-clothing-style-${index}`);
-            const traitsEl = document.getElementById(`char-key-traits-${index}`);
-
-            if (nameEl) nameEl.value = item?.name || '';
-            if (ageEl) ageEl.value = (item && item.age != null) ? item.age : '';
-            if (genderEl) {
-                // If it's a select without options, populate it
-                if (genderEl.tagName === 'SELECT' && (!genderEl.options || genderEl.options.length <= 1)) {
-                    try { populateDropdown(`char-gender-${index}`, 'genders'); } catch (e) { }
-                }
-                const val = item?.gender || '';
-                if (val) {
-                    const opts = Array.from(genderEl.options || []).map(o => o.value.toLowerCase());
-                    const cur = val.toLowerCase();
-                    if (opts.includes(cur)) {
-                        genderEl.value = Array.from(genderEl.options).find(o => o.value.toLowerCase() === cur).value;
-                    } else {
-                        const opt = document.createElement('option');
-                        opt.value = val; opt.textContent = val;
-                        genderEl.appendChild(opt);
-                        genderEl.value = val;
-                    }
-                } else {
-                    genderEl.value = '';
-                }
-            }
-            if (physEl) physEl.value = item?.description || item?.physical_appearance || '';
-            if (clothEl) clothEl.value = item?.clothing_style || '';
-            if (traitsEl) traitsEl.value = item?.key_traits || '';
-
-            // Collapse details for a clean view
-            const detailsDiv = document.getElementById(`char-details-${index}`);
-            const toggleBtn = document.getElementById(`char-details-toggle-${index}`);
-            if (detailsDiv && toggleBtn) {
-                detailsDiv.style.display = 'none';
-                toggleBtn.textContent = 'Show Details';
-            }
+        if (backdrop && !backdrop._wired) {
+            backdrop.addEventListener('click', () => closeCharacterPickerModal());
+            backdrop._wired = true;
         }
-
-        function renderCharacterList() {
-            if (!list) return;
-            if (!characterLibraryState.items.length) {
-                list.innerHTML = '<p>No characters found.</p>';
-                return;
-            }
-            list.innerHTML = characterLibraryState.items.map(item => {
-                const selected = characterLibraryState.selectedIds.has(item.id);
-                const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
-                return `
-                <div class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" style="border:1px solid ${selected ? '#4f8cff' : '#333'};border-radius:8px;padding:8px;cursor:pointer;background:${selected ? '#1f2937' : '#111'};">
-                    ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail" style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;" />` : '<div style="height:140px;background:#222;border-radius:6px;"></div>'}
-                    <div style="margin-top:6px;color:#e5eaf2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(item.name)} <span style="color:#a6b0c3;font-size:0.85em;">(#${item.id})</span></div>
-                </div>`;
-            }).join('');
-            // Wire selection and load behavior
-            list.querySelectorAll('.character-card').forEach(card => {
-                card.addEventListener('click', async (e) => {
-                    const id = parseInt(card.getAttribute('data-id'), 10);
-                    const item = characterLibraryState.items.find(it => it.id === id);
-                    // Cmd/Ctrl+click toggles selection without loading
-                    if (e && (e.metaKey || e.ctrlKey)) {
-                        if (characterLibraryState.selectedIds.has(id)) {
-                            characterLibraryState.selectedIds.delete(id);
-                            card.classList.remove('selected');
-                            card.style.borderColor = '#333';
-                            card.style.background = '#111';
-                        } else {
-                            characterLibraryState.selectedIds.add(id);
-                            card.classList.add('selected');
-                            card.style.borderColor = '#4f8cff';
-                            card.style.background = '#1f2937';
-                        }
-                        renderChips();
-                        return;
-                    }
-                    // Plain click: load into current active slot and mark as selected
-                    const targetIdx = activeCharacterIndex || 1;
-                    let detail = item;
-                    try {
-                        // Fetch full details (age, gender, traits, etc.)
-                        detail = await apiRequest(`/api/v1/characters/${id}`);
-                    } catch (err) {
-                        // Fall back to list item if detail fails
-                        console.warn('[Character Library] Failed to fetch detail for character', id, err);
-                    }
-                    fillCharacterFormFromItem(detail || item, targetIdx);
-                    characterLibraryState.selectedIds.add(id);
-                    renderChips();
-                    displayMessage(`Loaded "${item?.name || 'Character'}" into Character ${targetIdx}.`, 'success', { persistMs: 2500 });
-                });
-            });
-        }
-
-        function renderPagination() {
-            if (!pagination) return;
-            const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
-            const cur = characterLibraryState.page;
-            // Simple prev/next
-            pagination.innerHTML = `
-                <button id="lib-prev" ${cur <= 1 ? 'disabled' : ''} class="action-button-secondary">Prev</button>
-                <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
-                <button id="lib-next" ${cur >= totalPages ? 'disabled' : ''} class="action-button-secondary">Next</button>
-            `;
-            const prev = pagination.querySelector('#lib-prev');
-            const next = pagination.querySelector('#lib-next');
-            if (prev) prev.addEventListener('click', async () => {
-                if (characterLibraryState.page > 1) {
-                    characterLibraryState.page -= 1;
-                    await loadCharacterLibrary();
+        if (modal && !modal._wired) {
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    closeCharacterPickerModal();
                 }
             });
-            if (next) next.addEventListener('click', async () => {
-                const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
-                if (characterLibraryState.page < totalPages) {
-                    characterLibraryState.page += 1;
-                    await loadCharacterLibrary();
+            modal._wired = true;
+        }
+        if (!window.__wizardCharacterPickerEscapeBound) {
+            window.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    const { modal: pickerModal } = getLibraryEls();
+                    if (pickerModal?.classList.contains('open')) {
+                        closeCharacterPickerModal();
+                    }
                 }
             });
+            window.__wizardCharacterPickerEscapeBound = true;
         }
     }
 
@@ -5641,7 +5805,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const m = el.id.match(/-(\d+)$/);
             if (m) {
                 const idx = parseInt(m[1], 10);
-                if (!Number.isNaN(idx)) activeCharacterIndex = idx;
+                if (!Number.isNaN(idx)) characterLibraryState.activeIndex = idx;
             }
         });
         mainCharactersFieldset.addEventListener("click", function (event) {
@@ -5651,8 +5815,24 @@ document.addEventListener("DOMContentLoaded", function () {
             if (target.classList.contains("remove-character-button")) {
                 const characterEntry = target.closest(".character-entry");
                 if (characterEntry) {
+                    const nameInput = characterEntry.querySelector('input[id^="char-name-"]');
+                    const match = nameInput?.id?.match(/-(\d+)$/);
+                    const index = match ? Number.parseInt(match[1], 10) : Number.NaN;
+                    if (!Number.isNaN(index)) {
+                        characterLibraryState.selectedByIndex.delete(index);
+                        renderCharacterSelectionChips();
+                        renderCharacterList();
+                    }
                     characterEntry.remove();
                     updateStepUI();
+                }
+                return;
+            }
+
+            if (target.classList.contains('wizard-character-picker-trigger')) {
+                const idx = Number.parseInt(target.getAttribute('data-character-index'), 10);
+                if (!Number.isNaN(idx)) {
+                    openCharacterPickerModal(idx, target);
                 }
                 return;
             }

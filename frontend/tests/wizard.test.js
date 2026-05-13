@@ -55,8 +55,24 @@ function mountWizardDom() {
           <div id="step-1-characters" class="wizard-step-panel" style="display:none;">
             <fieldset id="main-characters-fieldset">
               <div class="character-entry">
-                <input id="char-name-1" class="char-name" value="Alice" />
-                <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                <div class="character-entry-header">
+                  <h4 class="character-entry-title">Character 1</h4>
+                  <div class="character-entry-actions wizard-character-row-actions">
+                    <button type="button" class="wizard-character-picker-trigger action-button-secondary" data-character-index="1" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
+                      <button type="button" class="character-details-toggle action-button-info" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                    <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                </div>
+                <div class="form-group">
+                  <label for="char-name-1">Name <span class="required-badge">Required</span></label>
+                  <input id="char-name-1" class="char-name" value="Alice" />
+
+      const firstRowButtons = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry:first-child .wizard-character-row-actions button'));
+      expect(firstRowButtons.map((button) => button.textContent.trim())).toEqual([
+        'Show Details',
+        'Add existing character',
+      ]);
+      expect(firstRowButtons[0].classList.contains('action-button-info')).toBe(true);
+                </div>
                 <div id="char-details-1" class="character-details-fields" style="display:none;">
                   <input id="char-age-1" class="char-age" value="" />
                   <select id="char-gender-1"><option value="">Select…</option><option value="female">Female</option></select>
@@ -64,16 +80,34 @@ function mountWizardDom() {
                   <textarea id="char-clothing-style-1"></textarea>
                   <textarea id="char-key-traits-1"></textarea>
                 </div>
+
+      const secondRowButtons = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry:last-child .wizard-character-row-actions button'));
+      expect(secondRowButtons.map((button) => button.textContent.trim())).toEqual([
+        'Show Details',
+        'Add existing character',
+        'Delete from Story',
+      ]);
+      expect(secondRowButtons[0].classList.contains('action-button-info')).toBe(true);
               </div>
             </fieldset>
             <button type="button" id="add-character-button">Add Another Character</button>
-            <div id="character-library-panel" style="display:none;" aria-label="Character library">
-              <input type="text" id="character-search" aria-label="Search characters" />
-              <button type="button" id="character-sync-btn">Sync from stories</button>
+            <div id="wizard-character-library-tools" class="wizard-character-library-tools" aria-label="Selected existing characters">
+              <div id="selected-characters-chipbar" class="selected-characters-chipbar" aria-live="polite"><em>No existing characters selected.</em></div>
               <button type="button" id="character-create-from-current-btn">Save form characters</button>
-              <div id="character-list"></div>
-              <div id="character-pagination"></div>
-              <div id="character-detail-modal" style="display:none;"></div>
+            </div>
+            <div id="character-picker-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+            <div id="character-picker-modal" class="modal" aria-hidden="true">
+              <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-picker-title">
+                <div class="modal-header">
+                  <h3 id="character-picker-title">Choose Existing Character</h3>
+                  <button type="button" id="character-picker-close">Close</button>
+                </div>
+                <input type="text" id="character-search" aria-label="Search characters" />
+                <button type="button" id="character-sync-btn">Sync from stories</button>
+                <p class="character-hint">Select one existing character to fill the current story row.</p>
+                <div id="character-list"></div>
+                <div id="character-pagination"></div>
+              </div>
             </div>
           </div>
           <div id="step-2-options" class="wizard-step-panel" style="display:none;">
@@ -383,6 +417,9 @@ describe('wizard navigation', () => {
     expect(document.getElementById('story-genre-retry')?.textContent).toMatch(/retry loading genres/i);
     expect(document.getElementById('story-image-style-recovery')).not.toBeNull();
     expect(document.getElementById('story-image-style-retry')?.textContent).toMatch(/retry loading image styles/i);
+    expect(document.getElementById('character-picker-modal')).not.toBeNull();
+    expect(document.getElementById('character-picker-title')?.textContent).toMatch(/choose existing character/i);
+    expect(html).not.toMatch(/Your Characters/);
 
     expect(document.querySelector('label[for="story-title"]').textContent).toBe('Story Title');
     expect(document.querySelector('label[for="story-tone"]').textContent).toBe('Tone');
@@ -588,6 +625,11 @@ describe('wizard navigation', () => {
 
   test('added character row can be removed', () => {
     const addButton = document.getElementById('add-character-button');
+    const firstActions = document.querySelector('.character-entry .character-entry-actions');
+
+    expect(document.querySelector('.character-entry .character-entry-header')).not.toBeNull();
+    expect(document.querySelector('.character-entry .character-entry-title')?.textContent).toBe('Character 1');
+    expect(firstActions?.classList.contains('wizard-character-row-actions')).toBe(true);
 
     fireEvent.click(addButton);
 
@@ -595,6 +637,9 @@ describe('wizard navigation', () => {
     expect(document.querySelector('label[for="char-name-2"] .required-badge')?.textContent).toBe('Required');
     expect(document.querySelector('label[for="char-age-2"]').textContent).toBe('Age');
     expect(document.querySelector('label[for="char-key-traits-2"]').textContent).toBe('Key Traits/Habits');
+    expect(document.querySelectorAll('.character-entry-header')).toHaveLength(2);
+    expect(document.querySelector('#main-characters-fieldset .character-entry:last-child .character-entry-title')?.textContent).toBe('Character 2');
+    expect(document.querySelector('#main-characters-fieldset .character-entry:last-child .character-entry-actions')?.classList.contains('wizard-character-row-actions')).toBe(true);
 
     const removeButton = document.querySelector('.remove-character-button');
     expect(removeButton).not.toBeNull();
@@ -626,6 +671,26 @@ describe('wizard navigation', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(details.style.display).toBe('none');
     expect(toggle.textContent).toBe('Show Details');
+  });
+
+  test('existing character picker closes on escape and restores focus to the row trigger', async () => {
+    fireEvent.click(document.getElementById('wizard-next'));
+
+    const trigger = document.querySelector('.wizard-character-picker-trigger[data-character-index="1"]');
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    await waitFor(() => {
+      expect(document.getElementById('character-picker-modal').classList.contains('open')).toBe(true);
+      expect(document.getElementById('character-picker-modal').getAttribute('aria-hidden')).toBe('false');
+    });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(document.getElementById('character-picker-modal').classList.contains('open')).toBe(false);
+      expect(document.activeElement).toBe(trigger);
+    });
   });
 
   test('generate request includes wizard editor settings', async () => {
@@ -1076,14 +1141,30 @@ describe('wizard navigation', () => {
 
       fireEvent.click(document.getElementById('wizard-next'));
 
+      const pickerTrigger = document.querySelector('.wizard-character-picker-trigger[data-character-index="1"]');
+      fireEvent.click(pickerTrigger);
+
       await waitFor(() => {
         expect(document.querySelector('.character-card[data-id="101"]')).not.toBeNull();
+        expect(document.getElementById('character-picker-modal').classList.contains('open')).toBe(true);
       });
+
+      const pickerContent = document.querySelector('#character-picker-modal .modal-content');
+      const pickerList = document.getElementById('character-list');
+      const pickerPagination = document.getElementById('character-pagination');
+      const pickerCard = document.querySelector('.character-card[data-id="101"]');
+
+      expect(pickerContent.classList.contains('wizard-character-picker-modal-content')).toBe(true);
+      expect(pickerList.classList.contains('character-grid')).toBe(true);
+      expect(pickerPagination.classList.contains('pagination-controls')).toBe(true);
+      expect(pickerCard.querySelector('.thumb')).not.toBeNull();
+      expect(pickerCard.querySelector('.meta .name')).not.toBeNull();
 
       fireEvent.click(document.querySelector('.character-card[data-id="101"]'));
 
       await waitFor(() => {
-        expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
+        expect(document.getElementById('selected-characters-chipbar').textContent).toContain('Library Fox');
+        expect(document.getElementById('character-picker-modal').classList.contains('open')).toBe(false);
       });
 
       fireEvent.click(document.getElementById('wizard-next'));
@@ -1115,7 +1196,7 @@ describe('wizard navigation', () => {
       });
       expect(document.getElementById('story-title').value).toBe('Library Story');
       expect(document.getElementById('story-outline').value).toBe('A fox saves the village');
-      expect(document.getElementById('selected-characters-chipbar').textContent).toContain('#101');
+      expect(document.getElementById('selected-characters-chipbar').textContent).toContain('Library Fox');
     } finally {
       consoleErrorSpy.mockRestore();
     }
