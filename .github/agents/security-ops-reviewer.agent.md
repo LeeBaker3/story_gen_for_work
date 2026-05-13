@@ -2,7 +2,7 @@
 name: "Security Operations Reviewer"
 description: "Use when: reviewing auth, admin endpoints, file uploads, static content, generated paths, secrets, OpenAI key handling, CORS, logging, deployment config, or operational risk."
 tools: [read, search, github/*]
-model: ['Claude Opus 4.7 (copilot)', 'GPT-5.5 (copilot)']
+model: ['GPT-5.5 (copilot)']
 argument-hint: "Describe the security or operations concern to review."
 user-invocable: true
 ---

@@ -160,7 +160,8 @@ def _resolve_background_opacity(settings: Dict[str, Any]) -> float:
     """Return the effective overlay opacity for readability treatments."""
 
     try:
-        opacity = max(0.0, min(1.0, float(settings.get("text_box_opacity", 0.6))))
+        opacity = max(
+            0.0, min(1.0, float(settings.get("text_box_opacity", 0.6))))
     except Exception:
         opacity = 0.6
 
@@ -213,7 +214,8 @@ def _draw_text_background(
             )
     else:
         pdf.setFillColor(Color(0, 0, 0, alpha=opacity))
-        pdf.roundRect(box_x, box_y, box_width, box_height, 10, stroke=0, fill=1)
+        pdf.roundRect(box_x, box_y, box_width,
+                      box_height, 10, stroke=0, fill=1)
     pdf.restoreState()
 
 
@@ -523,14 +525,16 @@ def _draw_title_page_overlay(
     author_font_size = max(title_font_size - 12, 16)
     max_text_width = box_width - 24
 
-    title_lines = simpleSplit(title or "", font_name, title_font_size, max_text_width)
+    title_lines = simpleSplit(title or "", font_name,
+                              title_font_size, max_text_width)
     subtitle_lines = (
         simpleSplit(subtitle, "Helvetica", subtitle_font_size, max_text_width)
         if subtitle
         else []
     )
     author_lines = (
-        simpleSplit(f"By {author}", "Helvetica-Oblique", author_font_size, max_text_width)
+        simpleSplit(f"By {author}", "Helvetica-Oblique",
+                    author_font_size, max_text_width)
         if author
         else []
     )
@@ -550,7 +554,8 @@ def _draw_title_page_overlay(
 
     _draw_text_background(pdf, box_x, box_y, box_width, box_height, settings)
 
-    text_y = box_y + box_height - 16 - ((box_height - 24 - content_height) / 2.0)
+    text_y = box_y + box_height - 16 - \
+        ((box_height - 24 - content_height) / 2.0)
     font_color = _safe_hex_color(settings.get("font_color"))
 
     pdf.saveState()

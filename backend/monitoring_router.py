@@ -156,7 +156,8 @@ def _build_config_diagnostics_payload(
             "relative_path": getattr(
                 effective_settings,
                 "admin_config_override_relative_path",
-                os.path.join("private_data", settings_module.ADMIN_CONFIG_OVERRIDE_FILENAME),
+                os.path.join("private_data",
+                             settings_module.ADMIN_CONFIG_OVERRIDE_FILENAME),
             ),
             "has_overrides": bool(
                 getattr(effective_settings, "admin_config_overrides", {})

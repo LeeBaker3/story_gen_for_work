@@ -220,7 +220,8 @@ def get_admin_image_style_mapping_state(
 
     for style_item in sorted(
         image_style_items,
-        key=lambda item: (getattr(item, "sort_order", 0), getattr(item, "id", 0)),
+        key=lambda item: (getattr(item, "sort_order", 0),
+                          getattr(item, "id", 0)),
     ):
         business_style = _normalize_style_value(
             getattr(style_item, "item_value", None)
@@ -275,7 +276,8 @@ def get_admin_image_style_mapping_state(
     orphaned_mapping_rules = []
     for mapping_item in sorted(
         mapping_items,
-        key=lambda item: (getattr(item, "sort_order", 0), getattr(item, "id", 0)),
+        key=lambda item: (getattr(item, "sort_order", 0),
+                          getattr(item, "id", 0)),
     ):
         business_style = _normalize_style_value(
             getattr(mapping_item, "item_value", None)

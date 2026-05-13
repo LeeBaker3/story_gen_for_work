@@ -2,7 +2,7 @@
 name: "Architect"
 description: "Use when: reviewing or designing architecture, persistence, API contracts, schemas, dynamic lists, editor state, PDF layout, background generation, or cross-module boundaries."
 tools: [read, search, github/*]
-model: ['Claude Opus 4.7 (copilot)', 'GPT-5.5 (copilot)', 'GPT-5.4 (copilot)']
+model: ['GPT-5.5 (copilot)', 'GPT-5.4 (copilot)']
 argument-hint: "Describe the architecture decision, design concern, or proposed change."
 user-invocable: true
 ---

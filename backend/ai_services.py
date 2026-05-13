@@ -60,7 +60,8 @@ def _initialize_image_client() -> Optional[OpenAI]:
     if not getattr(_settings, "enable_image_generation", True):
         return None
     return _create_openai_client(
-        getattr(_settings, "openai_image_base_url", "https://api.openai.com/v1")
+        getattr(_settings, "openai_image_base_url",
+                "https://api.openai.com/v1")
     )
 
 

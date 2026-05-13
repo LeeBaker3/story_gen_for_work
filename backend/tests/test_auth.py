@@ -242,7 +242,8 @@ def test_issue_password_reset_token_persists_hashed_token(
     db_session.refresh(user)
 
     assert token
-    assert user.password_reset_token_hash == auth.hash_password_reset_token(token)
+    assert user.password_reset_token_hash == auth.hash_password_reset_token(
+        token)
     assert user.password_reset_token_hash != token
     assert user.password_reset_token_expires_at is not None
     stored_expires_at = user.password_reset_token_expires_at
@@ -266,7 +267,8 @@ def test_get_valid_password_reset_user_rejects_expired_tokens(
         password="initial-password",
     )
     token, _ = auth.issue_password_reset_token(db_session, user)
-    user.password_reset_token_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    user.password_reset_token_expires_at = datetime.now(
+        UTC) - timedelta(minutes=1)
     db_session.commit()
     db_session.refresh(user)
 

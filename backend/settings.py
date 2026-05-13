@@ -65,7 +65,8 @@ def load_admin_config_overrides(path: str | None = None) -> Dict[str, Any]:
     repo_root = _here.parent
     target_path = path or _resolve_admin_config_override_path(
         repo_root,
-        _resolve_repo_path(repo_root, os.getenv("PRIVATE_DATA_DIR", "private_data")),
+        _resolve_repo_path(repo_root, os.getenv(
+            "PRIVATE_DATA_DIR", "private_data")),
     )
     if not os.path.exists(target_path):
         return {}
@@ -95,7 +96,8 @@ def save_admin_config_overrides(
     repo_root = _here.parent
     target_path = path or _resolve_admin_config_override_path(
         repo_root,
-        _resolve_repo_path(repo_root, os.getenv("PRIVATE_DATA_DIR", "private_data")),
+        _resolve_repo_path(repo_root, os.getenv(
+            "PRIVATE_DATA_DIR", "private_data")),
     )
     overrides = load_admin_config_overrides(target_path)
 
@@ -187,7 +189,8 @@ class BaseSettings:
             self.admin_config_override_path,
         )
         self.admin_config_overrides: Dict[str, Any] = dict(admin_overrides)
-        self.config_overrides_applied: List[str] = sorted(admin_overrides.keys())
+        self.config_overrides_applied: List[str] = sorted(
+            admin_overrides.keys())
 
         # Upload limits
         self.max_upload_bytes: int = int(

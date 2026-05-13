@@ -77,8 +77,10 @@ def test_regular_user_can_open_seeded_story_from_library(
     story_item.get_by_role("button", name="View Story").click()
 
     expect(page.get_by_role("heading", name="Story Preview")).to_be_visible()
-    expect(page.locator("#story-preview-content")).to_contain_text(SEEDED_STORY_TITLE)
-    expect(page.locator("#story-preview-content")).to_contain_text(SEEDED_STORY_LINE)
+    expect(page.locator("#story-preview-content")
+           ).to_contain_text(SEEDED_STORY_TITLE)
+    expect(page.locator("#story-preview-content")
+           ).to_contain_text(SEEDED_STORY_LINE)
 
 
 def test_admin_user_can_reach_admin_panel(page: Page, app_base_url: str) -> None:

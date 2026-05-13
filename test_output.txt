@@ -1,0 +1,1133 @@
+
+> test:frontend
+> NODE_OPTIONS=--experimental-vm-modules jest --runInBand --coverage --runTestsByPath frontend/tests/wizard.test.js --runInBand
+
+  console.log
+    script.js file loaded and parsed by the browser.
+
+      at log (frontend/script.js:29:9)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [resetFormAndState] Attempting to reset form and state.
+
+      at log (frontend/script.js:1934:17)
+
+  console.log
+    [resetFormAndState] storyCreationForm reset called.
+
+      at log (frontend/script.js:1938:21)
+
+  console.log
+    [resetFormAndState] Found 1 character entries.
+
+      at log (frontend/script.js:1965:17)
+
+  console.log
+    [resetFormAndState] Reset fields and state for first character entry.
+
+      at log (frontend/script.js:2001:25)
+          at Proxy.forEach (<anonymous>)
+
+  console.log
+    [resetFormAndState] characterCount reset to 1.
+
+      at log (frontend/script.js:2008:17)
+
+  console.log
+    [resetFormAndState] currentStoryId and currentStoryIsDraft reset.
+
+      at log (frontend/script.js:2013:17)
+
+  console.log
+    [resetFormAndState] generateStoryButton text reset.
+
+      at log (frontend/script.js:2019:21)
+
+  console.log
+    [resetFormAndState] Story title input cleared.
+
+      at log (frontend/script.js:2026:21)
+
+  console.log
+    [resetFormAndState] PDF action buttons hidden.
+
+      at log (frontend/script.js:2032:17)
+
+  console.log
+    [resetFormAndState] Form fields and draft state reset. Navigated to story creation section.
+
+      at log (frontend/script.js:2037:17)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateCreateFormWithStoryData] Populating form. isEditingDraft: false Story: {
+      id: 321,
+      title: 'Loop Adventure',
+      genre: 'Fantasy',
+      story_outline: 'Ava searches for a lantern.',
+      main_characters: [ { name: 'Ava' } ],
+      num_pages: 2,
+      tone: 'Warm',
+      setting: 'Forest',
+      image_style: 'Cartoon',
+      writing_style: 'Playful',
+      word_to_picture_ratio: 'One image per page',
+      text_density: 'Concise (~30-50 words)',
+      editor_settings: {
+        page_format: 'square-storybook',
+        layout_mode: 'vertical-split',
+        image_fit: 'Keep artwork contained',
+        cover_title_placement: 'Top',
+        readability_treatment: 'High-contrast box',
+        text_position: 'top-center',
+        font_family: 'classic',
+        font_size: 30,
+        font_color: '#123456',
+        text_box_opacity: 0.4
+      },
+      pages: [
+        {
+          id: 11,
+          story_id: 321,
+          page_number: 0,
+          text: 'Loop Adventure',
+          image_description: 'A bright cover with Ava.',
+          image_path: 'images/user_1/story_321/cover.png',
+          editor_state: [Object],
+          created_at: '2026-05-01T12:00:00Z',
+          updated_at: '2026-05-01T12:00:00Z'
+        },
+        {
+          id: 12,
+          story_id: 321,
+          page_number: 1,
+          text: 'Ava finds the hidden lantern.',
+          image_description: 'Ava in a glowing forest.',
+          image_path: 'images/user_1/story_321/page1.png',
+          editor_state: [Object],
+          created_at: '2026-05-01T12:00:00Z',
+          updated_at: '2026-05-01T12:00:00Z'
+        }
+      ],
+      created_at: '2026-05-01T12:00:00Z',
+      updated_at: '2026-05-01T12:00:00Z',
+      owner_id: 1,
+      is_draft: false,
+      generated_at: '2026-05-01T12:00:00Z',
+      is_hidden: false,
+      is_deleted: false
+    }
+
+      at Object.log [as populateCreateFormWithStoryData] (frontend/script.js:5005:17)
+
+  console.log
+    [resetFormAndState] Attempting to reset form and state.
+
+      at log (frontend/script.js:1934:17)
+
+  console.log
+    [resetFormAndState] storyCreationForm reset called.
+
+      at log (frontend/script.js:1938:21)
+
+  console.log
+    [resetFormAndState] Found 1 character entries.
+
+      at log (frontend/script.js:1965:17)
+
+  console.log
+    [resetFormAndState] Reset fields and state for first character entry.
+
+      at log (frontend/script.js:2001:25)
+          at Proxy.forEach (<anonymous>)
+
+  console.log
+    [resetFormAndState] characterCount reset to 1.
+
+      at log (frontend/script.js:2008:17)
+
+  console.log
+    [resetFormAndState] currentStoryId and currentStoryIsDraft reset.
+
+      at log (frontend/script.js:2013:17)
+
+  console.log
+    [resetFormAndState] generateStoryButton text reset.
+
+      at log (frontend/script.js:2019:21)
+
+  console.log
+    [resetFormAndState] Story title input cleared.
+
+      at log (frontend/script.js:2026:21)
+
+  console.log
+    [resetFormAndState] PDF action buttons hidden.
+
+      at log (frontend/script.js:2032:17)
+
+  console.log
+    [resetFormAndState] Form fields and draft state reset. Navigated to story creation section.
+
+      at log (frontend/script.js:2037:17)
+
+  console.log
+    [populateCreateFormWithStoryData] Form population complete. currentStoryId: null currentStoryIsDraft: false
+
+      at Object.log [as populateCreateFormWithStoryData] (frontend/script.js:5156:17)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    'Add Character' button clicked. addCharacterEntry function started.
+
+      at HTMLButtonElement.log (frontend/script.js:2043:17)
+
+  console.log
+    Main characters fieldset found. Proceeding to add new character entry.
+
+      at HTMLButtonElement.log (frontend/script.js:2054:17)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [Toggle Click] Button clicked: HTMLButtonElement {
+      Symbol(SameObject caches): [Object: null prototype] { classList: DOMTokenList {} }
+    } ID: char-details-toggle-1
+
+      at HTMLFieldSetElement.log (frontend/script.js:5446:25)
+
+  console.log
+    [Toggle Click] Data-target ID: char-details-1
+
+      at HTMLFieldSetElement.log (frontend/script.js:5453:25)
+
+  console.log
+    [Toggle Click] Details div found: HTMLDivElement {
+      Symbol(SameObject caches): [Object: null prototype] {
+        style: CSSStyleDeclaration {
+          '0': 'display',
+          _values: [Object],
+          _importants: [Object],
+          _length: 1,
+          _onChange: [Function (anonymous)]
+        }
+      }
+    }
+
+      at HTMLFieldSetElement.log (frontend/script.js:5455:25)
+
+  console.log
+    [Toggle Click] Details div (char-details-1) isHidden (computed): true, current style.display: 'none'
+
+      at HTMLFieldSetElement.log (frontend/script.js:5460:29)
+
+  console.log
+    [Toggle Click] Set detailsDiv.style.display to 'block', button text to 'Hide Details'
+
+      at HTMLFieldSetElement.log (frontend/script.js:5465:29)
+
+  console.log
+    [Toggle Click] Button clicked: HTMLButtonElement {
+      Symbol(SameObject caches): [Object: null prototype] {
+        classList: DOMTokenList {},
+        dataset: DOMStringMap {}
+      }
+    } ID: char-details-toggle-1
+
+      at HTMLFieldSetElement.log (frontend/script.js:5446:25)
+
+  console.log
+    [Toggle Click] Data-target ID: char-details-1
+
+      at HTMLFieldSetElement.log (frontend/script.js:5453:25)
+
+  console.log
+    [Toggle Click] Details div found: HTMLDivElement {
+      Symbol(SameObject caches): [Object: null prototype] {
+        style: CSSStyleDeclaration {
+          '0': 'display',
+          _values: [Object],
+          _importants: [Object],
+          _length: 1,
+          _onChange: [Function (anonymous)]
+        }
+      }
+    }
+
+      at HTMLFieldSetElement.log (frontend/script.js:5455:25)
+
+  console.log
+    [Toggle Click] Details div (char-details-1) isHidden (computed): false, current style.display: 'block'
+
+      at HTMLFieldSetElement.log (frontend/script.js:5460:29)
+
+  console.log
+    [Toggle Click] Set detailsDiv.style.display to 'none', button text to 'Show Details'
+
+      at HTMLFieldSetElement.log (frontend/script.js:5465:29)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [FormSubmit] Creating a new story from scratch.
+
+      at HTMLButtonElement.log (frontend/script.js:4611:25)
+
+  console.log
+    [FormSubmit] Story generation task started successfully. Task ID: task-1
+
+      at HTMLButtonElement.log (frontend/script.js:4623:29)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [FormSubmit] Creating a new story from scratch.
+
+      at HTMLButtonElement.log (frontend/script.js:4611:25)
+
+  console.log
+    [FormSubmit] Story generation task started successfully. Task ID: task-97
+
+      at HTMLButtonElement.log (frontend/script.js:4623:29)
+
+  console.log
+    [displayStory] Story object received: {
+      id: 321,
+      title: 'Loop Adventure',
+      genre: 'Fantasy',
+      story_outline: 'Ava searches for a lantern.',
+      main_characters: [ { name: 'Ava' } ],
+      num_pages: 2,
+      tone: 'Warm',
+      setting: 'Forest',
+      image_style: 'Cartoon',
+      writing_style: 'Playful',
+      word_to_picture_ratio: 'One image per page',
+      text_density: 'Concise (~30-50 words)',
+      editor_settings: {
+        page_format: 'square-storybook',
+        layout_mode: 'vertical-split',
+        image_fit: 'Keep artwork contained',
+        cover_title_placement: 'Top',
+        readability_treatment: 'High-contrast box',
+        text_position: 'top-center',
+        font_family: 'classic',
+        font_size: 30,
+        font_color: '#123456',
+        text_box_opacity: 0.4
+      },
+      pages: [
+        {
+          id: 11,
+          story_id: 321,
+          page_number: 0,
+          text: 'Loop Adventure',
+          image_description: 'A bright cover with Ava.',
+          image_path: 'images/user_1/story_321/cover.png',
+          editor_state: [Object],
+          created_at: '2026-05-01T12:00:00Z',
+          updated_at: '2026-05-01T12:00:00Z'
+        },
+        {
+          id: 12,
+          story_id: 321,
+          page_number: 1,
+          text: 'Ava finds the hidden lantern.',
+          image_description: 'Ava in a glowing forest.',
+          image_path: 'images/user_1/story_321/page1.png',
+          editor_state: [Object],
+          created_at: '2026-05-01T12:00:00Z',
+          updated_at: '2026-05-01T12:00:00Z'
+        }
+      ],
+      created_at: '2026-05-01T12:00:00Z',
+      updated_at: '2026-05-01T12:00:00Z',
+      owner_id: 1,
+      is_draft: false,
+      generated_at: '2026-05-01T12:00:00Z',
+      is_hidden: false,
+      is_deleted: false
+    }
+
+      at log (frontend/script.js:3666:17)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [SaveDraft] Story data for draft: {
+      title: 'Draft Title',
+      genre: 'Fantasy',
+      story_outline: 'Draft outline',
+      main_characters: [
+        {
+          name: 'Alice',
+          age: null,
+          gender: '',
+          physical_appearance: '',
+          clothing_style: '',
+          key_traits: ''
+        }
+      ],
+      num_pages: 7,
+      tone: 'Warm',
+      setting: 'Forest',
+      character_ids: [],
+      editor_settings: {
+        page_format: 'a4',
+        layout_mode: 'horizontal-split',
+        text_position: 'top-right',
+        font_family: 'classic',
+        font_size: 32,
+        font_color: '#abcdef',
+        text_box_opacity: 0.3,
+        image_fit: 'Keep artwork contained',
+        cover_title_placement: 'Top',
+        readability_treatment: 'High-contrast box'
+      },
+      writing_style: 'Playful',
+      word_to_picture_ratio: 'One image per page',
+      text_density: 'Concise (~30-50 words)',
+      image_style: 'Cartoon'
+    }
+
+      at HTMLButtonElement.log (frontend/script.js:4540:21)
+
+  console.log
+    [SaveDraft] Creating new draft.
+
+      at HTMLButtonElement.log (frontend/script.js:4563:29)
+
+  console.log
+    [populateAllDropdowns] Starting to populate all dropdowns.
+
+      at log (frontend/script.js:633:17)
+
+  console.log
+    Event listener for 'Add Character' button (add-character-button) attached successfully.
+
+      at Document.log (frontend/script.js:2111:17)
+
+  console.error
+    [auth] forgotPasswordForm not found; reset request will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4278:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.error
+    [auth] resetPasswordForm not found; password reset will not work.
+
+      83 |         }
+      84 |         unexpectedErrors.push(text);
+    > 85 |         originalError(...args);
+         |         ^
+      86 |     };
+      87 |
+      88 |     console.warn = (...args) => {
+
+      at console.error (frontend/tests/setup-tests.mjs:85:9)
+      at Document.error (frontend/script.js:4281:17)
+      at Document.callTheUserObjectsOperation (node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+      at innerInvokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+      at invokeEventListeners (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+      at DocumentImpl._dispatch (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+      at DocumentImpl.dispatchEvent (node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+      at Document.dispatchEvent (node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+      at Object.<anonymous> (frontend/tests/wizard.test.js:288:14)
+
+  console.log
+    [FormSubmit] Creating a new story from scratch.
+
+      at HTMLButtonElement.log (frontend/script.js:4611:25)
+
+-----------|---------|----------|---------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+File       | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+-----------|---------|----------|---------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+All files  |   42.76 |    33.05 |   43.15 |   44.78 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+ script.js |   42.76 |    33.05 |   43.15 |   44.78 | 3,13,179,191,196,217-222,227,230-231,234-235,241-303,310,342-349,399-400,406,451,462,563,579-580,613-616,724-728,733,747,758-760,773-785,795,838,906-907,910-914,917-919,929-937,953-957,960-964,967-971,974-978,981-983,993,1003-1102,1117-1339,1352-1721,1727,1734-1735,1741-1744,1751-1756,1766-1806,1878,1895-1896,1920,1940,1970-1971,2049-2052,2115-2155,2178,2201-2226,2251-2376,2390,2408,2429-2435,2471,2477-2478,2528,2585-2587,2589-2591,2681,2683-2688,2724-2748,2766-2944,2994-2997,3031-3032,3044-3046,3051-3052,3088,3102-3106,3110-3114,3123-3127,3155-3156,3161,3178-3179,3215-3218,3296,3299,3302,3306-3311,3316-3317,3322-3323,3328-3334,3338-3339,3348,3356-3359,3369-3374,3379-3380,3384-3385,3390,3475-3480,3486-3523,3531-3561,3572-3655,3661-3664,3680,3705-3709,3728,3741,3750-3776,3789-3809,3815-3816,3821,3826-3844,3856-3860,3865-3876,3890,3919-3929,3932-3933,3941,3961-3964,3972-3974,3977,3988-3994,4009,4018-4027,4052-4198,4204-4206,4211-4213,4218-4220,4225-4227,4232-4234,4239-4241,4246-4248,4265-4266,4285-4299,4305-4337,4342-4366,4374-4408,4416-4422,4465,4543-4548,4554-4557,4567-4584,4608-4609,4627-4628,4660-4662,4712,4723-4727,4737-4741,4744-4745,4754-4755,4759-4762,4782-4897,4902-4903,4908-4909,4914-4916,4922-4923,4928-4934,4939-4961,4970-4974,4988-4989,4995,5085,5122-5127,5132-5137,5174-5181,5190-5223,5245-5249,5255-5257,5278-5280,5299,5308-5314,5352-5364,5374,5397-5399,5403-5406,5424-5429,5469-5477,5484-5633,5647-5759,5765-5786,5792-5818,5824-5830,5836-5841 
+-----------|---------|----------|---------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

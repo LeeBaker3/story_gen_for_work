@@ -387,7 +387,8 @@ def test_save_story_editor_replace_pages_reorders_and_replaces_pages(
 
     assert updated_story is not None
     db_session.refresh(updated_story)
-    ordered_pages = sorted(updated_story.pages, key=lambda page: page.page_number)
+    ordered_pages = sorted(updated_story.pages,
+                           key=lambda page: page.page_number)
     assert [page.page_number for page in ordered_pages] == [0, 1, 2]
     assert [page.text for page in ordered_pages] == [
         "Reorder Story",

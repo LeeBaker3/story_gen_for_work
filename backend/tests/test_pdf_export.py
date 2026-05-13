@@ -258,7 +258,8 @@ def test_create_story_pdf_sorts_pages_by_page_number_before_rendering() -> None:
         side_effect=lambda *_args, **_kwargs: rendered_text.append("Cover."),
     ), patch(
         "backend.pdf_generator._draw_text_overlay",
-        side_effect=lambda _pdf, text, *_args, **_kwargs: rendered_text.append(text),
+        side_effect=lambda _pdf, text, *
+            _args, **_kwargs: rendered_text.append(text),
     ):
         create_story_pdf(story)
 

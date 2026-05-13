@@ -3171,12 +3171,12 @@ document.addEventListener("DOMContentLoaded", function () {
         return `
             <div class="story-editor-color-swatches" role="group" aria-label="Curated text colour swatches">
                 ${STORY_EDITOR_COLOR_SWATCHES.map((color) => {
-                    const isSelected = color.toLowerCase() === normalized;
-                    const swatchClass = relativeLuminance(hexToRgb(color)) > 0.8
-                        ? " story-editor-color-swatch--light"
-                        : "";
-                    return `<button type="button" class="story-editor-color-swatch${swatchClass}" data-color-swatch-target="${targetId}" data-color-value="${color}" aria-label="Use ${color} text" aria-pressed="${isSelected ? "true" : "false"}" style="background:${color};"></button>`;
-                }).join("")}
+            const isSelected = color.toLowerCase() === normalized;
+            const swatchClass = relativeLuminance(hexToRgb(color)) > 0.8
+                ? " story-editor-color-swatch--light"
+                : "";
+            return `<button type="button" class="story-editor-color-swatch${swatchClass}" data-color-swatch-target="${targetId}" data-color-value="${color}" aria-label="Use ${color} text" aria-pressed="${isSelected ? "true" : "false"}" style="background:${color};"></button>`;
+        }).join("")}
             </div>
         `;
     }

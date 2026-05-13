@@ -244,7 +244,8 @@ def test_password_reset_request_uses_generic_response(
 
     assert existing_response.status_code == 200
     assert missing_response.status_code == 200
-    assert existing_response.json()["detail"] == missing_response.json()["detail"]
+    assert existing_response.json()["detail"] == missing_response.json()[
+        "detail"]
     assert existing_response.json()["reset_token_preview"]
     assert missing_response.json()["reset_token_preview"]
 
@@ -301,7 +302,8 @@ def test_password_reset_confirm_updates_password_and_rejects_reuse(
     assert old_login_response.status_code == 401
     assert new_login_response.status_code == 200
     assert reuse_response.status_code == 400
-    assert reuse_response.json()["detail"] == "Invalid or expired password reset token"
+    assert reuse_response.json(
+    )["detail"] == "Invalid or expired password reset token"
 
 
 def test_password_reset_confirm_rejects_invalid_token(client: TestClient):
@@ -315,7 +317,8 @@ def test_password_reset_confirm_rejects_invalid_token(client: TestClient):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid or expired password reset token"
+    assert response.json()[
+        "detail"] == "Invalid or expired password reset token"
 
 
 def test_password_reset_confirm_rejects_expired_token(
@@ -356,7 +359,8 @@ def test_password_reset_confirm_rejects_expired_token(
     db_session.refresh(expiring_user)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid or expired password reset token"
+    assert response.json()[
+        "detail"] == "Invalid or expired password reset token"
     assert expiring_user.password_reset_token_hash is None
     assert expiring_user.password_reset_token_expires_at is None
 

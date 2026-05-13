@@ -41,7 +41,8 @@ class User(Base):
     is_deleted = Column(Boolean, default=False)
     role = Column(String, default="user")  # New field (e.g., "user", "admin")
     password_reset_token_hash = Column(String, nullable=True, index=True)
-    password_reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    password_reset_token_expires_at = Column(
+        DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
@@ -197,9 +198,11 @@ class AdminBroadcast(Base):
     target_scope = Column(String, nullable=False, default="all_active_users")
     status = Column(String, nullable=False, default="sent")
     recipient_count = Column(Integer, nullable=False, default=0)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by_user_id = Column(
+        Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    sent_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at = Column(DateTime(timezone=True), nullable=False,
+                     server_default=func.now())
 
     created_by = relationship("User")
 
