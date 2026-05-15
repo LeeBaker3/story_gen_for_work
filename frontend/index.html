@@ -62,6 +62,13 @@
                         <input type="password" id="signup-password-confirm" name="password_confirm" required>
                         <button type="button" id="toggle-signup-password-confirm" aria-label="Show password" class="password-toggle">Show</button>
                     </div>
+                    <p class="inline-disclosure" id="signup-disclosure">
+                        By creating an account, you acknowledge the
+                        <a href="/legal/privacy-policy">Privacy Policy</a>,
+                        <a href="/legal/terms-of-service">Terms</a>, and
+                        <a href="/legal/ai-processing-disclosure">AI Processing Disclosure</a>.
+                        Story prompts, character details, and images you choose to submit for AI features may be sent to AI processors and stored with your story record. Do not submit secrets or highly sensitive personal data.
+                    </p>
                     <button type="submit" id="signup-submit-button" class="action-button-info">Sign Up</button>
                     <p class="auth-switch-message">Already have an account? <a href="#" id="show-login-link">Login</a></p>
                 </form>
@@ -337,6 +344,12 @@
                         <p class="wizard-step-guidance-detail">Use Back to revise any section, then choose Generate Story when everything looks complete.</p>
                     </div>
                     <h3>Review</h3>
+                    <p class="inline-disclosure inline-disclosure--prominent" id="generation-disclosure">
+                        Generating a story sends the prompt, character details, and any uploaded reference images for this story to AI processors so the app can create text and art. The prompt and generated output may be kept in the story record so you can review, edit, and export it. Avoid secrets or highly sensitive personal data. See the
+                        <a href="/legal/ai-processing-disclosure">AI Processing Disclosure</a>
+                        and
+                        <a href="/legal/privacy-operations">Privacy Operations</a>.
+                    </p>
                     <div id="review-container"></div>
                 </div>
 

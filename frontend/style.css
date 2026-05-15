@@ -1306,6 +1306,31 @@ button.action-button-danger:hover,
     text-decoration: underline;
 }
 
+.inline-disclosure {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    background: rgba(35, 43, 58, 0.65);
+    color: #d3daea;
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.inline-disclosure--prominent {
+    margin-bottom: 1rem;
+}
+
+.inline-disclosure a {
+    color: #8ccfff;
+    font-weight: 600;
+}
+
+.inline-disclosure a:hover,
+.inline-disclosure a:focus {
+    color: #c6e8ff;
+}
+
 footer {
     background-color: #1F1F1F;
     color: #A0A0A0;
@@ -1423,6 +1448,10 @@ footer {
 }
 
 @media (max-width: 640px) {
+    .inline-disclosure {
+        padding: 0.85rem 0.9rem;
+    }
+
     .app-footer__content {
         padding: 1.25rem 0.75rem;
     }

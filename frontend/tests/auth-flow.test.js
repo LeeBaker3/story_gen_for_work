@@ -135,6 +135,17 @@ describe('auth form flows', () => {
     test('signup success posts JSON payload then returns to login view', async () => {
         fireEvent.click(document.getElementById('show-signup-link'));
 
+        const signupDisclosure = document.getElementById('signup-disclosure');
+        expect(signupDisclosure).not.toBeNull();
+        expect(signupDisclosure.textContent).toContain('AI processors');
+        expect(
+            Array.from(signupDisclosure.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'))
+        ).toEqual([
+            '/legal/privacy-policy',
+            '/legal/terms-of-service',
+            '/legal/ai-processing-disclosure',
+        ]);
+
         document.getElementById('signup-username').value = 'new-reader';
         document.getElementById('signup-email').value = 'new@example.com';
         document.getElementById('signup-password').value = 'secret-pass';
@@ -157,6 +168,19 @@ describe('auth form flows', () => {
         expect(document.getElementById('signup-form').style.display).toBe('none');
         expect(document.getElementById('login-form').style.display).toBe('block');
         expect(document.getElementById('signup-username').value).toBe('');
+    });
+
+    test('generation review surface includes AI and privacy disclosure links', () => {
+        const generationDisclosure = document.getElementById('generation-disclosure');
+
+        expect(generationDisclosure).not.toBeNull();
+        expect(generationDisclosure.textContent).toContain('uploaded reference images');
+        expect(
+            Array.from(generationDisclosure.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'))
+        ).toEqual([
+            '/legal/ai-processing-disclosure',
+            '/legal/privacy-operations',
+        ]);
     });
 
     test('signup password mismatch is blocked before request and keeps signup form visible', async () => {
