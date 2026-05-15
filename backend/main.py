@@ -18,6 +18,7 @@ from backend.characters_router import router as characters_router
 from backend.database import SessionLocal, get_db
 from backend.database_seeding import seed_database
 from backend.logging_config import app_logger, error_logger
+from backend.legal_docs import LEGAL_DOCS_DIR, router as legal_docs_router
 from backend.metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_TOTAL,
@@ -156,6 +157,7 @@ app.include_router(
     prefix=admin_prefix,
     tags=["admin-monitoring"],
 )
+app.include_router(legal_docs_router)
 
 
 if settings.mount_frontend_static:
@@ -175,6 +177,17 @@ if settings.mount_frontend_static:
             "Mounted frontend static files from directory: %s",
             frontend_dir,
         )
+
+if LEGAL_DOCS_DIR.exists() and LEGAL_DOCS_DIR.is_dir():
+    app_logger.info(
+        "Serving legal documents from markdown directory: %s",
+        LEGAL_DOCS_DIR,
+    )
+else:
+    app_logger.warning(
+        "Legal docs directory '%s' not found. Legal docs will not be served.",
+        LEGAL_DOCS_DIR,
+    )
 
 if settings.mount_data_static:
     data_dir = settings.data_dir

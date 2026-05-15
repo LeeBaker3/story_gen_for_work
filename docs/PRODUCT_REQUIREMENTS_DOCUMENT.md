@@ -184,6 +184,7 @@ The editor should handle choices that users naturally make after seeing the gene
 - Future configuration should support a local OpenAI-compatible endpoint for development and testing while preserving hosted OpenAI defaults in production.
 - Static mounts `/static` (frontend) and `/static_content` (data) on by default in dev; off in tests by default.
 - Admin diagnostics at `/api/v1/admin/monitoring/config` for safe verification.
+- Commercial policy docs live under `docs/legal/README.md`. They are currently repository docs only and are not yet surfaced in the product UI.
 
 ## 5. Development Progress
 

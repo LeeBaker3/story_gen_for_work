@@ -135,6 +135,7 @@ Docs
 - ReDoc: /redoc
  - Configuration Guide: CONFIG.md (env, logging, monitoring endpoints/UI)
  - API Contracts: see docs/PRODUCT_REQUIREMENTS_DOCUMENT.md (Section 6)
+ - Legal and support pack: docs/legal/README.md
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.
