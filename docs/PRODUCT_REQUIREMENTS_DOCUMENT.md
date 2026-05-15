@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 
-Updated: 2026-04-27
+Updated: 2026-05-15
 
 ## 1. Purpose
 
@@ -177,6 +177,121 @@ The editor should handle choices that users naturally make after seeing the gene
 ### 3.7 Testing
 - FR-TEST-01: Unit tests for CRUD, AI service interactions, API endpoints.
 - Coverage includes characters CRUD/API (mocked OpenAI), admin lists, monitoring (logs/stats/config), seeding, story generation, and core endpoints.
+
+### 3.8 Commercial Beta Pricing, Trial, and Entitlements
+
+This section defines the product rules for the commercial beta. It is a
+requirements spec only and does not assume any live billing implementation.
+
+#### Commercial beta access model
+
+- Commercial beta access is account-scoped. Story generation features are
+    available only to accounts with a valid entitlement.
+- Access states:
+    - `trial`: bounded trial access for new eligible accounts.
+    - `paid-active`: an account with an active paid entitlement.
+    - `grace`: credits are exhausted or billing is paused, but the account can
+        still use non-generation features and existing content.
+    - `suspended`: no new generation is allowed.
+- Users without a valid entitlement can still log in, view trust or account
+    surfaces, and manage existing stories where product policy allows, but they
+    cannot start new generation jobs.
+
+#### Plan and entitlement concepts
+
+- The product should expose one commercial beta plan shape in the UI and API
+    contract, even if the billing provider defines the final SKU behind the
+    scenes.
+- The entitlement record must answer four questions: can the account generate
+    stories, can it regenerate images, when does access renew, and how many
+    credits remain.
+- Pricing rules must stay separate from content ownership, moderation, and
+    story editing.
+
+#### Trial model
+
+- New eligible accounts receive a bounded trial.
+- Trial policy for this beta:
+    - 7 days of access, or 3 story-generation credits, whichever comes first.
+    - Trial access is hard-capped; there is no unlimited time-based trial.
+    - Trial users get the same editor, preview, and export rights as paid users
+        for content they already generated.
+- The trial must clearly communicate the remaining access before the first
+    generation starts.
+
+#### Pricing model
+
+- Commercial beta uses a single monthly paid plan with included usage credits.
+- The public price and included credit count are release-configured values and
+    must not be hardcoded into story or editor logic.
+- No automatic overage billing is allowed in the beta. When included credits are
+    used, generation stops until renewal or manual top-up.
+
+#### Billable usage and quota rules
+
+- One story-generation credit covers the initial generation run for a story,
+    including text generation and the first pass of page images for that story.
+- One image-generation credit covers a manual page image regeneration or a
+    character reference image generation or regeneration.
+- If a future text-only regeneration action is added, it should consume a story
+    generation credit.
+- The following actions are not billable:
+    - login and signup,
+    - browsing stories and characters,
+    - editing saved story text or titles,
+    - previewing, exporting, or downloading PDFs derived from existing content,
+    - trust, support, account, and policy pages,
+    - admin or moderation actions.
+- Credits must be reserved before a provider call starts. Reservations are
+    released only when no provider spend occurred.
+
+#### Exhausted-credit behavior
+
+- When trial credits or paid-plan credits are exhausted, the account enters a
+    generation-locked state rather than a fully read-only state.
+- In generation-locked state, users can still edit existing content, preview,
+    export PDFs, and manage stored assets, but they cannot start new AI-backed
+    generation jobs.
+- The UI should show a clear upgrade, renewal, or top-up call to action instead
+    of a generic failure.
+- Unused credits do not roll over unless a later release explicitly changes that
+    rule.
+
+#### Downgrade and cancel behavior
+
+- Cancellation takes effect at the end of the current paid period.
+- There is no mid-period automatic refund or plan re-rating in the product
+    rules for this beta.
+- After cancellation or downgrade, the account keeps access to existing content
+    until the entitlement ends, then falls back to generation-locked access.
+- Trial access can expire or upgrade to paid; it does not downgrade.
+
+#### Provider-spend fail-safe behavior
+
+- If provider limits, key verification, or service-health checks indicate that
+    new spend is unsafe, generation must fail closed before a provider call is
+    made.
+- Existing stories and non-generation features must remain available when the
+    fail-safe is active.
+- The UI should surface a clear temporary-unavailable message and avoid burning
+    user credits for blocked requests.
+
+#### Copy and input requirements for future frontend/account work
+
+- Future frontend and account surfaces need copy inputs for:
+    - plan name and billing cadence,
+    - price display,
+    - trial length and remaining trial access,
+    - included credits and remaining credits,
+    - renewal date,
+    - upgrade, renew, and top-up CTAs,
+    - cancel and downgrade confirmation text,
+    - exhausted-credit messaging,
+    - provider-outage or spend-fail-safe messaging,
+    - trust and disclosure text that explains AI generation, ownership, and usage
+        limits.
+- These are copy and state requirements, not final marketing strings. The final
+    wording can be decided later, but the UI must expose the states listed above.
 
 ## 4. Deployment & Environment
 - Runs locally: FastAPI, SQLite, HTML/CSS/JS, filesystem for images/logs.
