@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend import auth, crud, database, schemas, storage_paths
 from backend.admin_router import admin_router
+from backend.billing_router import billing_router
 from backend.characters_router import router as characters_router
 from backend.database import SessionLocal, get_db
 from backend.database_seeding import seed_database
@@ -198,6 +199,7 @@ async def prometheus_http_metrics(request, call_next):
 admin_prefix = f"{settings.api_prefix}/admin"
 app.include_router(admin_router, prefix=admin_prefix, tags=["admin"])
 app.include_router(public_router, prefix=settings.api_prefix, tags=["public"])
+app.include_router(billing_router, prefix=settings.api_prefix, tags=["billing"])
 app.include_router(
     characters_router,
     prefix=settings.api_prefix,

@@ -77,9 +77,13 @@ class AccountEntitlement(Base):
     access_state = Column(String, nullable=False, default="trial")
     story_credits_total = Column(Integer, nullable=False, default=0)
     image_credits_total = Column(Integer, nullable=False, default=0)
+    stripe_customer_id = Column(String, nullable=True, index=True)
+    stripe_subscription_id = Column(String, nullable=True, index=True)
+    current_period_started_at = Column(DateTime(timezone=True), nullable=True)
     trial_started_at = Column(DateTime(timezone=True), nullable=True)
     trial_expires_at = Column(DateTime(timezone=True), nullable=True)
     renews_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
@@ -114,6 +118,7 @@ class UsageLedgerEntry(Base):
     credit_bucket = Column(String, nullable=False, index=True)
     credits = Column(Integer, nullable=False, default=1)
     status = Column(String, nullable=False, default="reserved", index=True)
+    billing_period_start = Column(DateTime(timezone=True), nullable=True)
     finalized_at = Column(DateTime(timezone=True), nullable=True)
     release_reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -354,6 +359,16 @@ class CharacterImage(Base):
     )
 
 
+class ProcessedStripeEvent(Base):
+    __tablename__ = "processed_stripe_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String, nullable=False, unique=True, index=True)
+    event_type = Column(String, nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=False,
+                          server_default=func.now())
+
+
 def create_db_and_tables():
     """Apply runtime schema bootstrap only in local dev/test posture."""
 
@@ -368,6 +383,7 @@ def create_db_and_tables():
         _ensure_story_metadata_columns()
         _ensure_story_editor_columns()
         _ensure_user_password_reset_columns()
+        _ensure_billing_columns()
     return True
 
 
@@ -541,3 +557,39 @@ def _ensure_user_password_reset_columns():
                         pass
         except Exception:
             pass
+
+
+def _ensure_billing_columns():
+    """Idempotently add billing-related columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "account_entitlements": {
+            "stripe_customer_id": "TEXT NULL",
+            "stripe_subscription_id": "TEXT NULL",
+            "current_period_started_at": "TIMESTAMP NULL",
+            "cancel_at_period_end": "BOOLEAN DEFAULT 0 NOT NULL",
+        },
+        "usage_ledger_entries": {
+            "billing_period_start": "TIMESTAMP NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass

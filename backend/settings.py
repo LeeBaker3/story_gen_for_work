@@ -279,6 +279,31 @@ class BaseSettings:
         self.trial_image_credits: int = int(
             os.getenv("TRIAL_IMAGE_CREDITS", "10")
         )
+        self.stripe_secret_key: str = os.getenv("STRIPE_SECRET_KEY", "").strip()
+        self.stripe_webhook_secret: str = os.getenv(
+            "STRIPE_WEBHOOK_SECRET", ""
+        ).strip()
+        self.stripe_monthly_price_id: str = os.getenv(
+            "STRIPE_MONTHLY_PRICE_ID", ""
+        ).strip()
+        self.stripe_checkout_success_url: str = os.getenv(
+            "STRIPE_CHECKOUT_SUCCESS_URL",
+            "http://localhost:8000/static/index.html?billing=success",
+        ).strip()
+        self.stripe_checkout_cancel_url: str = os.getenv(
+            "STRIPE_CHECKOUT_CANCEL_URL",
+            "http://localhost:8000/static/index.html?billing=cancelled",
+        ).strip()
+        self.stripe_customer_portal_return_url: str = os.getenv(
+            "STRIPE_CUSTOMER_PORTAL_RETURN_URL",
+            "http://localhost:8000/static/index.html?billing=portal-return",
+        ).strip()
+        self.stripe_monthly_story_credits: int = int(
+            os.getenv("STRIPE_MONTHLY_STORY_CREDITS", "30")
+        )
+        self.stripe_monthly_image_credits: int = int(
+            os.getenv("STRIPE_MONTHLY_IMAGE_CREDITS", "100")
+        )
         # Whether to mount static in this environment
         self.mount_frontend_static: bool = os.getenv(
             "MOUNT_FRONTEND_STATIC", "").lower() in ("1", "true", "yes")

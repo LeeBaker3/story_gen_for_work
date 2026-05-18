@@ -73,10 +73,11 @@ def _sum_credits_by_status(
     db: Session,
     entitlement_id: int,
     credit_bucket: schemas.CreditBucket,
+    billing_period_start: Optional[datetime],
 ) -> Dict[str, int]:
     """Summarize ledger credits by status for a single entitlement bucket."""
 
-    rows = (
+    query = (
         db.query(
             UsageLedgerEntry.status,
             func.coalesce(func.sum(UsageLedgerEntry.credits), 0),
@@ -85,9 +86,12 @@ def _sum_credits_by_status(
             UsageLedgerEntry.entitlement_id == entitlement_id,
             UsageLedgerEntry.credit_bucket == credit_bucket.value,
         )
-        .group_by(UsageLedgerEntry.status)
-        .all()
     )
+    if billing_period_start is not None:
+        query = query.filter(
+            UsageLedgerEntry.billing_period_start == billing_period_start,
+        )
+    rows = query.group_by(UsageLedgerEntry.status).all()
     totals = {"reserved": 0, "consumed": 0, "released": 0}
     for entry_status, credits in rows:
         totals[str(entry_status)] = int(credits or 0)
@@ -134,13 +138,27 @@ def resolve_effective_state(
             image_credits=empty,
         )
 
+    current_period_started_at = _coerce_datetime_to_utc(
+        getattr(entitlement, "current_period_started_at", None)
+    )
+
     story_balance = _build_balance(
         entitlement.story_credits_total,
-        _sum_credits_by_status(db, entitlement.id, schemas.CreditBucket.STORY),
+        _sum_credits_by_status(
+            db,
+            entitlement.id,
+            schemas.CreditBucket.STORY,
+            current_period_started_at,
+        ),
     )
     image_balance = _build_balance(
         entitlement.image_credits_total,
-        _sum_credits_by_status(db, entitlement.id, schemas.CreditBucket.IMAGE),
+        _sum_credits_by_status(
+            db,
+            entitlement.id,
+            schemas.CreditBucket.IMAGE,
+            current_period_started_at,
+        ),
     )
 
     now = _utc_now()
@@ -249,6 +267,9 @@ def reserve_credits(
         credit_bucket=credit_bucket.value,
         credits=credits,
         status="reserved",
+        billing_period_start=_coerce_datetime_to_utc(
+            getattr(entitlement, "current_period_started_at", None)
+        ),
     )
     db.add(reservation)
     db.commit()

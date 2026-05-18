@@ -339,6 +339,15 @@ class MessageResponse(BaseModel):
     detail: str
 
 
+class BillingSessionResponse(BaseModel):
+    url: str
+
+
+class BillingWebhookResponse(BaseModel):
+    received: bool
+    duplicate: bool = False
+
+
 class TokenData(BaseModel):
     username: Optional[str] = None
 

@@ -89,6 +89,21 @@ Provider notes
 Authentication
 - LOGIN_RATE_LIMIT: rate limit applied to login attempts (default: 10/minute)
 
+Billing
+- STRIPE_SECRET_KEY: Stripe secret key used for authenticated Checkout and Customer Portal API calls
+- STRIPE_WEBHOOK_SECRET: Stripe webhook signing secret used to verify webhook delivery signatures
+- STRIPE_MONTHLY_PRICE_ID: Stripe price id for the single monthly beta subscription plan
+- STRIPE_CHECKOUT_SUCCESS_URL: redirect URL Stripe uses after successful Checkout completion
+- STRIPE_CHECKOUT_CANCEL_URL: redirect URL Stripe uses when Checkout is cancelled
+- STRIPE_CUSTOMER_PORTAL_RETURN_URL: return URL used when a customer exits the Stripe billing portal
+- STRIPE_MONTHLY_STORY_CREDITS: monthly included story credits granted on each paid invoice (default: 30)
+- STRIPE_MONTHLY_IMAGE_CREDITS: monthly included image credits granted on each paid invoice (default: 100)
+
+Billing notes
+- Billing is backend-only in this slice: the API exposes authenticated Checkout and Portal session creation plus a Stripe webhook endpoint.
+- The application remains entitlement-driven. Stripe events sync `account_entitlements`; app access still reads from `/api/v1/users/me/entitlement`.
+- Monthly paid credits are period-scoped. Renewals reset the configured totals and usage is counted only within the current paid billing period.
+
 OpenAI smoke testing (manual)
 - SMOKE_EDIT_IMAGE_PATH: local path to a real PNG/JPG/WebP file used by scripts/smoke_test_openai.py to test Images Edits.
 
