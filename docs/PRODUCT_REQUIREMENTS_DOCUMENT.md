@@ -292,6 +292,12 @@ requirements spec only and does not assume any live billing implementation.
         limits.
 - These are copy and state requirements, not final marketing strings. The final
     wording can be decided later, but the UI must expose the states listed above.
+- The source-of-truth copy deck for launch trust, support, ownership, and
+    outage messaging lives in
+    `docs/specs/launch-trust-support-outage-copy-spec.md`.
+- That copy deck is intentionally guidance for future frontend/account work; it
+    does not claim the current runtime already exposes every state or banner
+    described there.
 
 ## 4. Deployment & Environment
 - Runs locally: FastAPI, SQLite, HTML/CSS/JS, filesystem for images/logs.

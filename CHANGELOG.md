@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - PRD scope for a user-friendly story editor and basic desktop publishing controls, including MVP boundaries and wizard vs post-generation responsibilities.
 - Prometheus metrics for OpenAI text generation path usage, latency, and error rates.
+- Source-of-truth copy spec for launch trust, support availability, ownership/licensing, and degraded-mode outage messaging.
 
 ### Changed
 - Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
