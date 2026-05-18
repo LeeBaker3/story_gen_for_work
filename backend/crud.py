@@ -3,7 +3,7 @@ from . import schemas
 from . import entitlements
 from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
-from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
+from .database import AdminAuditEvent, Character, CharacterImage, DynamicList, DynamicListItem, Page, PrivacyRequest, Story, StoryGenerationTask, User
 from passlib.context import CryptContext
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
@@ -239,6 +239,135 @@ def update_user_password(db: Session, user: User, hashed_password: str) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+def create_admin_audit_event(
+    db: Session,
+    *,
+    admin_user_id: int,
+    event_type: str,
+    target_type: str,
+    target_id: Optional[int] = None,
+    metadata_json: Optional[Dict[str, Any]] = None,
+    commit: bool = True,
+) -> AdminAuditEvent:
+    """Persist a sparse audit record for a sensitive admin mutation."""
+
+    audit_event = AdminAuditEvent(
+        admin_user_id=admin_user_id,
+        event_type=event_type,
+        target_type=target_type,
+        target_id=target_id,
+        metadata_json=metadata_json or {},
+    )
+    db.add(audit_event)
+    if commit:
+        db.commit()
+        db.refresh(audit_event)
+    else:
+        db.flush()
+    return audit_event
+
+
+def _mark_user_soft_deleted(db_user: User) -> None:
+    """Apply the repository's existing soft-delete posture to a user row."""
+
+    db_user.is_deleted = True
+    db_user.is_active = False
+
+
+def create_privacy_request(
+    db: Session,
+    *,
+    user_id: int,
+    request_type: schemas.PrivacyRequestType,
+) -> PrivacyRequest:
+    """Create a privacy request unless an open request of the same type exists."""
+
+    duplicate = db.query(PrivacyRequest).filter(
+        PrivacyRequest.user_id == user_id,
+        PrivacyRequest.request_type == request_type.value,
+        PrivacyRequest.status.in_(
+            [
+                schemas.PrivacyRequestStatus.SUBMITTED.value,
+                schemas.PrivacyRequestStatus.IN_REVIEW.value,
+            ]
+        ),
+    ).first()
+    if duplicate is not None:
+        raise ValueError("duplicate_open_request")
+
+    privacy_request = PrivacyRequest(
+        user_id=user_id,
+        request_type=request_type.value,
+        status=schemas.PrivacyRequestStatus.SUBMITTED.value,
+    )
+    db.add(privacy_request)
+    db.commit()
+    db.refresh(privacy_request)
+    return privacy_request
+
+
+def get_privacy_requests_for_user(db: Session, *, user_id: int) -> List[PrivacyRequest]:
+    """Return a user's privacy requests ordered from newest to oldest."""
+
+    return db.query(PrivacyRequest).filter(
+        PrivacyRequest.user_id == user_id,
+    ).order_by(PrivacyRequest.created_at.desc(), PrivacyRequest.id.desc()).all()
+
+
+def get_privacy_requests_admin(db: Session) -> List[PrivacyRequest]:
+    """Return all privacy requests for admin review."""
+
+    return db.query(PrivacyRequest).order_by(
+        PrivacyRequest.created_at.desc(),
+        PrivacyRequest.id.desc(),
+    ).all()
+
+
+def get_privacy_request(db: Session, *, request_id: int) -> Optional[PrivacyRequest]:
+    """Return one privacy request by id."""
+
+    return db.query(PrivacyRequest).filter(PrivacyRequest.id == request_id).first()
+
+
+def update_privacy_request_status(
+    db: Session,
+    *,
+    request_id: int,
+    status_value: schemas.PrivacyRequestStatus,
+    admin_user_id: int,
+) -> Optional[PrivacyRequest]:
+    """Update a privacy request status and apply delete completion when needed."""
+
+    privacy_request = get_privacy_request(db, request_id=request_id)
+    if privacy_request is None:
+        return None
+
+    next_status = status_value.value
+    if privacy_request.status == next_status:
+        return privacy_request
+
+    privacy_request.status = next_status
+    privacy_request.reviewed_by_admin_id = admin_user_id
+    privacy_request.completed_at = (
+        datetime.now(timezone.utc)
+        if next_status == schemas.PrivacyRequestStatus.COMPLETED.value
+        else None
+    )
+
+    if (
+        privacy_request.request_type
+        == schemas.PrivacyRequestType.ACCOUNT_DELETE.value
+        and next_status == schemas.PrivacyRequestStatus.COMPLETED.value
+    ):
+        db_user = db.query(User).filter(User.id == privacy_request.user_id).first()
+        if db_user is not None and not db_user.is_deleted:
+            _mark_user_soft_deleted(db_user)
+
+    db.commit()
+    db.refresh(privacy_request)
+    return privacy_request
 
 # Admin CRUD for Users
 
@@ -770,7 +899,7 @@ def update_user_role_admin(db: Session, user_id: int, role: str) -> Optional[Use
     return None
 
 
-def soft_delete_user_admin(db: Session, user_id: int) -> bool:
+def soft_delete_user_admin(db: Session, user_id: int, *, commit: bool = True) -> bool:
     """Soft delete a user by setting is_deleted=True and deactivating the account.
 
     Returns True if updated, False if user does not exist or already deleted.
@@ -779,9 +908,11 @@ def soft_delete_user_admin(db: Session, user_id: int) -> bool:
                                     User.is_deleted == False).first()
     if not db_user:
         return False
-    db_user.is_deleted = True
-    db_user.is_active = False
-    db.commit()
+    _mark_user_soft_deleted(db_user)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return True
 
 

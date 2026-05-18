@@ -14,11 +14,13 @@ import platform
 import shutil
 import time
 from datetime import datetime, timezone
+from sqlalchemy.orm import Session
 
 from backend.auth import get_current_admin_user
+from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.settings import get_settings
-from backend import ai_services, schemas, settings as settings_module
+from backend import ai_services, crud, schemas, settings as settings_module
 from backend.metrics import APP_LOG_FILES_TOTAL
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -399,6 +401,8 @@ def config_diagnostics():
 @monitoring_router.patch("/config")
 def update_config(
     config_update: schemas.AdminConfigUpdate,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
 ):
     """Persist and apply the safe admin-editable configuration subset."""
 
@@ -419,6 +423,16 @@ def update_config(
             ),
             "persisted_fields": sorted(persisted.keys()),
         }
+        crud.create_admin_audit_event(
+            db,
+            admin_user_id=current_admin.id,
+            event_type="admin_config_patch",
+            target_type="admin_config",
+            metadata_json={
+                "changed_fields": payload["update_summary"]["updated_fields"]
+                + payload["update_summary"]["cleared_fields"],
+            },
+        )
         return payload
     except ValueError as exc:
         raise HTTPException(

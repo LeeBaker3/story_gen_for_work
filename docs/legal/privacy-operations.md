@@ -52,7 +52,12 @@ deployment vendors.
 
 ## Export Requests
 
-There is no self-serve full-account export bundle yet.
+There is still no self-serve full-account export bundle yet.
+
+Users can now submit an account export request from the authenticated product
+surface. That request is recorded for manual review and fulfillment by an
+admin. Completing the request records the manual fulfillment state only; it
+does not generate or deliver an export bundle automatically.
 
 If a user needs a copy of data currently stored for an account, maintainers can
 handle the request manually through the support process in this pack. The exact
@@ -62,13 +67,15 @@ available uploaded or generated files where practical.
 
 ## Account Deletion Requests
 
-There is no self-serve account deletion flow in the product yet.
+Users can now submit an authenticated account deletion request from the product.
+The request enters a manual admin review workflow.
 
 For now, account deletion requests should be sent through the support process in
 this pack or another private maintainer channel when one is available. Requests
 may require verification that the requester controls the account. Where a
-request can be fulfilled, the result may be a manual deletion or soft-deletion
-action consistent with the current application state.
+request can be fulfilled, the current backend implementation records completion
+and may apply the existing soft-delete behavior for the account rather than an
+immediate hard purge.
 
 ## When This Document Changes
 

@@ -3,6 +3,7 @@ import json
 import time
 from types import SimpleNamespace
 from pathlib import Path
+from backend.database import AdminAuditEvent
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -337,6 +338,7 @@ def test_update_config_endpoint_validates_payload(
 
 def test_update_config_endpoint_persists_safe_overrides(
     client,
+    db_session,
     tmp_path,
     monkeypatch,
     admin_auth_headers,
@@ -380,6 +382,17 @@ def test_update_config_endpoint_persists_safe_overrides(
         "openai_text_base_url",
         "text_model",
     ]
+
+    audit_event = db_session.query(AdminAuditEvent).filter(
+        AdminAuditEvent.event_type == "admin_config_patch",
+    ).one()
+    assert audit_event.metadata_json == {
+        "changed_fields": [
+            "enable_image_generation",
+            "openai_text_base_url",
+            "text_model",
+        ]
+    }
 
     settings_mod.reset_settings_cache()
     refreshed_settings = settings_mod.get_settings()

@@ -60,6 +60,17 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    privacy_requests = relationship(
+        "PrivacyRequest",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="PrivacyRequest.user_id",
+    )
+    admin_audit_events_created = relationship(
+        "AdminAuditEvent",
+        back_populates="admin_user",
+        foreign_keys="AdminAuditEvent.admin_user_id",
+    )
 
 
 class AccountEntitlement(Base):
@@ -287,6 +298,54 @@ class AdminBroadcast(Base):
                      server_default=func.now())
 
     created_by = relationship("User")
+
+
+class PrivacyRequest(Base):
+    __tablename__ = "privacy_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "request_type IN ('account_export', 'account_delete')",
+            name="ck_privacy_requests_request_type",
+        ),
+        CheckConstraint(
+            "status IN ('submitted', 'in_review', 'completed', 'rejected')",
+            name="ck_privacy_requests_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_type = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="submitted", index=True)
+    reviewed_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    user = relationship("User", back_populates="privacy_requests", foreign_keys=[user_id])
+    reviewed_by_admin = relationship("User", foreign_keys=[reviewed_by_admin_id])
+
+
+class AdminAuditEvent(Base):
+    __tablename__ = "admin_audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=False)
+    target_id = Column(Integer, nullable=True, index=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    admin_user = relationship(
+        "User",
+        back_populates="admin_audit_events_created",
+        foreign_keys=[admin_user_id],
+    )
 
 
 # --- Characters Domain (Phase 2) ---

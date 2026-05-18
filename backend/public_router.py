@@ -842,6 +842,46 @@ async def read_users_me(current_user: schemas.User = Depends(auth.get_current_ac
     return current_user
 
 
+@public_router.post(
+    "/users/me/privacy-requests",
+    response_model=schemas.PrivacyRequest,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_my_privacy_request(
+    payload: schemas.PrivacyRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """Create a manual account export or account delete request for the user."""
+
+    try:
+        return crud.create_privacy_request(
+            db,
+            user_id=current_user.id,
+            request_type=payload.request_type,
+        )
+    except ValueError as exc:
+        if str(exc) != "duplicate_open_request":
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An open privacy request of this type already exists.",
+        ) from exc
+
+
+@public_router.get(
+    "/users/me/privacy-requests",
+    response_model=List[schemas.PrivacyRequest],
+)
+async def list_my_privacy_requests(
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """List the current user's privacy requests from newest to oldest."""
+
+    return crud.get_privacy_requests_for_user(db, user_id=current_user.id)
+
+
 @public_router.get("/dynamic-lists/{list_name}/active-items", response_model=List[schemas.DynamicListItemPublic])
 def get_public_list_items(list_name: str, db: Session = Depends(get_db)):
     items = crud.get_active_dynamic_list_items(db, list_name=list_name)

@@ -12,6 +12,18 @@ class UserRole(str, Enum):  # Added UserRole Enum
     USER = "user"
 
 
+class PrivacyRequestType(str, Enum):
+    ACCOUNT_EXPORT = "account_export"
+    ACCOUNT_DELETE = "account_delete"
+
+
+class PrivacyRequestStatus(str, Enum):
+    SUBMITTED = "submitted"
+    IN_REVIEW = "in_review"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
+
+
 class EntitlementAccessState(str, Enum):
     TRIAL = "trial"
     PAID_ACTIVE = "paid-active"
@@ -276,6 +288,27 @@ class User(UserBase):
 
 class UserInDB(User):
     hashed_password: str
+
+
+class PrivacyRequestCreate(BaseModel):
+    request_type: PrivacyRequestType
+
+
+class PrivacyRequestUpdate(BaseModel):
+    status: PrivacyRequestStatus
+
+
+class PrivacyRequest(BaseModel):
+    id: int
+    user_id: int
+    request_type: PrivacyRequestType
+    status: PrivacyRequestStatus
+    reviewed_by_admin_id: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EntitlementBalance(BaseModel):

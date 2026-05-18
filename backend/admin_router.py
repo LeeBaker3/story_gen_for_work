@@ -528,6 +528,17 @@ def admin_update_user_endpoint(user_id: int, user_update: schemas.AdminUserUpdat
 
     app_logger.info(
         f"User ID {user_id} details updated by admin {current_admin.username}. New details: {updated_user}")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="user_update",
+        target_type="user",
+        target_id=updated_user.id,
+        metadata_json={
+            "user_id": updated_user.id,
+            "changed_fields": sorted(user_update.model_dump(exclude_unset=True).keys()),
+        },
+    )
     return updated_user
 
 
@@ -567,7 +578,78 @@ def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db),
         # Could be already deleted
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"User with ID {user_id} not found or already deleted")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="user_soft_delete",
+        target_type="user",
+        target_id=user_id,
+        metadata_json={
+            "user_id": user_id,
+            "changed_fields": ["is_active", "is_deleted"],
+        },
+    )
     return
+
+
+@admin_router.get("/privacy-requests", response_model=List[schemas.PrivacyRequest])
+def admin_list_privacy_requests(
+    db: Session = Depends(get_db),
+):
+    """List privacy requests for manual admin review."""
+
+    return crud.get_privacy_requests_admin(db)
+
+
+@admin_router.patch(
+    "/privacy-requests/{request_id}",
+    response_model=schemas.PrivacyRequest,
+)
+def admin_update_privacy_request(
+    request_id: int,
+    payload: schemas.PrivacyRequestUpdate,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
+    """Update a privacy request's manual workflow status."""
+
+    privacy_request = crud.get_privacy_request(db, request_id=request_id)
+    if privacy_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Privacy request with ID {request_id} not found",
+        )
+
+    previous_status = privacy_request.status
+    updated_request = crud.update_privacy_request_status(
+        db,
+        request_id=request_id,
+        status_value=payload.status,
+        admin_user_id=current_admin.id,
+    )
+    if updated_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Privacy request with ID {request_id} not found",
+        )
+
+    if previous_status != updated_request.status:
+        crud.create_admin_audit_event(
+            db,
+            admin_user_id=current_admin.id,
+            event_type="privacy_request_status_change",
+            target_type="privacy_request",
+            target_id=updated_request.id,
+            metadata_json={
+                "privacy_request_id": updated_request.id,
+                "user_id": updated_request.user_id,
+                "request_type": updated_request.request_type,
+                "old_status": previous_status,
+                "new_status": updated_request.status,
+            },
+        )
+
+    return updated_request
 
 
 # --- Admin Content Moderation ---
@@ -625,12 +707,28 @@ class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema
 
 
 @admin_router.patch("/moderation/stories/{story_id}/hide", response_model=schemas.Story)
-def admin_hide_story(story_id: int, payload: HideStoryRequest, db: Session = Depends(get_db)):
+def admin_hide_story(
+    story_id: int,
+    payload: HideStoryRequest,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
     story = crud.set_story_hidden_admin(
         db, story_id=story_id, is_hidden=payload.is_hidden)
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Story with ID {story_id} not found")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="story_visibility_change",
+        target_type="story",
+        target_id=story.id,
+        metadata_json={
+            "story_id": story.id,
+            "changed_fields": ["is_hidden"],
+        },
+    )
     # Normalize legacy enum values before response
     try:
         legacy_text_density_map = {
@@ -647,11 +745,26 @@ def admin_hide_story(story_id: int, payload: HideStoryRequest, db: Session = Dep
 
 
 @admin_router.delete("/moderation/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
-def admin_soft_delete_story(story_id: int, db: Session = Depends(get_db)):
+def admin_soft_delete_story(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
     ok = crud.soft_delete_story_admin(db, story_id=story_id)
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Story with ID {story_id} not found")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="story_soft_delete",
+        target_type="story",
+        target_id=story_id,
+        metadata_json={
+            "story_id": story_id,
+            "changed_fields": ["is_deleted"],
+        },
+    )
     return
 
 # You will need to include admin_user_router in your main FastAPI app (e.g., in main.py)
