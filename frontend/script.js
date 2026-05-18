@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const navCreateStory = document.getElementById("nav-create-story");
     const navBrowseStories = document.getElementById("nav-browse-stories");
     const navCharacters = document.getElementById("nav-characters");
+    const navAccount = document.getElementById("nav-account");
     const navLogout = document.getElementById("nav-logout");
     const navAdminPanel = document.getElementById("nav-admin-panel");
 
@@ -48,8 +49,17 @@ document.addEventListener("DOMContentLoaded", function () {
         "browse-stories-section",
     );
     const charactersSection = document.getElementById("characters-section");
+    const accountSection = document.getElementById("account-section");
     const adminPanelContainer = document.getElementById("adminPanelContainer"); // ENSURED DECLARATION
     const snackbarEl = document.getElementById("snackbar");
+    const accountIdentity = document.getElementById("account-identity");
+    const accountStatus = document.getElementById("account-status");
+    const accountRetryButton = document.getElementById("account-retry-button");
+    const accountPlanStatus = document.getElementById("account-plan-status");
+    const accountPlanDetail = document.getElementById("account-plan-detail");
+    const accountStoryCredits = document.getElementById("account-story-credits");
+    const accountImageCredits = document.getElementById("account-image-credits");
+    const accountUsageDetail = document.getElementById("account-usage-detail");
 
     // Forms
     const loginForm = document.getElementById("login-form");
@@ -95,6 +105,13 @@ document.addEventListener("DOMContentLoaded", function () {
     let hasAuthenticatedSession = false;
     let pdfPreviewObjectUrl = null;
     let pdfPreviewFilename = "story.pdf";
+    const accountHubState = {
+        isLoading: false,
+        hasLoaded: false,
+        error: null,
+        user: null,
+        entitlement: null,
+    };
 
     // State variables for draft editing
     let currentStoryId = null;
@@ -199,6 +216,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function enterAuthenticatedApp() {
         hasAuthenticatedSession = true;
+        resetAccountHub();
         updateNav(true);
         if (window.location.hash === "#browse") {
             showSection(browseStoriesSection);
@@ -4079,6 +4097,7 @@ document.addEventListener("DOMContentLoaded", function () {
             storyPreviewSection,
             browseStoriesSection,
             charactersSection,
+            accountSection,
             adminPanelContainer,
         ].forEach((section) => {
             if (section) section.style.display = "none";
@@ -4131,6 +4150,222 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function resetAccountHub() {
+        accountHubState.isLoading = false;
+        accountHubState.hasLoaded = false;
+        accountHubState.error = null;
+        accountHubState.user = null;
+        accountHubState.entitlement = null;
+        renderAccountHub();
+        setAccountStatusState(
+            "info",
+            "Account details load when you open this section.",
+        );
+    }
+
+    function setAccountStatusState(type, message, options = {}) {
+        const { showRetry = false } = options;
+
+        if (accountStatus) {
+            accountStatus.className = `inline-status inline-status--${type}`;
+            accountStatus.textContent = String(message || "");
+        }
+        if (accountRetryButton) {
+            accountRetryButton.style.display = showRetry ? "inline-block" : "none";
+            accountRetryButton.disabled = accountHubState.isLoading;
+        }
+    }
+
+    function formatCreditSummary(balance) {
+        if (!balance || typeof balance.remaining !== "number") {
+            return "Unavailable";
+        }
+        const total = typeof balance.total === "number" ? balance.total : 0;
+        return `${balance.remaining} of ${total}`;
+    }
+
+    function getEntitlementHeading(entitlement) {
+        const accessState = String(entitlement?.access_state || "").toLowerCase();
+
+        if (accessState === "trial") {
+            return entitlement?.trial_expires_at
+                ? `Trial active until ${formatDate(entitlement.trial_expires_at)}`
+                : "Trial active";
+        }
+
+        if (accessState === "paid-active") {
+            return entitlement?.renews_at
+                ? `Paid plan active until ${formatDate(entitlement.renews_at)}`
+                : "Paid plan active";
+        }
+
+        if (accessState === "grace") {
+            return entitlement?.renews_at
+                ? `Billing grace period until ${formatDate(entitlement.renews_at)}`
+                : "Billing grace period";
+        }
+
+        if (accessState === "suspended") {
+            return "Entitlement suspended";
+        }
+
+        return "Entitlement status unavailable";
+    }
+
+    function getEntitlementDetail(entitlement) {
+        if (!entitlement) {
+            return "Open Account to load your current entitlement.";
+        }
+
+        if (!entitlement.active_entitlement) {
+            return "No active entitlement is currently available for story or image generation.";
+        }
+
+        if (entitlement.can_generate_stories || entitlement.can_generate_images) {
+            return "Your current account can use the available story and image credits shown below.";
+        }
+
+        return "Generation is currently unavailable for this account state. Use the support links below if you need help.";
+    }
+
+    function renderAccountHub() {
+        if (accountIdentity) {
+            if (accountHubState.user) {
+                const username = accountHubState.user.username || "Account";
+                const email = accountHubState.user.email
+                    ? ` (${accountHubState.user.email})`
+                    : "";
+                accountIdentity.textContent = `Signed in as ${username}${email}.`;
+            } else {
+                accountIdentity.textContent = "Signed in account details will appear here.";
+            }
+        }
+
+        if (accountPlanStatus) {
+            accountPlanStatus.textContent = accountHubState.entitlement
+                ? getEntitlementHeading(accountHubState.entitlement)
+                : "Not loaded yet";
+        }
+        if (accountPlanDetail) {
+            accountPlanDetail.textContent = getEntitlementDetail(
+                accountHubState.entitlement,
+            );
+        }
+        if (accountStoryCredits) {
+            accountStoryCredits.textContent = formatCreditSummary(
+                accountHubState.entitlement?.story_credits,
+            );
+        }
+        if (accountImageCredits) {
+            accountImageCredits.textContent = formatCreditSummary(
+                accountHubState.entitlement?.image_credits,
+            );
+        }
+        if (accountUsageDetail) {
+            accountUsageDetail.textContent = accountHubState.entitlement
+                ? "Remaining credits reflect the current backend entitlement balance."
+                : "Credit balances will appear here after the account request completes.";
+        }
+    }
+
+    async function fetchAccountResource(endpoint) {
+        const response = await fetch(
+            `${API_BASE_URL}${endpoint}`,
+            buildAuthenticatedFetchOptions({
+                method: "GET",
+                headers: { Accept: "application/json" },
+            }),
+        );
+
+        let responseData = null;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            responseData = await response.json().catch(() => null);
+        } else {
+            const text = await response.text().catch(() => "");
+            responseData = text ? { detail: text } : null;
+        }
+
+        if (!response.ok) {
+            const detail = responseData?.detail
+                ? String(responseData.detail)
+                : `Request failed with status ${response.status}`;
+            if (response.status === 401) {
+                hasAuthenticatedSession = false;
+                clearLegacyAuthToken();
+                updateNav(false);
+                if (typeof showLoginForm === "function") {
+                    showLoginForm();
+                }
+            }
+            throw new Error(detail);
+        }
+
+        return responseData;
+    }
+
+    async function loadAccountHub(forceRefresh = false) {
+        if (!hasAuthenticatedSession || !accountSection) {
+            return;
+        }
+        if (accountHubState.isLoading) {
+            return;
+        }
+        if (accountHubState.hasLoaded && !forceRefresh) {
+            setAccountStatusState("success", "Account details are up to date.");
+            return;
+        }
+
+        accountHubState.isLoading = true;
+        accountHubState.error = null;
+        accountSection.setAttribute("aria-busy", "true");
+        setAccountStatusState("info", "Loading account details...");
+        if (accountPlanStatus) {
+            accountPlanStatus.textContent = "Loading account details...";
+        }
+        if (accountPlanDetail) {
+            accountPlanDetail.textContent = "Checking your current plan and trial status.";
+        }
+        if (accountStoryCredits) {
+            accountStoryCredits.textContent = "Loading...";
+        }
+        if (accountImageCredits) {
+            accountImageCredits.textContent = "Loading...";
+        }
+        if (accountUsageDetail) {
+            accountUsageDetail.textContent = "Fetching credit balances from your account.";
+        }
+
+        try {
+            const [user, entitlement] = await Promise.all([
+                fetchAccountResource("/api/v1/users/me"),
+                fetchAccountResource("/api/v1/users/me/entitlement"),
+            ]);
+            accountHubState.user = user;
+            accountHubState.entitlement = entitlement;
+            accountHubState.hasLoaded = true;
+            renderAccountHub();
+            setAccountStatusState("success", "Account details are up to date.");
+        } catch (error) {
+            accountHubState.user = null;
+            accountHubState.entitlement = null;
+            accountHubState.hasLoaded = false;
+            accountHubState.error = error;
+            renderAccountHub();
+            setAccountStatusState(
+                "error",
+                `We couldn't load your account details. ${error.message || "Please retry."}`,
+                { showRetry: true },
+            );
+        } finally {
+            accountHubState.isLoading = false;
+            accountSection.setAttribute("aria-busy", "false");
+            if (accountRetryButton) {
+                accountRetryButton.disabled = false;
+            }
+        }
+    }
+
     function setAuthMode(mode) {
         const authSectionHeading = authSection?.querySelector("h2");
         const formsByMode = {
@@ -4167,6 +4402,7 @@ document.addEventListener("DOMContentLoaded", function () {
             navCreateStory.style.display = "inline-block";
             navBrowseStories.style.display = "inline-block";
             if (navCharacters) navCharacters.style.display = "inline-block";
+            if (navAccount) navAccount.style.display = "inline-block";
             navLogout.style.display = "inline-block";
             // Show admin link only if user is admin
             fetchAndSetUserRole(); // Call this to determine if admin link should be shown
@@ -4175,12 +4411,14 @@ document.addEventListener("DOMContentLoaded", function () {
             navCreateStory.style.display = "none";
             navBrowseStories.style.display = "none";
             if (navCharacters) navCharacters.style.display = "none";
+            if (navAccount) navAccount.style.display = "none";
             navLogout.style.display = "none";
             if (navAdminPanel) navAdminPanel.style.display = "none"; // Hide admin panel link on logout
             // Explicitly hide app sections and close any character modal
             try {
                 if (charactersSection) charactersSection.style.display = 'none';
                 if (storyCreationSection) storyCreationSection.style.display = 'none';
+                if (accountSection) accountSection.style.display = 'none';
                 const modal = document.getElementById('char-modal');
                 const backdrop = document.getElementById('char-modal-backdrop');
                 if (modal) modal.classList.remove('open');
@@ -4608,6 +4846,19 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    if (navAccount) {
+        navAccount.addEventListener("click", async () => {
+            showSection(accountSection);
+            await loadAccountHub();
+        });
+    }
+
+    if (accountRetryButton) {
+        accountRetryButton.addEventListener("click", async () => {
+            await loadAccountHub(true);
+        });
+    }
+
     // --- AUTHENTICATION ---
     const forgotPasswordFlowPresent = Boolean(
         showForgotPasswordLink
@@ -4774,6 +5025,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         hasAuthenticatedSession = false;
         clearLegacyAuthToken();
+        resetAccountHub();
         updateNav(false);
         displayMessage("Logged out.", "info");
         currentStoryId = null;

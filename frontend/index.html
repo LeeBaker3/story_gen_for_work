@@ -20,6 +20,7 @@
                 <button id="nav-create-story" class="nav-button" style="display:none;">Create New Story</button>
                 <button id="nav-browse-stories" class="nav-button" style="display:none;">My Stories</button>
                 <button id="nav-characters" class="nav-button" style="display:none;">Characters</button>
+                <button id="nav-account" class="nav-button" style="display:none;">Account</button>
                 <a id="nav-admin-panel" href="/static/admin.html" class="nav-button" style="display:none;">Admin Panel</a>
                 <button id="nav-logout" class="nav-button" style="display:none;">Logout</button>
             </div>
@@ -528,6 +529,68 @@
             <h2>My Stories</h2>
             <div id="user-stories-list">
                 <!-- List of user's stories will be displayed here -->
+            </div>
+        </section>
+
+        <section id="account-section" style="display:none;">
+            <h2>Account</h2>
+            <p id="account-identity" class="account-summary-text">Signed in account details will appear here.</p>
+            <div
+                id="account-status"
+                class="inline-status inline-status--info"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+            >Account details load when you open this section.</div>
+            <button
+                type="button"
+                id="account-retry-button"
+                class="action-button-secondary"
+                style="display:none; margin-top:0.75rem;"
+            >Retry loading account details</button>
+
+            <div class="account-hub-grid">
+                <section class="account-hub-card" aria-labelledby="account-plan-title">
+                    <p class="account-hub-eyebrow">Plan</p>
+                    <h3 id="account-plan-title">Plan and trial status</h3>
+                    <p id="account-plan-status" class="account-hub-value">Not loaded yet</p>
+                    <p id="account-plan-detail" class="account-summary-text">Open Account to load your current entitlement.</p>
+                </section>
+
+                <section class="account-hub-card" aria-labelledby="account-usage-title">
+                    <p class="account-hub-eyebrow">Usage</p>
+                    <h3 id="account-usage-title">Story and image credits</h3>
+                    <dl class="account-usage-grid">
+                        <div class="account-usage-stat">
+                            <dt>Stories remaining</dt>
+                            <dd id="account-story-credits">--</dd>
+                        </div>
+                        <div class="account-usage-stat">
+                            <dt>Images remaining</dt>
+                            <dd id="account-image-credits">--</dd>
+                        </div>
+                    </dl>
+                    <p id="account-usage-detail" class="account-summary-text">Credit balances will appear here after the account request completes.</p>
+                </section>
+
+                <section class="account-hub-card" aria-labelledby="account-help-title">
+                    <p class="account-hub-eyebrow">Help</p>
+                    <h3 id="account-help-title">Billing and data requests</h3>
+                    <ul class="account-help-list">
+                        <li>
+                            <strong>Billing help:</strong>
+                            Use the <a href="/legal/support-policy">Support policy</a> for billing contact details and the <a href="/legal/refund-policy">Refund policy</a> for refund expectations.
+                        </li>
+                        <li>
+                            <strong>Export requests:</strong>
+                            Follow the <a href="/legal/privacy-operations">Privacy Operations</a> guidance for data access and export requests.
+                        </li>
+                        <li>
+                            <strong>Account deletion:</strong>
+                            Use the <a href="/legal/privacy-operations">Privacy Operations</a> process or the <a href="/legal/support-policy">Support policy</a> contact path for deletion requests.
+                        </li>
+                    </ul>
+                </section>
             </div>
         </section>
         

@@ -110,6 +110,7 @@ describe('auth form flows', () => {
         expect(requestOptions.body.get('password')).toBe('secret-pass');
         expect(requestOptions.credentials).toBe('include');
         expect(document.getElementById('nav-create-story').style.display).toBe('inline-block');
+        expect(document.getElementById('nav-account').style.display).toBe('inline-block');
         expect(document.getElementById('story-creation-section').style.display).toBe('block');
         await waitFor(() => {
             expect(document.getElementById('nav-admin-panel').style.display).toBe('inline-block');
