@@ -15,6 +15,16 @@ Key minimums for local dev
 - MOUNT_FRONTEND_STATIC=true
 - MOUNT_DATA_STATIC=true
 
+Staging/prod baseline
+- RUN_ENV=staging or RUN_ENV=prod
+- DATABASE_URL=<Neon Postgres connection string>
+- DB_BOOTSTRAP_MODE=migrations
+- ASSET_STORAGE_BACKEND=s3
+- ASSET_STORAGE_PUBLIC_PREFIX=public
+- ASSET_STORAGE_PRIVATE_PREFIX=private
+- ASSET_STORAGE_S3_BUCKET=<bucket>
+- ASSET_STORAGE_S3_REGION=<region>
+
 Optional low-cost local AI example
 - OPENAI_API_KEY=dummy-local-key
 - OPENAI_BASE_URL=http://localhost:11434/v1
@@ -24,7 +34,7 @@ Optional low-cost local AI example
 ## Environment variables
 
 Core
-- RUN_ENV: dev | test | prod (default: dev)
+- RUN_ENV: dev | test | staging | prod (default: dev)
   - test disables static mounts by default. Override via MOUNT_* flags if needed.
 - API_PREFIX: API base path (default: /api/v1)
 - SECRET_KEY: JWT signing key (required in prod)
@@ -35,7 +45,21 @@ Static & storage
 - PRIVATE_DATA_DIR: base directory for private user uploads that must not be publicly accessible (default: private_data)
 - MAX_UPLOAD_BYTES: maximum allowed size for uploads (default: 10485760 / 10MB)
 - MOUNT_FRONTEND_STATIC: "1"/"true" to mount /static (default: true unless RUN_ENV=test)
-- MOUNT_DATA_STATIC: "1"/"true" to mount /static_content (default: true unless RUN_ENV=test)
+- MOUNT_DATA_STATIC: "1"/"true" to mount /static_content (default: true unless RUN_ENV=test; forced off when ASSET_STORAGE_BACKEND=s3)
+- ASSET_STORAGE_BACKEND: filesystem | s3 (default: filesystem in dev/test, s3 in staging/prod)
+- ASSET_STORAGE_PUBLIC_PREFIX: object-storage prefix for public assets (default: public)
+- ASSET_STORAGE_PRIVATE_PREFIX: object-storage prefix for private assets (default: private)
+- ASSET_STORAGE_S3_BUCKET: bucket/container name required when ASSET_STORAGE_BACKEND=s3
+- ASSET_STORAGE_S3_REGION: region required when ASSET_STORAGE_BACKEND=s3
+- ASSET_STORAGE_S3_ENDPOINT_URL: optional endpoint override for S3-compatible providers
+- ASSET_STORAGE_S3_ACCESS_KEY_ID: optional runtime credential field for later object-storage integration
+- ASSET_STORAGE_S3_SECRET_ACCESS_KEY: optional runtime credential field for later object-storage integration
+
+Asset prefix rules
+- Public asset keys use `ASSET_STORAGE_PUBLIC_PREFIX/<legacy-relative-path>`.
+- Private asset keys use `ASSET_STORAGE_PRIVATE_PREFIX/<legacy-relative-path>`.
+- Legacy database values that only contain the relative path remain accepted for local filesystem resolution.
+- Story page images remain private from `/static_content`; object-storage mode disables the local `/static_content` mount entirely.
 
 Logging
 - LOGS_DIR: directory for logs (default: DATA_DIR/logs)
@@ -73,16 +97,30 @@ CORS
 
 Database
 - DATABASE_URL: SQLAlchemy URL (default: sqlite:///./story_generator.db)
+- DB_BOOTSTRAP_MODE: runtime | migrations (default: runtime in dev/test, migrations in staging/prod)
+
+Runtime guarantees
+- Staging/prod fail fast if DATABASE_URL points at SQLite.
+- Staging/prod fail fast if DB_BOOTSTRAP_MODE is not `migrations`.
+- Staging/prod fail fast if ASSET_STORAGE_BACKEND is `filesystem`.
+- Any environment using ASSET_STORAGE_BACKEND=`s3` fails fast unless at least `ASSET_STORAGE_S3_BUCKET` and `ASSET_STORAGE_S3_REGION` are set.
 
 Alembic migrations
 - The repository now includes a minimal Alembic scaffold rooted at `alembic.ini` and `alembic/`.
 - Alembic resolves `DATABASE_URL` from the environment, matching the app's SQLAlchemy connection target.
 - Alembic autogenerate uses `backend.database.Base.metadata`, so revisions are based on the existing backend model definitions.
-- Current runtime bootstrap remains in place for dev/test compatibility: startup still runs `create_all` and the SQLite `_ensure_*` helpers.
+- Runtime bootstrap remains in place for dev/test compatibility only: startup still runs `create_all` and the SQLite `_ensure_*` helpers when `DB_BOOTSTRAP_MODE=runtime`.
+- Staging/prod must run Alembic before the app starts; runtime startup no longer bootstraps schema in those environments.
 - Typical commands:
   - `./.venv/bin/python -m alembic -c alembic.ini revision --autogenerate -m "describe change"`
   - `./.venv/bin/python -m alembic -c alembic.ini upgrade head`
   - `./.venv/bin/python -m alembic -c alembic.ini downgrade -1`
+
+Staging baseline operations
+- Database target: Neon Postgres.
+- Asset storage target: S3-compatible object storage.
+- Backup retention baseline: keep at least 14 days of restorable Neon backups/PITR and 14 days of object-storage versioned backups or replicated snapshots.
+- Initial restore runbook: see `docs/staging_restore_runbook.md`.
 
 ## Admin bootstrap (create first admin)
 
@@ -167,7 +205,8 @@ Affects: wizard Step 3 dropdown, editor document defaults, PDF export font selec
 ## Notes & safe defaults
 
 - The backend prefers the repository root .env. If backend/.env also exists, it is only used to fill missing values (never overriding root or shell env).
-- Paths saved in the database are relative to DATA_DIR, so they are served under /static_content/ consistently.
+- Local filesystem paths saved in the database remain relative to DATA_DIR and are served under /static_content/ when that mount is enabled.
+- Public object-storage keys are expected to live under ASSET_STORAGE_PUBLIC_PREFIX and private keys under ASSET_STORAGE_PRIVATE_PREFIX.
 - Uploaded character photos are stored under PRIVATE_DATA_DIR and are never served from /static_content.
 - For CI, use OPENAI_API_KEY=dummy-ci-key and mock OpenAI calls in tests (already done in the test suite).
 

@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 ADMIN_CONFIG_OVERRIDE_FILENAME = "admin_config_overrides.json"
+LOCAL_RUN_ENVS = {"dev", "test"}
+RUNTIME_DB_BOOTSTRAP_MODES = {"runtime", "migrations"}
+ASSET_STORAGE_BACKENDS = {"filesystem", "s3"}
 ADMIN_CONFIG_EDITABLE_FIELDS = (
     "openai_text_provider",
     "openai_text_base_url",
@@ -36,6 +39,34 @@ def _parse_bool_env(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in ("1", "true", "yes")
+
+
+def _normalize_storage_prefix(prefix: str | None, label: str) -> str:
+    """Return a safe object-storage prefix without leading or trailing slashes."""
+
+    normalized = str(prefix or "").strip().strip("/")
+    if not normalized:
+        raise RuntimeError(f"{label} must be set")
+    if normalized in (".", ".."):
+        raise RuntimeError(f"{label} must not be '.' or '..'")
+    if normalized.startswith("../") or "/../" in normalized:
+        raise RuntimeError(f"{label} must not escape its storage root")
+    return normalized
+
+
+def _database_scheme(database_url: str) -> str:
+    """Return the database URL scheme used for posture checks."""
+
+    normalized = str(database_url or "").strip().lower()
+    if normalized.startswith("sqlite"):
+        return "sqlite"
+    return normalized.split(":", 1)[0]
+
+
+def _env_name_list(names: List[str]) -> str:
+    """Format a list of environment variable names for diagnostics."""
+
+    return ", ".join(names)
 
 
 def _resolve_repo_path(repo_root: Path, path_value: str) -> str:
@@ -160,6 +191,50 @@ class BaseSettings:
         # Environment & paths
         self.run_env: str = os.getenv("RUN_ENV", "dev")
         self.api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
+        self.database_url: str = os.getenv(
+            "DATABASE_URL",
+            "sqlite:///./story_generator.db",
+        )
+        self.database_scheme: str = _database_scheme(self.database_url)
+        self.database_bootstrap_mode: str = os.getenv(
+            "DB_BOOTSTRAP_MODE",
+            "runtime" if self.run_env in LOCAL_RUN_ENVS else "migrations",
+        ).strip().lower() or "runtime"
+        self.asset_storage_backend: str = os.getenv(
+            "ASSET_STORAGE_BACKEND",
+            "filesystem" if self.run_env in LOCAL_RUN_ENVS else "s3",
+        ).strip().lower() or "filesystem"
+        self.asset_storage_public_prefix: str = _normalize_storage_prefix(
+            os.getenv("ASSET_STORAGE_PUBLIC_PREFIX", "public"),
+            "ASSET_STORAGE_PUBLIC_PREFIX",
+        )
+        self.asset_storage_private_prefix: str = _normalize_storage_prefix(
+            os.getenv("ASSET_STORAGE_PRIVATE_PREFIX", "private"),
+            "ASSET_STORAGE_PRIVATE_PREFIX",
+        )
+        self.asset_storage_s3_bucket: str = os.getenv(
+            "ASSET_STORAGE_S3_BUCKET", ""
+        ).strip()
+        self.asset_storage_s3_region: str = os.getenv(
+            "ASSET_STORAGE_S3_REGION", ""
+        ).strip()
+        self.asset_storage_s3_endpoint_url: str = os.getenv(
+            "ASSET_STORAGE_S3_ENDPOINT_URL", ""
+        ).strip()
+        self.asset_storage_s3_access_key_id: str = os.getenv(
+            "ASSET_STORAGE_S3_ACCESS_KEY_ID", ""
+        ).strip()
+        self.asset_storage_s3_secret_access_key: str = os.getenv(
+            "ASSET_STORAGE_S3_SECRET_ACCESS_KEY", ""
+        ).strip()
+        self.is_local_run_env: bool = self.run_env in LOCAL_RUN_ENVS
+        self.require_migration_managed_schema: bool = (
+            self.database_bootstrap_mode == "migrations"
+        )
+        self.runtime_schema_bootstrap_enabled: bool = (
+            self.database_bootstrap_mode == "runtime"
+        )
+        self.asset_storage_s3_configured: bool = False
 
         # Static directories to mount
         self.frontend_static_dir: str = _resolve_repo_path(
@@ -214,6 +289,9 @@ class BaseSettings:
             self.mount_frontend_static = self.run_env != "test"
         if os.getenv("MOUNT_DATA_STATIC") is None:
             self.mount_data_static = self.run_env != "test"
+        self._validate_runtime_posture()
+        if self.asset_storage_backend != "filesystem":
+            self.mount_data_static = False
 
         # Logging
         logs_dir_env = os.getenv("LOGS_DIR")
@@ -351,6 +429,61 @@ class BaseSettings:
             os.getenv("EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW"),
             default=False,
         )
+
+    def _validate_runtime_posture(self) -> None:
+        """Validate the deploy posture and fail fast on unsafe baselines."""
+
+        if self.database_bootstrap_mode not in RUNTIME_DB_BOOTSTRAP_MODES:
+            raise RuntimeError(
+                "DB_BOOTSTRAP_MODE must be one of: "
+                f"{', '.join(sorted(RUNTIME_DB_BOOTSTRAP_MODES))}"
+            )
+
+        if self.asset_storage_backend not in ASSET_STORAGE_BACKENDS:
+            raise RuntimeError(
+                "ASSET_STORAGE_BACKEND must be one of: "
+                f"{', '.join(sorted(ASSET_STORAGE_BACKENDS))}"
+            )
+
+        if self.asset_storage_public_prefix == self.asset_storage_private_prefix:
+            raise RuntimeError(
+                "ASSET_STORAGE_PUBLIC_PREFIX and "
+                "ASSET_STORAGE_PRIVATE_PREFIX must differ"
+            )
+
+        if not self.is_local_run_env:
+            if self.database_scheme == "sqlite":
+                raise RuntimeError(
+                    "RUN_ENV staging/prod requires a server database such as "
+                    "Neon Postgres; SQLite is only supported in dev/test"
+                )
+            if self.database_bootstrap_mode != "migrations":
+                raise RuntimeError(
+                    "RUN_ENV staging/prod requires DB_BOOTSTRAP_MODE="
+                    "migrations"
+                )
+            if self.asset_storage_backend == "filesystem":
+                raise RuntimeError(
+                    "RUN_ENV staging/prod requires ASSET_STORAGE_BACKEND=s3; "
+                    "filesystem assets are only supported in dev/test"
+                )
+
+        if self.asset_storage_backend == "s3":
+            required_values = {
+                "ASSET_STORAGE_S3_BUCKET": self.asset_storage_s3_bucket,
+                "ASSET_STORAGE_S3_REGION": self.asset_storage_s3_region,
+            }
+            missing_env_names = [
+                env_name
+                for env_name, env_value in required_values.items()
+                if not env_value
+            ]
+            if missing_env_names:
+                raise RuntimeError(
+                    "ASSET_STORAGE_BACKEND=s3 requires: "
+                    f"{_env_name_list(missing_env_names)}"
+                )
+            self.asset_storage_s3_configured = True
 
 
 _settings_instance: BaseSettings | None = None

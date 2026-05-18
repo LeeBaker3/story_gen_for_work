@@ -74,13 +74,14 @@ Notes
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
 - User data (if mounted): GET /static_content/* serves files from DATA_DIR
-- Image paths stored in DB are relative to DATA_DIR (e.g., images/user_1/story_2/...)
+- Local image paths stored in DB remain relative to DATA_DIR (e.g., images/user_1/story_2/...)
+- Staging/prod baseline switches asset posture to S3-compatible storage keys using `ASSET_STORAGE_PUBLIC_PREFIX/...` and `ASSET_STORAGE_PRIVATE_PREFIX/...`; the app still accepts legacy relative paths where needed for local compatibility.
 
 ## Configuration
 All configuration is centralized in backend/settings.py and read from environment variables. Sensible defaults are provided. Use a single root-level `.env`. See CONFIG.md for a full guide and .env usage.
 
 Core
-- RUN_ENV: dev|test|prod (default: dev). Test disables static mounts unless overridden.
+- RUN_ENV: dev|test|staging|prod (default: dev). Test disables static mounts unless overridden.
 - API_PREFIX: API base path (default: /api/v1)
 - SECRET_KEY: JWT signing key (required in production)
 
@@ -88,7 +89,9 @@ Static & storage
 - FRONTEND_DIR: directory for frontend static (default: frontend)
 - DATA_DIR: base directory for generated data (default: data)
 - MOUNT_FRONTEND_STATIC: 1/true to mount /static (default: true unless RUN_ENV=test)
-- MOUNT_DATA_STATIC: 1/true to mount /static_content (default: true unless RUN_ENV=test)
+- MOUNT_DATA_STATIC: 1/true to mount /static_content (default: true unless RUN_ENV=test; forced off for object-storage posture)
+- ASSET_STORAGE_BACKEND: filesystem in dev/test, S3-compatible in staging/prod
+- ASSET_STORAGE_PUBLIC_PREFIX / ASSET_STORAGE_PRIVATE_PREFIX: public/private object key roots
 
 Logging
 - LOGS_DIR: directory for logs (default: DATA_DIR/logs)
@@ -111,13 +114,14 @@ CORS
 Database
 - DATABASE_URL: database connection string (default sqlite:///./story_generator.db)
 - SQLite is supported out of the box; for Postgres, install a suitable driver (e.g., psycopg)
-- Tables auto-created on startup; seed data is applied during app startup lifespan
- - In dev/test, startup helpers idempotently add new columns (task tracking, soft-delete/moderation). Use proper migrations (e.g., Alembic) for production.
+- DB_BOOTSTRAP_MODE: runtime in dev/test, migrations in staging/prod
+- Runtime schema bootstrap is dev/test-only; staging/prod fail fast on SQLite or filesystem asset posture and expect Alembic-managed schema.
 
 Schema migrations
 - Alembic bootstrap files live under `alembic/` with config in `alembic.ini`.
 - The Alembic environment imports `backend.database.Base.metadata` and uses `DATABASE_URL`, so migration autogeneration targets the same models as the app.
-- Runtime startup behavior is unchanged on this branch: the app still uses `create_all` plus SQLite `_ensure_*` helpers for local/dev/test bootstrap.
+- Runtime startup still uses `create_all` plus SQLite `_ensure_*` helpers for local dev/test bootstrap only.
+- Staging/prod should target Neon Postgres and run Alembic before app startup.
 - Create a revision: `./.venv/bin/python -m alembic -c alembic.ini revision --autogenerate -m "describe change"`
 - Inspect the generated file under `alembic/versions/`, then apply it with `./.venv/bin/python -m alembic -c alembic.ini upgrade head`
 
@@ -128,7 +132,7 @@ Dev server
 
 Static mounts
 - By default, static mounts are enabled unless RUN_ENV=test.
-- To force in any environment: set MOUNT_FRONTEND_STATIC=true and/or MOUNT_DATA_STATIC=true.
+- To force in any environment: set MOUNT_FRONTEND_STATIC=true. `MOUNT_DATA_STATIC` only applies when `ASSET_STORAGE_BACKEND=filesystem`.
 
 Docs
 - Swagger UI: /docs
@@ -419,14 +423,16 @@ If you see 401 responses when generating content:
 
 ## Deployment
 Minimal
-- Set RUN_ENV=prod, provide SECRET_KEY and OPENAI_API_KEY, and point DATA_DIR/LOGS_DIR to writable paths.
+- Set RUN_ENV=prod, provide SECRET_KEY and OPENAI_API_KEY, point DATABASE_URL at Neon Postgres, set DB_BOOTSTRAP_MODE=migrations, and configure S3-compatible asset storage.
 - Start with uvicorn:
     - uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 With a process manager/proxy
 - Use systemd, Docker, or a supervisor to run uvicorn/gunicorn.
 - Put a reverse proxy (e.g., Nginx) in front for TLS and caching static files.
-- Ensure DATA_DIR and LOGS_DIR are persisted (volumes).
+- Ensure logs remain persisted, but do not rely on local DATA_DIR as the staging/prod asset baseline.
+- Baseline backup retention: keep at least 14 days of Neon restorable backups and 14 days of object-storage backup history.
+- Initial restore procedure: see `docs/staging_restore_runbook.md`.
 
 ## Project structure (high level)
 - backend/

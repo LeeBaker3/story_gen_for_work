@@ -119,12 +119,34 @@ def _build_config_diagnostics_payload(
     payload = {
         "openai_key_present": key_present,
         "openai_key_masked": masked,
+        "database_url_scheme": effective_settings.database_scheme,
+        "database_bootstrap_mode": effective_settings.database_bootstrap_mode,
+        "runtime_schema_bootstrap_enabled": (
+            effective_settings.runtime_schema_bootstrap_enabled
+        ),
+        "require_migration_managed_schema": (
+            effective_settings.require_migration_managed_schema
+        ),
         "openai_text_provider": effective_settings.openai_text_provider,
         "openai_text_base_url": effective_settings.openai_text_base_url,
         "openai_image_provider": effective_settings.openai_image_provider,
         "openai_image_base_url": effective_settings.openai_image_base_url,
         "text_model": effective_settings.text_model,
         "image_model": effective_settings.image_model,
+        "asset_storage_backend": effective_settings.asset_storage_backend,
+        "asset_storage_public_prefix": (
+            effective_settings.asset_storage_public_prefix
+        ),
+        "asset_storage_private_prefix": (
+            effective_settings.asset_storage_private_prefix
+        ),
+        "asset_storage_s3_configured": (
+            effective_settings.asset_storage_s3_configured
+        ),
+        "asset_storage_s3_bucket_configured": bool(
+            effective_settings.asset_storage_s3_bucket
+        ),
+        "asset_storage_s3_region": effective_settings.asset_storage_s3_region,
         "enable_image_generation": effective_settings.enable_image_generation,
         "use_openai_responses_api": effective_settings.use_openai_responses_api,
         "openai_text_enable_fallback": getattr(

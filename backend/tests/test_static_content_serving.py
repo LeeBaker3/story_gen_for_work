@@ -1,7 +1,9 @@
 from pathlib import Path
 
+from fastapi import FastAPI
+
 from backend.settings import get_settings
-from backend.main import app
+from backend.main import app, mount_public_data_static
 from fastapi.testclient import TestClient
 
 
@@ -93,3 +95,24 @@ def test_static_content_blocks_story_image_paths_but_keeps_other_assets_public()
                     directory.rmdir()
             except Exception:
                 pass
+
+
+def test_object_storage_mode_does_not_mount_local_static_content(tmp_path):
+    test_app = FastAPI()
+    mounted = mount_public_data_static(
+        test_app,
+        type(
+            "Settings",
+            (),
+            {
+                "mount_data_static": False,
+                "data_dir": str(tmp_path / "data"),
+            },
+        )(),
+    )
+
+    assert mounted is False
+    assert not any(
+        getattr(route, "path", None) == "/static_content"
+        for route in test_app.routes
+    )

@@ -208,12 +208,22 @@ def test_config_diagnostics_endpoint(client, monkeypatch, admin_auth_headers):
 
     fake_settings = SimpleNamespace(
         openai_api_key="sk-test-abcdefg1234567890",
+        database_scheme="sqlite",
+        database_bootstrap_mode="runtime",
+        runtime_schema_bootstrap_enabled=True,
+        require_migration_managed_schema=False,
         openai_text_provider="local-llm",
         openai_text_base_url="http://localhost:11434/v1",
         openai_image_provider="openai",
         openai_image_base_url="https://api.openai.com/v1",
         text_model="gpt-5.4-mini",
         image_model="gpt-image-2",
+        asset_storage_backend="filesystem",
+        asset_storage_public_prefix="public",
+        asset_storage_private_prefix="private",
+        asset_storage_s3_configured=False,
+        asset_storage_s3_bucket="",
+        asset_storage_s3_region="",
         enable_image_generation=False,
         use_openai_responses_api=False,
         openai_text_enable_fallback=False,
@@ -247,9 +257,14 @@ def test_config_diagnostics_endpoint(client, monkeypatch, admin_auth_headers):
 
     # Expected fields present
     for key in [
+        "database_url_scheme", "database_bootstrap_mode",
+        "runtime_schema_bootstrap_enabled",
+        "require_migration_managed_schema",
         "openai_text_provider", "openai_text_base_url",
         "openai_image_provider", "openai_image_base_url",
         "text_model", "image_model", "enable_image_generation", "run_env",
+        "asset_storage_backend", "asset_storage_public_prefix",
+        "asset_storage_private_prefix", "asset_storage_s3_configured",
         "enable_image_style_mapping", "mount_frontend_static",
         "mount_data_static", "frontend_static_dir_exists",
         "data_dir_exists", "logs_dir_exists", "client_initialized",

@@ -4,12 +4,13 @@ from sqlalchemy import CheckConstraint, create_engine, Column, Integer, String, 
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
 from dotenv import load_dotenv
+from backend.settings import get_settings
 
 # Load .env for local development (harmless in prod/CI)
 load_dotenv()
 
 # DATABASE_URL can be provided via environment; default to local SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./story_generator.db")
+DATABASE_URL = get_settings().database_url
 
 # For SQLite, we must pass check_same_thread=False for SQLAlchemy in multi-threaded apps
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith(
@@ -354,12 +355,20 @@ class CharacterImage(Base):
 
 
 def create_db_and_tables():
+    """Apply runtime schema bootstrap only in local dev/test posture."""
+
+    settings = get_settings()
+    if not settings.runtime_schema_bootstrap_enabled:
+        return False
+
     Base.metadata.create_all(bind=engine)
-    _ensure_story_generation_task_new_columns()
-    _ensure_soft_delete_and_moderation_columns()
-    _ensure_story_metadata_columns()
-    _ensure_story_editor_columns()
-    _ensure_user_password_reset_columns()
+    if settings.database_scheme == "sqlite":
+        _ensure_story_generation_task_new_columns()
+        _ensure_soft_delete_and_moderation_columns()
+        _ensure_story_metadata_columns()
+        _ensure_story_editor_columns()
+        _ensure_user_password_reset_columns()
+    return True
 
 
 def _ensure_story_generation_task_new_columns():

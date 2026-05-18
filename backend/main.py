@@ -29,9 +29,6 @@ from backend.public_router import public_router
 from backend.rate_limiting import limiter
 from backend.settings import get_settings
 
-
-database.create_db_and_tables()
-
 settings = get_settings()
 
 
@@ -48,6 +45,29 @@ class PublicStaticContentFiles(StaticFiles):
             raise StarletteHTTPException(status_code=404)
 
         return await super().get_response(normalized_path, scope)
+
+
+def mount_public_data_static(app: FastAPI, settings) -> bool:
+    """Mount local public data assets when filesystem storage is active."""
+
+    if not settings.mount_data_static:
+        return False
+
+    data_dir = settings.data_dir
+    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
+        app_logger.warning(
+            "Data directory '%s' not found. Static content will not be served.",
+            data_dir,
+        )
+        return False
+
+    app.mount(
+        "/static_content",
+        PublicStaticContentFiles(directory=data_dir),
+        name="static_content",
+    )
+    app_logger.info("Mounted static content from directory: %s", data_dir)
+    return True
 
 
 def _recover_stuck_generation_tasks(db: Session) -> int:
@@ -86,6 +106,16 @@ def _assert_secure_secret_key() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app_logger.info("Application startup: Checking database for initial data.")
+    runtime_bootstrap_applied = database.create_db_and_tables()
+    if runtime_bootstrap_applied:
+        app_logger.info(
+            "Applied runtime schema bootstrap for %s environment.",
+            settings.run_env,
+        )
+    else:
+        app_logger.info(
+            "Skipping runtime schema bootstrap; expecting Alembic-managed schema posture."
+        )
     db = SessionLocal()
     try:
         seed_database(db)
@@ -210,22 +240,9 @@ else:
         LEGAL_DOCS_DIR,
     )
 
-if settings.mount_data_static:
-    data_dir = settings.data_dir
-    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
-        app_logger.warning(
-            "Data directory '%s' not found. Static content will not be served.",
-            data_dir,
-        )
-    else:
-        app.mount(
-            "/static_content",
-            PublicStaticContentFiles(directory=data_dir),
-            name="static_content",
-        )
-        app_logger.info("Mounted static content from directory: %s", data_dir)
+data_static_mounted = mount_public_data_static(app, settings)
 
-if not settings.mount_frontend_static or not settings.mount_data_static:
+if not settings.mount_frontend_static or not data_static_mounted:
     app_logger.info(
         "Skipping one or more static mounts based on environment settings."
     )
