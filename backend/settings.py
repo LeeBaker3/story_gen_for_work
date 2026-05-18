@@ -9,6 +9,7 @@ ADMIN_CONFIG_OVERRIDE_FILENAME = "admin_config_overrides.json"
 LOCAL_RUN_ENVS = {"dev", "test"}
 RUNTIME_DB_BOOTSTRAP_MODES = {"runtime", "migrations"}
 ASSET_STORAGE_BACKENDS = {"filesystem", "s3"}
+STORY_GENERATION_RUNTIME_ROLES = {"api", "worker", "combined"}
 ADMIN_CONFIG_EDITABLE_FIELDS = (
     "openai_text_provider",
     "openai_text_base_url",
@@ -314,6 +315,19 @@ class BaseSettings:
             self.mount_frontend_static = self.run_env != "test"
         if os.getenv("MOUNT_DATA_STATIC") is None:
             self.mount_data_static = self.run_env != "test"
+        self.story_generation_runtime_role: str = os.getenv(
+            "STORY_GENERATION_RUNTIME_ROLE",
+            "combined",
+        ).strip().lower() or "combined"
+        self.story_generation_execute_in_api: bool = (
+            self.story_generation_runtime_role == "combined"
+        )
+        self.story_generation_worker_poll_interval_seconds: float = float(
+            os.getenv("STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS", "5")
+        )
+        self.story_generation_stale_task_timeout_seconds: int = int(
+            os.getenv("STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS", "900")
+        )
         self._validate_runtime_posture()
         if self.asset_storage_backend != "filesystem":
             self.mount_data_static = False
@@ -382,7 +396,6 @@ class BaseSettings:
             os.getenv("RETRY_MAX_ATTEMPTS", "3"))
         self.retry_backoff_base: float = float(
             os.getenv("RETRY_BACKOFF_BASE", "1.5"))
-
         # Feature flags
         # When enabled, story text generation uses the OpenAI Responses API.
         # Default is disabled for incremental migration.
@@ -462,6 +475,22 @@ class BaseSettings:
             raise RuntimeError(
                 "DB_BOOTSTRAP_MODE must be one of: "
                 f"{', '.join(sorted(RUNTIME_DB_BOOTSTRAP_MODES))}"
+            )
+
+        if self.story_generation_runtime_role not in STORY_GENERATION_RUNTIME_ROLES:
+            raise RuntimeError(
+                "STORY_GENERATION_RUNTIME_ROLE must be one of: "
+                f"{', '.join(sorted(STORY_GENERATION_RUNTIME_ROLES))}"
+            )
+
+        if self.story_generation_worker_poll_interval_seconds <= 0:
+            raise RuntimeError(
+                "STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS must be > 0"
+            )
+
+        if self.story_generation_stale_task_timeout_seconds <= 0:
+            raise RuntimeError(
+                "STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS must be > 0"
             )
 
         if self.asset_storage_backend not in ASSET_STORAGE_BACKENDS:

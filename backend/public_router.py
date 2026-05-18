@@ -342,19 +342,25 @@ async def create_new_story(
             raise HTTPException(
                 status_code=500, detail="Could not create story shell.")
 
-        task = crud.create_story_generation_task(db, db_story.id, current_user.id)
+        task = crud.create_story_generation_task(
+            db,
+            db_story.id,
+            current_user.id,
+            reservation.id,
+        )
         if not task:
             raise HTTPException(
                 status_code=500, detail="Could not create generation task.")
 
-        background_tasks.add_task(
-            story_generation_service.generate_story_as_background_task,
-            task.id,
-            db_story.id,
-            current_user.id,
-            story_input,
-            reservation.id,
-        )
+        if settings.story_generation_execute_in_api:
+            background_tasks.add_task(
+                story_generation_service.generate_story_as_background_task,
+                task.id,
+                db_story.id,
+                current_user.id,
+                story_input,
+                reservation.id,
+            )
 
         return task
     except HTTPException:

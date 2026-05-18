@@ -8,6 +8,7 @@ from backend import schemas, crud, auth, database
 import uuid
 from datetime import datetime, UTC
 from types import SimpleNamespace
+from backend import entitlements
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +63,9 @@ def mock_dependencies(db_session_mock, current_user_mock):
         return current_user_mock
 
     app.dependency_overrides[database.get_db] = override_get_db
-    app.dependency_overrides[auth.get_current_user] = override_get_current_user
+    app.dependency_overrides[auth.get_current_active_user] = (
+        override_get_current_user
+    )
     yield
     app.dependency_overrides = {}
 
@@ -123,6 +126,76 @@ def test_create_story_generation_task_successfully(client, db_session_mock, stor
         assert response_data["story_id"] == mock_story_id
         assert response_data["status"] == "pending"
         mock_background_task.assert_called_once()
+
+
+def test_create_story_generation_task_split_runtime_enqueues_only(
+    client,
+    db_session_mock,
+    story_create_input_mock,
+    current_user_mock,
+    monkeypatch,
+):
+    """Split runtime should enqueue a task without running in-process work."""
+
+    mock_task_id = str(uuid.uuid4())
+    mock_story_id = 11
+    now = datetime.now(UTC)
+
+    mock_story_db = schemas.Story(
+        id=mock_story_id,
+        owner_id=current_user_mock.id,
+        title="[Placeholder]",
+        is_draft=False,
+        genre=story_create_input_mock["genre"],
+        story_outline=story_create_input_mock["story_outline"],
+        main_characters=story_create_input_mock["main_characters"],
+        num_pages=story_create_input_mock["num_pages"],
+        created_at=now,
+        updated_at=now,
+    )
+    monkeypatch.setattr(crud, "get_story_by_title_and_owner", MagicMock(return_value=None))
+    monkeypatch.setattr(crud, "create_story_db_entry", MagicMock(return_value=mock_story_db))
+    monkeypatch.setattr(
+        entitlements,
+        "reserve_credits",
+        MagicMock(return_value=SimpleNamespace(id=321)),
+    )
+    monkeypatch.setattr(
+        crud,
+        "create_story_generation_task",
+        MagicMock(
+            return_value=schemas.StoryGenerationTask(
+                id=mock_task_id,
+                story_id=mock_story_id,
+                user_id=current_user_mock.id,
+                status=schemas.GenerationTaskStatus.PENDING,
+                created_at=now,
+                updated_at=now,
+            )
+        ),
+    )
+    db_session_mock.refresh = MagicMock()
+    monkeypatch.setattr(
+        "backend.public_router.settings.story_generation_execute_in_api",
+        False,
+    )
+
+    with patch(
+        "backend.public_router.story_generation_service"
+        ".generate_story_as_background_task"
+    ) as mock_background_task:
+        response = client.post(
+            "/api/v1/stories/",
+            json=story_create_input_mock,
+            headers={"X-Token": "testtoken"},
+        )
+
+    assert response.status_code == 202
+    response_data = response.json()
+    assert response_data["id"] == mock_task_id
+    assert response_data["story_id"] == mock_story_id
+    assert response_data["status"] == "pending"
+    mock_background_task.assert_not_called()
 
 
 def test_create_story_generation_logs_only_metadata(

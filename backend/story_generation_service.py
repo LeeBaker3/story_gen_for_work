@@ -162,6 +162,29 @@ def _restore_failed_story_shell(
         failed_story.pages = []
 
 
+def reconstruct_story_input_from_story(story) -> schemas.StoryCreate:
+    """Rebuild the generation payload from the persisted story shell."""
+
+    payload = {
+        'title': story.title,
+        'cover_subtitle': getattr(story, 'cover_subtitle', None),
+        'cover_author': getattr(story, 'cover_author', None),
+        'genre': story.genre,
+        'story_outline': story.story_outline,
+        'main_characters': list(story.main_characters or []),
+        'num_pages': story.num_pages,
+        'tone': getattr(story, 'tone', None),
+        'setting': getattr(story, 'setting', None),
+        'writing_style': getattr(story, 'writing_style', None),
+        'image_style': getattr(story, 'image_style', None),
+        'word_to_picture_ratio': getattr(story, 'word_to_picture_ratio', None),
+        'text_density': getattr(story, 'text_density', None),
+        'editor_settings': getattr(story, 'editor_settings', None),
+        'is_draft': getattr(story, 'is_draft', False),
+    }
+    return schemas.StoryCreate.model_validate(payload)
+
+
 async def generate_story_as_background_task(
     task_id: str,
     story_id: int,

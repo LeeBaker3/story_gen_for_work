@@ -74,6 +74,9 @@ def mount_public_data_static(app: FastAPI, settings) -> bool:
 def _recover_stuck_generation_tasks(db: Session) -> int:
     """Mark generation tasks left mid-flight by a server restart as failed."""
 
+    if settings.story_generation_runtime_role != "combined":
+        return 0
+
     stuck_tasks = db.query(database.StoryGenerationTask).filter(
         database.StoryGenerationTask.status.in_(
             [

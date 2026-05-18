@@ -180,6 +180,52 @@ def test_recover_stuck_generation_tasks_marks_tasks_failed(db_session):
     assert completed_task.status == schemas.GenerationTaskStatus.COMPLETED.value
 
 
+def test_recover_stuck_generation_tasks_skips_api_only_runtime(db_session, monkeypatch):
+    """API-only runtime should not fail queued tasks during startup."""
+
+    owner = db_session.query(database.User).filter(
+        database.User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = database.Story(
+        title="API Split Recovery Story",
+        story_outline="Outline",
+        genre="fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    pending_task = database.StoryGenerationTask(
+        id="api-only-pending-task",
+        story_id=story.id,
+        user_id=owner.id,
+        status=schemas.GenerationTaskStatus.PENDING.value,
+        progress=0,
+    )
+    db_session.add(pending_task)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        main_module.settings,
+        "story_generation_runtime_role",
+        "api",
+    )
+
+    recovered_count = main_module._recover_stuck_generation_tasks(db_session)
+
+    assert recovered_count == 0
+    db_session.refresh(pending_task)
+    assert pending_task.status == schemas.GenerationTaskStatus.PENDING.value
+
+
 def test_secure_secret_key_guard_raises_outside_testing(monkeypatch):
     """Test that startup rejects the insecure default JWT secret outside tests."""
 

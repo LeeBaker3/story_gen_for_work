@@ -1233,11 +1233,17 @@ def update_story_with_generated_content(db: Session, story_id: int, story_conten
     return db_story
 
 
-def create_story_generation_task(db: Session, story_id: int, user_id: int) -> Optional[schemas.StoryGenerationTask]:
+def create_story_generation_task(
+    db: Session,
+    story_id: int,
+    user_id: int,
+    reservation_id: int | None = None,
+) -> Optional[schemas.StoryGenerationTask]:
     new_task = StoryGenerationTask(
         id=str(uuid.uuid4()),
         story_id=story_id,
         user_id=user_id,
+        reservation_id=reservation_id,
         status=schemas.GenerationTaskStatus.PENDING.value,
         progress=0,
         current_step=schemas.GenerationTaskStep.INITIALIZING.value,
@@ -1251,6 +1257,32 @@ def create_story_generation_task(db: Session, story_id: int, user_id: int) -> Op
 
 def get_story_generation_task(db: Session, task_id: str) -> Optional[StoryGenerationTask]:
     return db.query(StoryGenerationTask).filter(StoryGenerationTask.id == task_id).first()
+
+
+def claim_next_pending_story_generation_task(
+    db: Session,
+) -> Optional[StoryGenerationTask]:
+    """Claim the oldest pending story task for the single worker runtime."""
+
+    task = (
+        db.query(StoryGenerationTask)
+        .filter(
+            StoryGenerationTask.status == schemas.GenerationTaskStatus.PENDING.value,
+        )
+        .order_by(StoryGenerationTask.created_at.asc(), StoryGenerationTask.id.asc())
+        .first()
+    )
+    if task is None:
+        return None
+
+    task.status = schemas.GenerationTaskStatus.IN_PROGRESS.value
+    task.current_step = schemas.GenerationTaskStep.INITIALIZING.value
+    task.error_message = None
+    if task.started_at is None:
+        task.started_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(task)
+    return task
 
 
 def update_story_generation_task_progress(

@@ -30,11 +30,16 @@ Run (dev)
 - uvicorn backend.main:app --reload
 - Open http://127.0.0.1:8000/docs for API docs
 
+Run split API + worker locally
+- API: `STORY_GENERATION_RUNTIME_ROLE=api uvicorn backend.main:app --reload`
+- Worker: `STORY_GENERATION_RUNTIME_ROLE=worker python -m backend.story_worker`
+- Default local behavior remains `combined`, which keeps in-process execution for story generation.
+
 ## API shape and routes
 - API prefix: default /api/v1 (configurable)
 - Auth: POST /api/v1/token (OAuth2 password) returns bearer token
 - Public story flow:
-    - POST /api/v1/stories/ to create and start generation (202)
+    - POST /api/v1/stories/ to create and enqueue generation (202)
     - GET /api/v1/stories/ to list user stories
     - GET /api/v1/stories/{id} to fetch a story
     - GET /api/v1/stories/generation-status/{task_id} to check background progress
@@ -117,6 +122,11 @@ Database
 - DB_BOOTSTRAP_MODE: runtime in dev/test, migrations in staging/prod
 - Runtime schema bootstrap is dev/test-only; staging/prod fail fast on SQLite or filesystem asset posture and expect Alembic-managed schema.
 
+Story generation runtime
+- STORY_GENERATION_RUNTIME_ROLE: `combined` keeps API-side execution for local dev; `api` enqueues only; `worker` runs the standalone single-worker poller.
+- STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS: worker polling interval for queued tasks.
+- STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS: conservative timeout for failing stale `in_progress` tasks during worker recovery.
+
 Schema migrations
 - Alembic bootstrap files live under `alembic/` with config in `alembic.ini`.
 - The Alembic environment imports `backend.database.Base.metadata` and uses `DATABASE_URL`, so migration autogeneration targets the same models as the app.
@@ -140,6 +150,10 @@ Docs
  - Configuration Guide: CONFIG.md (env, logging, monitoring endpoints/UI)
  - API Contracts: see docs/PRODUCT_REQUIREMENTS_DOCUMENT.md (Section 6)
  - Legal and support pack: docs/legal/README.md
+ - Split runtime deploy runbook: docs/split_runtime_deploy_runbook.md
+ - Split runtime rollback runbook: docs/split_runtime_rollback_runbook.md
+ - Provider outage runbook: docs/provider_outage_runbook.md
+ - Staging restore runbook: docs/staging_restore_runbook.md
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.

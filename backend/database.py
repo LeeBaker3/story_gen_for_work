@@ -256,6 +256,7 @@ class StoryGenerationTask(Base):
                       nullable=False, index=True)
     user_id = Column(Integer, ForeignKey('users.id'),
                      nullable=False, index=True)
+    reservation_id = Column(Integer, nullable=True, index=True)
     status = Column(String, nullable=False, default='pending', index=True)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
@@ -455,6 +456,7 @@ def _ensure_story_generation_task_new_columns():
     if not DATABASE_URL.startswith("sqlite"):
         return
     required_columns = {
+        "reservation_id": "INTEGER NULL",
         "attempts": "INTEGER DEFAULT 0",
         "started_at": "TIMESTAMP NULL",
         "completed_at": "TIMESTAMP NULL",

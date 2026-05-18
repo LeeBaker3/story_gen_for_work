@@ -114,6 +114,17 @@ Database
 - DATABASE_URL: SQLAlchemy URL (default: sqlite:///./story_generator.db)
 - DB_BOOTSTRAP_MODE: runtime | migrations (default: runtime in dev/test, migrations in staging/prod)
 
+Story generation runtime
+- STORY_GENERATION_RUNTIME_ROLE: api | worker | combined (default: combined)
+- STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS: worker poll interval in seconds for pending tasks (default: 5)
+- STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS: worker-side timeout in seconds before stale `in_progress` tasks are failed during recovery (default: 900)
+
+Story generation runtime notes
+- `combined` preserves the existing local-dev behavior: `POST /api/v1/stories/` both enqueues and executes generation in-process.
+- `api` keeps the existing request/response contract but only persists the story shell and task record.
+- `worker` runs the standalone poller via `python -m backend.story_worker` and executes one task at a time.
+- The split runtime is intentionally single-worker only for this slice.
+
 Runtime guarantees
 - Staging/prod fail fast if DATABASE_URL points at SQLite.
 - Staging/prod fail fast if DB_BOOTSTRAP_MODE is not `migrations`.
@@ -136,6 +147,9 @@ Staging baseline operations
 - Asset storage target: S3-compatible object storage.
 - Backup retention baseline: keep at least 14 days of restorable Neon backups/PITR and 14 days of object-storage versioned backups or replicated snapshots.
 - Initial restore runbook: see `docs/staging_restore_runbook.md`.
+- Split runtime deploy runbook: see `docs/split_runtime_deploy_runbook.md`.
+- Split runtime rollback runbook: see `docs/split_runtime_rollback_runbook.md`.
+- Provider outage runbook: see `docs/provider_outage_runbook.md`.
 
 ## Admin bootstrap (create first admin)
 
