@@ -11,6 +11,25 @@ class UserRole(str, Enum):  # Added UserRole Enum
     ADMIN = "admin"
     USER = "user"
 
+
+class EntitlementAccessState(str, Enum):
+    TRIAL = "trial"
+    PAID_ACTIVE = "paid-active"
+    GRACE = "grace"
+    SUSPENDED = "suspended"
+
+
+class CreditBucket(str, Enum):
+    STORY = "story"
+    IMAGE = "image"
+
+
+class BillableAction(str, Enum):
+    INITIAL_STORY_GENERATION = "initial_story_generation"
+    PAGE_IMAGE_REGENERATION = "page_image_regeneration"
+    CHARACTER_IMAGE_GENERATION = "character_image_generation"
+    CHARACTER_IMAGE_REGENERATION = "character_image_regeneration"
+
 # Story Genre Enum (New)
 
 
@@ -257,6 +276,24 @@ class User(UserBase):
 
 class UserInDB(User):
     hashed_password: str
+
+
+class EntitlementBalance(BaseModel):
+    total: int = 0
+    reserved: int = 0
+    consumed: int = 0
+    remaining: int = 0
+
+
+class EntitlementStatus(BaseModel):
+    access_state: EntitlementAccessState
+    active_entitlement: bool = False
+    renews_at: Optional[datetime] = None
+    trial_expires_at: Optional[datetime] = None
+    can_generate_stories: bool = False
+    can_generate_images: bool = False
+    story_credits: EntitlementBalance
+    image_credits: EntitlementBalance
 
 # For Admin User Management
 

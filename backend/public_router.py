@@ -9,7 +9,7 @@ import os
 import shutil
 from datetime import timedelta
 
-from backend import crud, schemas, auth, database, pdf_generator, ai_services
+from backend import crud, schemas, auth, database, pdf_generator, ai_services, entitlements
 from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.rate_limiting import limiter
@@ -157,6 +157,23 @@ async def register_user(
     return created
 
 
+@public_router.get(
+    "/users/me/entitlement",
+    response_model=schemas.EntitlementStatus,
+)
+async def read_my_entitlement(
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """Return the current user's effective entitlement and balances."""
+
+    return entitlements.resolve_effective_state(
+        db,
+        current_user.id,
+        provision_if_missing=True,
+    )
+
+
 @public_router.post("/token", response_model=schemas.Token, tags=["authentication"])
 @limiter.limit(settings.login_rate_limit)
 async def login_for_access_token(
@@ -276,27 +293,51 @@ async def create_new_story(
             detail="A story with this title already exists."
         )
 
-    initial_title = story_input.title or "[AI Title Pending...]"
-    db_story = crud.create_story_db_entry(
-        db, story_input, current_user.id, title=initial_title, is_draft=False)
-    if not db_story:
-        raise HTTPException(
-            status_code=500, detail="Could not create story shell.")
-
-    task = crud.create_story_generation_task(db, db_story.id, current_user.id)
-    if not task:
-        raise HTTPException(
-            status_code=500, detail="Could not create generation task.")
-
-    background_tasks.add_task(
-        story_generation_service.generate_story_as_background_task,
-        task.id,
-        db_story.id,
+    reservation = entitlements.reserve_credits(
+        db,
         current_user.id,
-        story_input,
+        schemas.BillableAction.INITIAL_STORY_GENERATION,
+        schemas.CreditBucket.STORY,
     )
 
-    return task
+    try:
+        initial_title = story_input.title or "[AI Title Pending...]"
+        db_story = crud.create_story_db_entry(
+            db, story_input, current_user.id, title=initial_title,
+            is_draft=False)
+        if not db_story:
+            raise HTTPException(
+                status_code=500, detail="Could not create story shell.")
+
+        task = crud.create_story_generation_task(db, db_story.id, current_user.id)
+        if not task:
+            raise HTTPException(
+                status_code=500, detail="Could not create generation task.")
+
+        background_tasks.add_task(
+            story_generation_service.generate_story_as_background_task,
+            task.id,
+            db_story.id,
+            current_user.id,
+            story_input,
+            reservation.id,
+        )
+
+        return task
+    except HTTPException:
+        entitlements.release_credits(
+            db,
+            reservation.id,
+            reason="story_generation_aborted_before_provider_call",
+        )
+        raise
+    except Exception:
+        entitlements.release_credits(
+            db,
+            reservation.id,
+            reason="story_generation_failed_before_provider_call",
+        )
+        raise
 
 
 @public_router.get("/stories/generation-status/{task_id}", response_model=schemas.StoryGenerationTask)
@@ -556,29 +597,58 @@ async def regenerate_story_page_image_api(
         db_page.page_number,
     )
 
-    new_image_path = await ai_services.generate_image_for_page(
-        page_content=prompt_content,
-        style_reference=style_reference,
-        db=db,
-        user_id=current_user.id,
-        story_id=story_id,
-        page_number=db_page.page_number,
-        image_save_path_on_disk=image_save_path_on_disk,
-        image_path_for_db=image_path_for_db,
-        reference_image_paths=reference_paths or None,
+    reservation = entitlements.reserve_credits(
+        db,
+        current_user.id,
+        schemas.BillableAction.PAGE_IMAGE_REGENERATION,
+        schemas.CreditBucket.IMAGE,
     )
-    if new_image_path is None:
-        raise HTTPException(
-            status_code=502,
-            detail="Image generation did not return a new page image.",
-        )
+    provider_spend_started = False
 
-    state = crud.get_page_editor_state(db_page)
-    db_page.image_path = new_image_path
-    db_page.editor_state = state
-    db.commit()
-    db.refresh(db_page)
-    return db_page
+    try:
+        provider_spend_started = True
+        new_image_path = await ai_services.generate_image_for_page(
+            page_content=prompt_content,
+            style_reference=style_reference,
+            db=db,
+            user_id=current_user.id,
+            story_id=story_id,
+            page_number=db_page.page_number,
+            image_save_path_on_disk=image_save_path_on_disk,
+            image_path_for_db=image_path_for_db,
+            reference_image_paths=reference_paths or None,
+        )
+        entitlements.consume_credits(db, reservation.id)
+        if new_image_path is None:
+            raise HTTPException(
+                status_code=502,
+                detail="Image generation did not return a new page image.",
+            )
+
+        state = crud.get_page_editor_state(db_page)
+        db_page.image_path = new_image_path
+        db_page.editor_state = state
+        db.commit()
+        db.refresh(db_page)
+        return db_page
+    except HTTPException:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="page_image_regeneration_aborted_before_provider_call",
+            )
+        raise
+    except Exception:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="page_image_regeneration_failed_before_provider_call",
+            )
+        else:
+            entitlements.consume_credits(db, reservation.id)
+        raise
 
 
 @public_router.post(

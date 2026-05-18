@@ -48,6 +48,82 @@ class User(Base):
                         server_default=func.now(), onupdate=func.now())
 
     stories = relationship("Story", back_populates="owner")
+    entitlement = relationship(
+        "AccountEntitlement",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    usage_ledger_entries = relationship(
+        "UsageLedgerEntry",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class AccountEntitlement(Base):
+    __tablename__ = "account_entitlements"
+    __table_args__ = (
+        CheckConstraint(
+            "access_state IN ('trial', 'paid-active', 'grace', 'suspended')",
+            name="ck_account_entitlements_access_state",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False,
+                     unique=True, index=True)
+    access_state = Column(String, nullable=False, default="trial")
+    story_credits_total = Column(Integer, nullable=False, default=0)
+    image_credits_total = Column(Integer, nullable=False, default=0)
+    trial_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_expires_at = Column(DateTime(timezone=True), nullable=True)
+    renews_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="entitlement")
+    usage_ledger_entries = relationship(
+        "UsageLedgerEntry",
+        back_populates="entitlement",
+        cascade="all, delete-orphan",
+    )
+
+
+class UsageLedgerEntry(Base):
+    __tablename__ = "usage_ledger_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "credit_bucket IN ('story', 'image')",
+            name="ck_usage_ledger_entries_credit_bucket",
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'consumed', 'released')",
+            name="ck_usage_ledger_entries_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False,
+                     index=True)
+    entitlement_id = Column(Integer, ForeignKey("account_entitlements.id"),
+                            nullable=False, index=True)
+    action_type = Column(String, nullable=False, index=True)
+    credit_bucket = Column(String, nullable=False, index=True)
+    credits = Column(Integer, nullable=False, default=1)
+    status = Column(String, nullable=False, default="reserved", index=True)
+    finalized_at = Column(DateTime(timezone=True), nullable=True)
+    release_reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="usage_ledger_entries")
+    entitlement = relationship(
+        "AccountEntitlement",
+        back_populates="usage_ledger_entries",
+    )
 
 
 class Story(Base):

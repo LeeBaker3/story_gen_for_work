@@ -5,7 +5,7 @@ from datetime import datetime
 import time
 from sqlalchemy.orm import Session
 from tenacity import RetryError
-from . import crud, schemas, database, ai_services
+from . import crud, schemas, database, ai_services, entitlements
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
@@ -162,11 +162,18 @@ def _restore_failed_story_shell(
         failed_story.pages = []
 
 
-async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
+async def generate_story_as_background_task(
+    task_id: str,
+    story_id: int,
+    user_id: int,
+    story_input: schemas.StoryCreate,
+    reservation_id: int | None = None,
+):
     db: Session = next(database.get_db())
     _settings = get_settings()
     telemetry_enabled = bool(getattr(_settings, 'enable_telemetry', False))
     start_time = time.perf_counter()
+    provider_spend_started = False
     try:
         app_logger.info(
             f"Starting background story generation for task_id: {task_id}")
@@ -205,6 +212,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             )
 
             # The service returns a dictionary of the (possibly updated) character's details
+            provider_spend_started = True
             char_details = await ai_services.generate_character_reference_image(
                 character_input, story_input, db, user_id, story_id,
                 image_save_path_on_disk=char_image_save_path_on_disk,
@@ -240,6 +248,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         story_content_input['main_characters'] = list(
             character_details_map.values())
 
+        provider_spend_started = True
         story_content = await asyncio.to_thread(
             ai_services.generate_story_from_chatgpt,
             story_content_input,
@@ -325,6 +334,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                                 total_retries=total_retries,
                                 failed_pages_count=failed_pages,
                             )
+                    provider_spend_started = True
                     page_image_url = await ai_services.generate_image_for_page(
                         page_content=" ".join(
                             part
@@ -436,6 +446,16 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         app_logger.info(
             f"Successfully completed story generation for task_id: {task_id}")
 
+        if reservation_id is not None:
+            if provider_spend_started:
+                entitlements.consume_credits(db, reservation_id)
+            else:
+                entitlements.release_credits(
+                    db,
+                    reservation_id,
+                    reason="story_generation_completed_without_provider_spend",
+                )
+
         observe_story_generation(
             status="completed",
             duration_seconds=time.perf_counter() - start_time,
@@ -455,6 +475,16 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             )
 
         error_message = _format_task_error_message(e)
+
+        if reservation_id is not None:
+            if provider_spend_started:
+                entitlements.consume_credits(db, reservation_id)
+            else:
+                entitlements.release_credits(
+                    db,
+                    reservation_id,
+                    reason="story_generation_failed_before_provider_spend",
+                )
 
         try:
             crud.update_story_generation_task(

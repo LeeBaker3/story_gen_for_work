@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from . import schemas
+from . import entitlements
 from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
 from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
@@ -199,6 +200,8 @@ def create_user(db: Session, user: schemas.UserCreate):
         is_active=user.is_active if user.is_active is not None else True
     )  # Added user.email
     db.add(db_user)
+    db.flush()
+    entitlements.provision_trial_entitlement(db, db_user.id)
     db.commit()
     db.refresh(db_user)
     return db_user

@@ -6,7 +6,7 @@ import os
 import uuid
 from PIL import Image as PILImage
 
-from . import schemas, auth, crud, database, ai_services, storage_paths
+from . import schemas, auth, crud, database, ai_services, storage_paths, entitlements
 from .settings import get_settings
 from .logging_config import app_logger, error_logger
 
@@ -82,6 +82,13 @@ async def create_character(
 
     # Optionally generate first image
     if payload.generate_image:
+        reservation = entitlements.reserve_credits(
+            db,
+            current_user.id,
+            schemas.BillableAction.CHARACTER_IMAGE_GENERATION,
+            schemas.CreditBucket.IMAGE,
+        )
+        provider_spend_started = False
         try:
             # Build prompt from fields
             details = []
@@ -110,16 +117,26 @@ async def create_character(
 
             # Generate
             # generate_image is sync; run in a thread
+            provider_spend_started = True
             image_bytes = await ai_services.asyncio.to_thread(
 
                 ai_services.generate_image, prompt, None, "1024x1024"
             )
+            entitlements.consume_credits(db, reservation.id)
             if image_bytes:
                 with open(img_path_on_disk, "wb") as f:
                     f.write(image_bytes)
                 crud.add_character_image(
                     db, current_user.id, ch.id, img_path_for_db, prompt, ch.image_style)
         except Exception as e:
+            if not provider_spend_started:
+                entitlements.release_credits(
+                    db,
+                    reservation.id,
+                    reason="character_image_generation_aborted_before_provider_call",
+                )
+            else:
+                entitlements.consume_credits(db, reservation.id)
             error_logger.error(
                 f"Failed to generate character image for {ch.id}: {e}", exc_info=True)
 
@@ -285,11 +302,21 @@ async def regenerate_character_image(char_id: int, payload: schemas.RegenerateIm
     img_path_for_db = os.path.join(base_dir_for_db, file_name)
     img_path_on_disk = os.path.join(base_dir_on_disk, file_name)
 
+    reservation = entitlements.reserve_credits(
+        db,
+        current_user.id,
+        schemas.BillableAction.CHARACTER_IMAGE_REGENERATION,
+        schemas.CreditBucket.IMAGE,
+    )
+    provider_spend_started = False
+
     try:
         try:
+            provider_spend_started = True
             image_bytes = await ai_services.asyncio.to_thread(
                 ai_services.generate_image, prompt, None, "1024x1024"
             )
+            entitlements.consume_credits(db, reservation.id)
         except ValueError as ve:
             # Likely missing OPENAI_API_KEY / client not configured
             raise HTTPException(status_code=503, detail=str(ve))
@@ -305,8 +332,22 @@ async def regenerate_character_image(char_id: int, payload: schemas.RegenerateIm
             raise HTTPException(
                 status_code=500, detail="Image generation failed")
     except HTTPException:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="character_image_regeneration_aborted_before_provider_call",
+            )
         raise
     except Exception as e:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="character_image_regeneration_failed_before_provider_call",
+            )
+        else:
+            entitlements.consume_credits(db, reservation.id)
         error_logger.error(
             f"Failed to regenerate character image for {ch.id}: {e}", exc_info=True)
         raise HTTPException(
@@ -422,8 +463,17 @@ async def generate_reference_image_from_photo(
     img_path_for_db = os.path.join(base_dir_for_db, file_name)
     img_path_on_disk = os.path.join(base_dir_on_disk, file_name)
 
+    reservation = entitlements.reserve_credits(
+        db,
+        current_user.id,
+        schemas.BillableAction.CHARACTER_IMAGE_GENERATION,
+        schemas.CreditBucket.IMAGE,
+    )
+    provider_spend_started = False
+
     try:
         try:
+            provider_spend_started = True
             image_bytes = await ai_services.asyncio.to_thread(
                 ai_services.generate_image,
                 prompt=prompt,
@@ -431,6 +481,7 @@ async def generate_reference_image_from_photo(
                 size="1024x1536",
                 openai_style=openai_style,
             )
+            entitlements.consume_credits(db, reservation.id)
         except ValueError as ve:
             raise HTTPException(status_code=503, detail=str(ve))
         except PermissionError as pe:
@@ -458,8 +509,22 @@ async def generate_reference_image_from_photo(
             db, current_user.id, ch.id, img_path_for_db, prompt, business_style
         )
     except HTTPException:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="character_photo_generation_aborted_before_provider_call",
+            )
         raise
     except Exception as e:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="character_photo_generation_failed_before_provider_call",
+            )
+        else:
+            entitlements.consume_credits(db, reservation.id)
         error_logger.error(
             f"Failed to generate character reference image from photo for {ch.id}: {e}",
             exc_info=True,

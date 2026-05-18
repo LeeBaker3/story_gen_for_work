@@ -195,6 +195,15 @@ class BaseSettings:
         # Upload limits
         self.max_upload_bytes: int = int(
             os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+        self.trial_access_days: int = int(
+            os.getenv("TRIAL_ACCESS_DAYS", "7")
+        )
+        self.trial_story_credits: int = int(
+            os.getenv("TRIAL_STORY_CREDITS", "3")
+        )
+        self.trial_image_credits: int = int(
+            os.getenv("TRIAL_IMAGE_CREDITS", "10")
+        )
         # Whether to mount static in this environment
         self.mount_frontend_static: bool = os.getenv(
             "MOUNT_FRONTEND_STATIC", "").lower() in ("1", "true", "yes")
