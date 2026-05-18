@@ -121,6 +121,76 @@ def test_login_endpoint_rate_limits_by_ip(client: TestClient):
     assert response.status_code == 429
 
 
+def test_login_sets_cookie_and_cookie_auth_works(client: TestClient):
+    """Successful login should set an auth cookie usable on later requests."""
+
+    login_response = client.post(
+        "/api/v1/token",
+        data={
+            "username": "user@example.com",
+            "password": "userpassword",
+        },
+    )
+
+    assert login_response.status_code == 200
+    assert settings_mod.get_settings().auth_cookie_name in login_response.cookies
+
+    me_response = client.get("/api/v1/users/me/")
+
+    assert me_response.status_code == 200
+    assert me_response.json()["username"] == "user@example.com"
+
+
+def test_logout_clears_auth_cookie(client: TestClient):
+    """Logout should clear the browser auth cookie and invalidate cookie auth."""
+
+    login_response = client.post(
+        "/api/v1/token",
+        data={
+            "username": "user@example.com",
+            "password": "userpassword",
+        },
+    )
+    assert login_response.status_code == 200
+
+    logout_response = client.post("/api/v1/logout")
+
+    assert logout_response.status_code == 200
+    set_cookie_header = logout_response.headers.get("set-cookie", "")
+    assert f"{settings_mod.get_settings().auth_cookie_name}=" in set_cookie_header
+    assert "Max-Age=0" in set_cookie_header or "expires=" in set_cookie_header.lower()
+
+    me_response = client.get("/api/v1/users/me/")
+
+    assert me_response.status_code == 401
+
+
+def test_signup_endpoint_rate_limits_by_ip(client: TestClient):
+    """Signup should use its own limit distinct from login throttling."""
+
+    for index in range(5):
+        response = client.post(
+            "/api/v1/users/",
+            json={
+                "username": f"signup-limit-{index}@example.com",
+                "email": f"signup-limit-{index}@example.com",
+                "password": "strongpassword",
+            },
+        )
+        assert response.status_code == 200
+
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "signup-limit-blocked@example.com",
+            "email": "signup-limit-blocked@example.com",
+            "password": "strongpassword",
+        },
+    )
+
+    assert response.status_code == 429
+
+
 def test_delete_story_via_api_prefix(
     client: TestClient,
     db_session: Session,
@@ -250,6 +320,40 @@ def test_password_reset_request_uses_generic_response(
     assert missing_response.json()["reset_token_preview"]
 
 
+def test_password_reset_request_preview_absent_outside_testing_without_opt_in(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+):
+    """Reset token previews should stay off in prod-like environments by default."""
+
+    recoverable_user = User(
+        username="preview-hidden-user",
+        email="preview-hidden@example.com",
+        hashed_password=auth.get_password_hash("before-reset"),
+        is_active=True,
+        role="user",
+    )
+    db_session.add(recoverable_user)
+    db_session.commit()
+
+    monkeypatch.setenv("RUN_ENV", "prod")
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.delenv("EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW", raising=False)
+    settings_mod.reset_settings_cache()
+
+    response = client.post(
+        "/api/v1/password-reset/request",
+        json={"identifier": "preview-hidden@example.com"},
+    )
+
+    settings_mod.reset_settings_cache()
+    monkeypatch.setenv("TESTING", "true")
+
+    assert response.status_code == 200
+    assert response.json()["reset_token_preview"] is None
+
+
 def test_password_reset_confirm_updates_password_and_rejects_reuse(
     client: TestClient,
     db_session: Session,
@@ -319,6 +423,44 @@ def test_password_reset_confirm_rejects_invalid_token(client: TestClient):
     assert response.status_code == 400
     assert response.json()[
         "detail"] == "Invalid or expired password reset token"
+
+
+def test_password_reset_confirm_rate_limits_by_ip(client: TestClient):
+    """Password reset confirmation should have its own abuse limit."""
+
+    for _ in range(10):
+        response = client.post(
+            "/api/v1/password-reset/confirm",
+            json={
+                "token": "not-a-real-token",
+                "new_password": "new-password",
+                "confirm_password": "new-password",
+            },
+        )
+        assert response.status_code == 400
+
+    response = client.post(
+        "/api/v1/password-reset/confirm",
+        json={
+            "token": "not-a-real-token",
+            "new_password": "new-password",
+            "confirm_password": "new-password",
+        },
+    )
+
+    assert response.status_code == 429
+
+
+def test_security_headers_are_applied(client: TestClient):
+    """Responses should include the baseline browser hardening headers."""
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "script-src 'self'" in response.headers["content-security-policy"]
 
 
 def test_password_reset_confirm_rejects_expired_token(

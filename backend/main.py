@@ -114,6 +114,27 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def apply_security_headers(request, call_next):
+    """Apply a minimal browser hardening header set for app responses."""
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+    )
+    if settings.run_env == "prod":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
+
+@app.middleware("http")
 async def prometheus_http_metrics(request, call_next):
     """Record basic HTTP request metrics for Prometheus."""
 

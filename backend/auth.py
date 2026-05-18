@@ -4,7 +4,7 @@ from hashlib import sha256
 from datetime import datetime, timedelta, UTC
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 from . import crud, schemas
+from .settings import get_settings
 # Import the logger
 from .logging_config import error_logger, app_logger
 from .database import SessionLocal, get_db
@@ -26,7 +27,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
 class TokenData(BaseModel):
@@ -56,7 +57,12 @@ def password_reset_expiry() -> datetime:
 
 
 def should_expose_password_reset_token_preview() -> bool:
-    return os.getenv("TESTING") == "true" or os.getenv("RUN_ENV", "dev") != "prod"
+    settings = get_settings()
+    if os.getenv("TESTING") == "true":
+        return True
+    if settings.expose_password_reset_token_preview:
+        return True
+    return False
 
 
 def issue_password_reset_token(db: Session, user: schemas.User) -> tuple[str, datetime]:
@@ -113,12 +119,47 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def _get_request_bearer_token(request: Request) -> str | None:
+    """Return a bearer token from the Authorization header when present."""
+
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return None
+
+    scheme, _, credentials = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not credentials:
+        return None
+
+    return credentials.strip() or None
+
+
+def get_request_auth_token(request: Request) -> str | None:
+    """Resolve an auth token from bearer auth first, then the browser cookie."""
+
+    bearer_token = _get_request_bearer_token(request)
+    if bearer_token:
+        return bearer_token
+
+    cookie_name = get_settings().auth_cookie_name
+    cookie_token = request.cookies.get(cookie_name)
+    if not cookie_token:
+        return None
+
+    return cookie_token.strip() or None
+
+
+async def get_current_user(token: str, db: Session = Depends(get_db)):
+    """Resolve a user from a validated bearer or cookie token value."""
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if not token:
+        raise credentials_exception
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -135,7 +176,20 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     return user
 
 
-async def get_current_active_user(current_user: schemas.User = Depends(get_current_user)):
+async def get_current_user_from_request(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Resolve a user from either bearer auth or the browser auth cookie."""
+
+    resolved_token = token or get_request_auth_token(request)
+    return await get_current_user(token=resolved_token, db=db)
+
+
+async def get_current_active_user(
+    current_user: schemas.User = Depends(get_current_user_from_request),
+):
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user

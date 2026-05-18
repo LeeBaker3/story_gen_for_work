@@ -30,7 +30,12 @@ describe('auth form flows', () => {
             const method = String(options.method || 'GET').toUpperCase();
 
             if (value.includes('/api/v1/users/me') && method === 'GET') {
-                return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
+                return {
+                    ok: false,
+                    status: 401,
+                    json: async () => ({ detail: 'Could not validate credentials' }),
+                    headers: { get: () => 'application/json' },
+                };
             }
 
             if (value.includes('/api/v1/users/') && method === 'POST') {
@@ -52,17 +57,28 @@ describe('auth form flows', () => {
         jest.restoreAllMocks();
     });
 
-    test('login posts token form data, persists auth token, and initializes logged-in nav state', async () => {
+    test('login posts token form data, avoids localStorage persistence, and initializes logged-in nav state', async () => {
+        let isLoggedIn = false;
+
         global.fetch.mockImplementation(async (url, options = {}) => {
             const value = String(url);
             const method = String(options.method || 'GET').toUpperCase();
 
             if (value.includes('/api/v1/token') && method === 'POST') {
+                isLoggedIn = true;
                 return buildJsonResponse({ access_token: 'token-123', token_type: 'bearer' });
             }
 
             if (value.includes('/api/v1/users/me') && method === 'GET') {
-                return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
+                if (isLoggedIn) {
+                    return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
+                }
+                return {
+                    ok: false,
+                    status: 401,
+                    json: async () => ({ detail: 'Could not validate credentials' }),
+                    headers: { get: () => 'application/json' },
+                };
             }
 
             if (value.includes('/api/v1/stories/') || value.includes('/api/v1/dynamic-lists/')) {
@@ -78,7 +94,8 @@ describe('auth form flows', () => {
         fireEvent.submit(document.getElementById('login-form'));
 
         await waitFor(() => {
-            expect(window.localStorage.getItem('authToken')).toBe('token-123');
+            expect(document.getElementById('nav-login-signup').style.display).toBe('none');
+            expect(window.localStorage.getItem('authToken')).toBeNull();
         });
 
         const [, requestOptions] = global.fetch.mock.calls.find(
@@ -91,7 +108,7 @@ describe('auth form flows', () => {
         expect(requestOptions.body).toBeInstanceOf(URLSearchParams);
         expect(requestOptions.body.get('username')).toBe('reader@example.com');
         expect(requestOptions.body.get('password')).toBe('secret-pass');
-        expect(document.getElementById('nav-login-signup').style.display).toBe('none');
+        expect(requestOptions.credentials).toBe('include');
         expect(document.getElementById('nav-create-story').style.display).toBe('inline-block');
         expect(document.getElementById('story-creation-section').style.display).toBe('block');
         await waitFor(() => {

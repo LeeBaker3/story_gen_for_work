@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, Response, status, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -142,7 +142,9 @@ def _extract_reference_image_paths(db_story: database.Story) -> List[str]:
 
 
 @public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
+@limiter.limit(settings.signup_rate_limit)
 async def register_user(
+    request: Request,
     user: schemas.UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -178,6 +180,7 @@ async def read_my_entitlement(
 @limiter.limit(settings.login_rate_limit)
 async def login_for_access_token(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -197,7 +200,35 @@ async def login_for_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
 
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=access_token,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        max_age=int(access_token_expires.total_seconds()),
+        path="/",
+    )
+
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@public_router.post(
+    "/logout",
+    response_model=schemas.MessageResponse,
+    tags=["authentication"],
+)
+async def logout(response: Response):
+    """Clear the browser auth cookie while leaving bearer-token clients alone."""
+
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path="/",
+    )
+    return schemas.MessageResponse(detail="Logout successful")
 
 
 @public_router.post(
@@ -205,7 +236,7 @@ async def login_for_access_token(
     response_model=schemas.ForgotPasswordResponse,
     tags=["authentication"],
 )
-@limiter.limit(settings.login_rate_limit)
+@limiter.limit(settings.password_reset_request_rate_limit)
 async def request_password_reset(
     request: Request,
     payload: schemas.ForgotPasswordRequest,
@@ -242,7 +273,9 @@ async def request_password_reset(
     response_model=schemas.MessageResponse,
     tags=["authentication"],
 )
+@limiter.limit(settings.password_reset_confirm_rate_limit)
 async def confirm_password_reset(
+    request: Request,
     payload: schemas.ResetPasswordConfirm,
     db: Session = Depends(get_db),
 ):

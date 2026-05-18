@@ -91,7 +91,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const generationProgressBar = document.getElementById("generation-progress-bar");
     const generationStatusMessage = document.getElementById("generation-status-message");
 
-    let authToken = localStorage.getItem("authToken");
+    const LEGACY_AUTH_TOKEN_KEY = "authToken";
+    let hasAuthenticatedSession = false;
     let pdfPreviewObjectUrl = null;
     let pdfPreviewFilename = "story.pdf";
 
@@ -169,6 +170,67 @@ document.addEventListener("DOMContentLoaded", function () {
         "#1f2937",
         "#8b1e3f",
     ];
+
+    function getLegacyAuthToken() {
+        const token = localStorage.getItem(LEGACY_AUTH_TOKEN_KEY);
+        return typeof token === "string" ? token.trim() : "";
+    }
+
+    function clearLegacyAuthToken() {
+        localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
+    }
+
+    function buildAuthenticatedHeaders(headers = {}) {
+        const nextHeaders = { ...headers };
+        const token = getLegacyAuthToken();
+        if (token) {
+            nextHeaders.Authorization = `Bearer ${token}`;
+        }
+        return nextHeaders;
+    }
+
+    function buildAuthenticatedFetchOptions(options = {}) {
+        return {
+            ...options,
+            credentials: "include",
+            headers: buildAuthenticatedHeaders(options.headers || {}),
+        };
+    }
+
+    function enterAuthenticatedApp() {
+        hasAuthenticatedSession = true;
+        updateNav(true);
+        if (window.location.hash === "#browse") {
+            showSection(browseStoriesSection);
+            loadAndDisplayUserStories();
+            return;
+        }
+        showSection(storyCreationSection);
+        populateAllDropdowns();
+    }
+
+    async function bootstrapAuthenticatedSession() {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/v1/users/me/`,
+                buildAuthenticatedFetchOptions({
+                    method: "GET",
+                    headers: { Accept: "application/json" },
+                }),
+            );
+            if (!response.ok) {
+                if (response.status === 401) {
+                    clearLegacyAuthToken();
+                }
+                return false;
+            }
+            hasAuthenticatedSession = true;
+            return true;
+        } catch (error) {
+            console.warn("[auth] Session bootstrap failed.", error);
+            return false;
+        }
+    }
 
     function normalizeLayoutMode(layoutMode) {
         const normalized = String(layoutMode || STORY_EDITOR_DEFAULTS.layout_mode)
@@ -328,15 +390,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function fetchStoryPdfBlob(disposition = "attachment") {
-        const token = localStorage.getItem("authToken");
         const response = await fetch(
             `${API_BASE_URL}/api/v1/stories/${currentStoryId}/pdf?disposition=${encodeURIComponent(disposition)}`,
-            {
+            buildAuthenticatedFetchOptions({
                 method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            },
+            }),
         );
 
         if (!response.ok) {
@@ -2011,36 +2069,29 @@ document.addEventListener("DOMContentLoaded", function () {
     // --- INITIALIZATION ---
     // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
     initializeDropdownRetryButtons();
-    updateNav(!!authToken);
-    if (!!authToken) {
-        if (window.location.hash === "#browse") {
-            showSection(browseStoriesSection);
-            loadAndDisplayUserStories();
-        } else {
-            showSection(storyCreationSection);
-            populateAllDropdowns(); // Populate all dropdowns on load if logged in
-        }
-        initializeWizardValidationA11y();
-        // Initialize wizard UI state on load
-        goToStep(0);
-        // Add first character entry if not already present by HTML
-        if (
-            document.querySelectorAll("#main-characters-fieldset .character-entry")
-                .length === 0
-        ) {
-            // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
-            // The first character is expected to be in the HTML or handled by reset.
-            // For now, let's assume resetFormAndState or initial HTML handles the first one.
-        } else {
-            // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
-            // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
-            // if (firstCharToggle) {
-            //     initializeCharacterDetailsToggle(firstCharToggle);
-            // }
-        }
+    updateNav(false);
+    initializeWizardValidationA11y();
+    goToStep(0);
+    if (
+        document.querySelectorAll("#main-characters-fieldset .character-entry")
+            .length === 0
+    ) {
+        // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
+        // The first character is expected to be in the HTML or handled by reset.
+        // For now, let's assume resetFormAndState or initial HTML handles the first one.
     } else {
-        showSection(authSection);
+        // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
+        // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
+        // if (firstCharToggle) {
+        //     initializeCharacterDetailsToggle(firstCharToggle);
+        // }
     }
+    showSection(authSection);
+    bootstrapAuthenticatedSession().then((restoredSession) => {
+        if (restoredSession) {
+            enterAuthenticatedApp();
+        }
+    });
 
     // --- UTILITY FUNCTIONS ---
     function showSpinner() {
@@ -3264,15 +3315,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function fetchPrivateStoryPageImageObjectUrl(storyId, pageId) {
-        const token = localStorage.getItem("authToken");
         const response = await fetch(
             `${API_BASE_URL}/api/v1/stories/${storyId}/pages/${pageId}/image`,
-            {
+            buildAuthenticatedFetchOptions({
                 method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            },
+            }),
         );
 
         if (!response.ok) {
@@ -4149,7 +4196,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function fetchAndSetUserRole() {
-        if (!localStorage.getItem("authToken")) {
+        if (!hasAuthenticatedSession) {
             if (navAdminPanel) navAdminPanel.style.display = "none";
             return;
         }
@@ -4221,7 +4268,6 @@ document.addEventListener("DOMContentLoaded", function () {
         body = null,
         isFormData = false,
     ) {
-        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - START >>>>>');
         try {
             // console.log('[apiRequest] Received body parameter (cleaned):', body === null ? null : JSON.parse(JSON.stringify(body)));
         } catch (e) {
@@ -4231,34 +4277,25 @@ document.addEventListener("DOMContentLoaded", function () {
                 body,
             );
         }
-        // console.log('[apiRequest] Received endpoint:', endpoint, 'Method:', method, 'isFormData:', isFormData);
 
-        const token = localStorage.getItem("authToken"); // Corrected: Use 'authToken'
-        const headers = {
-            Authorization: `Bearer ${token}`,
-        };
+        const headers = buildAuthenticatedHeaders();
         if (!isFormData) {
             headers["Content-Type"] = "application/json";
         }
 
-        const options = {
+        const options = buildAuthenticatedFetchOptions({
             method: method,
             headers: headers,
-        };
+        });
 
         if (body !== null && !isFormData) {
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 1 - Stringifying body for options.body >>>>>');
             try {
                 options.body = JSON.stringify(body);
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 2 - options.body after stringify >>>>>');
-                // console.log('[apiRequest] options.body (this is the string that will be sent):', options.body);
             } catch (e) {
-                // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - ERROR STRINGIFYING BODY >>>>>', e);
                 console.error(
                     "[apiRequest] Body object that failed to stringify:",
                     body,
                 );
-                // Display error to user and stop
                 displayMessage(
                     "Error preparing data for the server. See console for details.",
                     "error",
@@ -4271,28 +4308,11 @@ document.addEventListener("DOMContentLoaded", function () {
             console.log("[apiRequest] options.body is FormData.");
         }
 
-        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 3 - Final options object before fetch >>>>>');
-        // console.log('[apiRequest] Final options object structure (logged directly):', options);
-        try {
-            // console.log('[apiRequest] Final options object (cleaned for inspection):', JSON.parse(JSON.stringify(options)));
-        } catch (e) {
-            console.error(
-                "[apiRequest] Could not stringify/parse final options for logging:",
-                e,
-                options,
-            );
-        }
-
-        // console.log('[apiRequest] Attempting to fetch URL:', `${API_BASE_URL}${endpoint}`);
         try {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 4 - Fetch returned >>>>>');
-            // console.log('[apiRequest] Response status:', response.status, 'Response ok:', response.ok);
-
             let responseData;
 
             if (!response.ok) {
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 5A - Response NOT OK >>>>>');
                 try {
                     responseData = await response.json();
                 } catch (e) {
@@ -4304,7 +4324,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     };
                 }
                 let errorDetailRaw = responseData && responseData.detail ? responseData.detail : `Unknown error. Status: ${response.status}`;
-                // If FastAPI returns a list of validation errors, format them nicely
                 let errorDetail;
                 if (Array.isArray(errorDetailRaw)) {
                     errorDetail = errorDetailRaw.map(e => {
@@ -4317,18 +4336,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     errorDetail = String(errorDetailRaw);
                 }
                 console.error(`[apiRequest] API Error: ${errorDetail}`, responseData);
-                // Handle expired/invalid token (401)
-                if (
-                    response.status === 401 &&
-                    errorDetail &&
-                    errorDetail.toLowerCase().includes("token")
-                ) {
+                if (response.status === 401 && errorDetail) {
                     displayMessage(
                         "Your session has expired. Please log in again.",
                         "error",
                     );
-                    localStorage.removeItem("authToken");
-                    // Optionally, redirect to login or show login modal
+                    hasAuthenticatedSession = false;
+                    clearLegacyAuthToken();
+                    updateNav(false);
                     if (typeof showLoginForm === "function") showLoginForm();
                 } else {
                     displayMessage(String(errorDetail), "error");
@@ -4336,8 +4351,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error(String(errorDetail));
             }
 
-            // If response.ok is true
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 5B - Response OK, processing body >>>>>');
             try {
                 const contentType = response.headers.get("content-type");
                 if (
@@ -4345,19 +4358,15 @@ document.addEventListener("DOMContentLoaded", function () {
                     response.headers.get("content-length") === "0"
                 ) {
                     responseData = null;
-                    // console.log('[apiRequest] Success response data (No Content / Empty Body)');
                 } else if (
                     contentType &&
                     contentType.indexOf("application/json") !== -1
                 ) {
                     responseData = await response.json();
-                    // console.log('[apiRequest] Success response data (JSON):', responseData);
                 } else {
                     responseData = await response.text();
-                    // console.log('[apiRequest] Success response data (Text):', responseData);
                 }
             } catch (e) {
-                // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - ERROR PARSING SUCCESS RESPONSE BODY >>>>>', e);
                 displayMessage(
                     "Error processing server response. See console.",
                     "error",
@@ -4365,10 +4374,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw e;
             }
 
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 6 - Returning responseData >>>>>');
             return responseData;
         } catch (error) {
-            // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - FETCH FAILED or error in response handling >>>>>', error);
             hideSpinner();
             displayMessage(
                 error.message ||
@@ -4506,13 +4513,9 @@ document.addEventListener("DOMContentLoaded", function () {
     async function deleteStory(storyId) {
         if (!confirm("Are you sure you want to delete this story?")) return;
         try {
-            const token = localStorage.getItem("authToken");
-            const response = await fetch(`${API_BASE_URL}/api/v1/stories/${storyId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/v1/stories/${storyId}`, buildAuthenticatedFetchOptions({
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            }));
             if (!response.ok) {
                 let errorDetail = "Unknown error";
                 try {
@@ -4663,6 +4666,7 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch(`${API_BASE_URL}/api/v1/token`, {
                 method: "POST",
+                credentials: "include",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
@@ -4672,12 +4676,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 const errorData = await response.json().catch(() => ({ detail: "Login failed" }));
                 throw new Error(errorData.detail || "Login failed");
             }
-            const data = await response.json();
-            authToken = data.access_token;
-            localStorage.setItem("authToken", authToken);
-            updateNav(true);
-            showSection(storyCreationSection); // Show creation form first
-            populateAllDropdowns(); // Populate dropdowns
+            await response.json();
+            clearLegacyAuthToken();
+            enterAuthenticatedApp();
             loadAndDisplayUserStories(); // Then load stories
             displayMessage("Login successful!", "success");
 
@@ -4762,9 +4763,17 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    navLogout.addEventListener("click", () => {
-        authToken = null;
-        localStorage.removeItem("authToken");
+    navLogout.addEventListener("click", async () => {
+        try {
+            await fetch(
+                `${API_BASE_URL}/api/v1/logout`,
+                buildAuthenticatedFetchOptions({ method: "POST" }),
+            );
+        } catch (error) {
+            console.warn("[auth] Logout request failed.", error);
+        }
+        hasAuthenticatedSession = false;
+        clearLegacyAuthToken();
         updateNav(false);
         displayMessage("Logged out.", "info");
         currentStoryId = null;

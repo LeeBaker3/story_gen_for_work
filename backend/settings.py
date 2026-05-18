@@ -321,6 +321,36 @@ class BaseSettings:
             "LOGIN_RATE_LIMIT",
             "10/minute",
         )
+        self.signup_rate_limit: str = os.getenv(
+            "SIGNUP_RATE_LIMIT",
+            "5/hour",
+        )
+        self.password_reset_request_rate_limit: str = os.getenv(
+            "PASSWORD_RESET_REQUEST_RATE_LIMIT",
+            self.login_rate_limit,
+        )
+        self.password_reset_confirm_rate_limit: str = os.getenv(
+            "PASSWORD_RESET_CONFIRM_RATE_LIMIT",
+            "10/hour",
+        )
+
+        # Auth cookies and browser-session security defaults
+        self.auth_cookie_name: str = os.getenv(
+            "AUTH_COOKIE_NAME",
+            "story_generator_auth",
+        )
+        self.auth_cookie_secure: bool = _parse_bool_env(
+            os.getenv("AUTH_COOKIE_SECURE"),
+            default=self.run_env == "prod",
+        )
+        self.auth_cookie_samesite: str = os.getenv(
+            "AUTH_COOKIE_SAMESITE",
+            "lax",
+        ).strip().lower() or "lax"
+        self.expose_password_reset_token_preview: bool = _parse_bool_env(
+            os.getenv("EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW"),
+            default=False,
+        )
 
 
 _settings_instance: BaseSettings | None = None

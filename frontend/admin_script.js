@@ -18,6 +18,33 @@ function resolveApiBaseUrl() {
 
 // Determine API_BASE_URL (same as main script.js)
 let API_BASE_URL = resolveApiBaseUrl();
+const LEGACY_AUTH_TOKEN_KEY = 'authToken';
+
+function getLegacyAuthToken() {
+    const token = localStorage.getItem(LEGACY_AUTH_TOKEN_KEY);
+    return typeof token === 'string' ? token.trim() : '';
+}
+
+function clearLegacyAuthToken() {
+    localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
+}
+
+function buildAuthHeaders(headers = {}) {
+    const nextHeaders = { ...headers };
+    const token = getLegacyAuthToken();
+    if (token) {
+        nextHeaders.Authorization = `Bearer ${token}`;
+    }
+    return nextHeaders;
+}
+
+function buildAuthenticatedFetchOptions(options = {}) {
+    return {
+        ...options,
+        credentials: 'include',
+        headers: buildAuthHeaders(options.headers || {}),
+    };
+}
 
 document.addEventListener("DOMContentLoaded", function () {
     const DIALOG_FOCUSABLE_SELECTOR = [
@@ -31,8 +58,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const navLogout = document.getElementById("nav-logout");
     if (navLogout) {
-        navLogout.addEventListener("click", () => {
-            localStorage.removeItem("authToken");
+        navLogout.addEventListener("click", async () => {
+            try {
+                await fetch(
+                    `${API_BASE_URL}/api/v1/logout`,
+                    buildAuthenticatedFetchOptions({ method: 'POST' }),
+                );
+            } catch (error) {
+                console.warn('[admin-auth] Logout request failed.', error);
+            }
+            clearLegacyAuthToken();
             window.location.href = "index.html";
         });
     }
@@ -43,13 +78,6 @@ document.addEventListener("DOMContentLoaded", function () {
     let adminDialogSequence = 0;
 
     ensureAdminStatusRegion(adminMessageArea);
-
-    const authToken = localStorage.getItem("authToken");
-
-    if (!authToken) {
-        displayAdminMessage("Access Denied. You must be logged in as an admin.", "error");
-        return;
-    }
 
     checkAdminRole();
 
@@ -1339,7 +1367,10 @@ document.addEventListener("DOMContentLoaded", function () {
             const url = `${API_BASE_URL}/api/v1/admin/monitoring/logs/${encodeURIComponent(file)}/download`;
             // Use a hidden link to preserve auth; since FileResponse is protected, attach auth via fetch+blob
             try {
-                const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` } });
+                const resp = await fetch(
+                    url,
+                    buildAuthenticatedFetchOptions({ method: 'GET' }),
+                );
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const blob = await resp.blob();
                 const a = document.createElement('a');
@@ -1468,10 +1499,10 @@ document.addEventListener("DOMContentLoaded", function () {
             try {
                 // Build URL with encoded filename and query param
                 const endpoint = `/api/v1/admin/monitoring/logs/${encodeURIComponent(file)}?lines=${tail}`;
-                const headers = {
-                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                };
-                const response = await fetch(API_BASE_URL + endpoint, { method: 'GET', headers });
+                const response = await fetch(
+                    API_BASE_URL + endpoint,
+                    buildAuthenticatedFetchOptions({ method: 'GET' }),
+                );
                 if (!response.ok) {
                     let txt = await response.text();
                     throw new Error(txt || `HTTP ${response.status}`);
@@ -2428,14 +2459,12 @@ function escapeHTML(str) {
 }
 
 async function apiRequest(endpoint, method = 'GET', body = null) {
-    const headers = {
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        'Content-Type': 'application/json'
-    };
-    const config = {
+    const config = buildAuthenticatedFetchOptions({
         method: method,
-        headers: headers
-    };
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
     if (body) {
         config.body = JSON.stringify(body);
     }
@@ -2453,6 +2482,9 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
         const error = new Error(`API request failed: ${response.status}`);
         error.response = errorData;
         error.status = response.status;
+        if (response.status === 401) {
+            clearLegacyAuthToken();
+        }
         console.error(`API Error (${method} ${endpoint}):`, errorData);
         throw error;
     }
