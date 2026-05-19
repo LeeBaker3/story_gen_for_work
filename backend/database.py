@@ -283,6 +283,21 @@ class StoryGenerationTask(Base):
     user = relationship("User")
 
 
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeats"
+
+    runtime_id = Column(String, primary_key=True, index=True)
+    runtime_role = Column(String, nullable=False, default="worker", index=True)
+    hostname = Column(String, nullable=True)
+    last_heartbeat_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        server_default=func.now(),
+    )
+
+
 class AdminBroadcast(Base):
     __tablename__ = "admin_broadcasts"
 

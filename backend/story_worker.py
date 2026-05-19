@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from datetime import datetime, timedelta, timezone
 
 from backend import crud, database, schemas, story_generation_service
 from backend.database import SessionLocal
 from backend.logging_config import app_logger, error_logger
+from backend.runtime_alerting import send_high_severity_runtime_alert
 from backend.settings import get_settings
 
 
@@ -51,6 +53,13 @@ async def run_single_worker_iteration() -> bool:
     settings = get_settings()
     db = SessionLocal()
     try:
+        crud.upsert_worker_heartbeat(
+            db,
+            runtime_id=settings.story_worker_runtime_id,
+            runtime_role="worker",
+            hostname=socket.gethostname(),
+        )
+
         recovered_count = _recover_stale_in_progress_tasks(
             db,
             stale_after_seconds=settings.story_generation_stale_task_timeout_seconds,
@@ -89,6 +98,17 @@ async def run_single_worker_iteration() -> bool:
         story_input,
         task.reservation_id,
     )
+
+    db = SessionLocal()
+    try:
+        crud.upsert_worker_heartbeat(
+            db,
+            runtime_id=settings.story_worker_runtime_id,
+            runtime_role="worker",
+            hostname=socket.gethostname(),
+        )
+    finally:
+        db.close()
     return True
 
 
@@ -103,10 +123,19 @@ async def run_worker_forever() -> None:
     while True:
         try:
             processed = await run_single_worker_iteration()
-        except Exception:
+        except Exception as exc:
             error_logger.error(
                 "Unhandled error during story worker iteration.",
                 exc_info=True,
+            )
+            send_high_severity_runtime_alert(
+                source="worker",
+                summary="Unhandled story worker iteration exception",
+                details={
+                    "runtime_id": settings.story_worker_runtime_id,
+                    "exception_type": exc.__class__.__name__,
+                    "message": str(exc),
+                },
             )
             processed = False
 

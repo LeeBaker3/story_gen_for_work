@@ -33,6 +33,36 @@ APP_LOG_FILES_TOTAL = Gauge(
     "Number of .log files present in the configured logs directory.",
 )
 
+STORY_GENERATION_TASKS_BACKLOG = Gauge(
+    "app_story_generation_tasks_backlog",
+    "Number of pending story generation tasks waiting for the worker.",
+)
+
+STORY_GENERATION_TASKS_IN_PROGRESS = Gauge(
+    "app_story_generation_tasks_in_progress",
+    "Number of story generation tasks currently in progress.",
+)
+
+STORY_WORKER_REGISTERED_RUNTIMES = Gauge(
+    "app_story_worker_registered_runtimes",
+    "Number of worker runtimes that have persisted a heartbeat row.",
+)
+
+STORY_WORKER_HEARTBEAT_AGE_SECONDS = Gauge(
+    "app_story_worker_heartbeat_age_seconds",
+    "Age in seconds of the most recent worker heartbeat, or -1 when absent.",
+)
+
+STORY_WORKER_HEALTHY = Gauge(
+    "app_story_worker_healthy",
+    "Worker heartbeat health state where 1 is healthy and 0 is stale or absent.",
+)
+
+STORY_WORKER_LAST_HEARTBEAT_TIMESTAMP_SECONDS = Gauge(
+    "app_story_worker_last_heartbeat_timestamp_seconds",
+    "Unix timestamp for the most recent persisted worker heartbeat.",
+)
+
 STORY_GENERATION_TASKS_TOTAL = Counter(
     "app_story_generation_tasks_total",
     "Total story generation tasks finished.",

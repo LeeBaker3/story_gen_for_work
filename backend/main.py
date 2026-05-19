@@ -25,9 +25,10 @@ from backend.metrics import (
     HTTP_REQUESTS_TOTAL,
     normalize_http_path,
 )
-from backend.monitoring_router import monitoring_router
+from backend.monitoring_router import monitoring_router, ops_monitoring_router
 from backend.public_router import public_router
 from backend.rate_limiting import limiter
+from backend.runtime_alerting import send_high_severity_runtime_alert
 from backend.settings import get_settings
 
 settings = get_settings()
@@ -148,6 +149,28 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def report_unhandled_runtime_errors(request, call_next):
+    """Send a best-effort alert for unhandled API exceptions."""
+
+    try:
+        return await call_next(request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        send_high_severity_runtime_alert(
+            source="api",
+            summary="Unhandled API exception",
+            details={
+                "method": request.method,
+                "path": str(request.url.path),
+                "exception_type": exc.__class__.__name__,
+                "message": str(exc),
+            },
+        )
+        raise
+
+
+@app.middleware("http")
 async def apply_security_headers(request, call_next):
     """Apply a minimal browser hardening header set for app responses."""
 
@@ -212,6 +235,11 @@ app.include_router(
     monitoring_router,
     prefix=admin_prefix,
     tags=["admin-monitoring"],
+)
+app.include_router(
+    ops_monitoring_router,
+    prefix=settings.api_prefix,
+    tags=["ops-monitoring"],
 )
 app.include_router(legal_docs_router)
 

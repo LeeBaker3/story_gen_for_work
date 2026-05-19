@@ -118,12 +118,20 @@ Story generation runtime
 - STORY_GENERATION_RUNTIME_ROLE: api | worker | combined (default: combined)
 - STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS: worker poll interval in seconds for pending tasks (default: 5)
 - STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS: worker-side timeout in seconds before stale `in_progress` tasks are failed during recovery (default: 900)
+- STORY_WORKER_RUNTIME_ID: stable worker identifier stored in the shared heartbeat table (default: host name)
+- WORKER_HEARTBEAT_STALE_AFTER_SECONDS: heartbeat age threshold used to mark the worker healthy or stale in ops metrics (default: max(STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS * 3, 30))
+- OPS_METRICS_BEARER_TOKEN: dedicated bearer token for `GET /api/v1/ops/metrics`; leave unset to disable the machine-facing scrape path
+- RUNTIME_ALERT_WEBHOOK_URL: optional generic outbound webhook for high-severity unhandled worker-loop and API runtime exceptions
+- RUNTIME_ALERT_WEBHOOK_TIMEOUT_SECONDS: best-effort webhook timeout in seconds for runtime alerts (default: 2.0)
 
 Story generation runtime notes
 - `combined` preserves the existing local-dev behavior: `POST /api/v1/stories/` both enqueues and executes generation in-process.
 - `api` keeps the existing request/response contract but only persists the story shell and task record.
 - `worker` runs the standalone poller via `python -m backend.story_worker` and executes one task at a time.
 - The split runtime is intentionally single-worker only for this slice.
+- The worker heartbeat is persisted in the shared database so the API runtime can expose queue state and worker freshness through `/api/v1/ops/metrics` without a direct worker-to-API dependency.
+- `/api/v1/admin/monitoring/metrics` remains admin-authenticated and intact; `/api/v1/ops/metrics` is the separate machine-facing scrape surface.
+- Runtime alerting in this slice is intentionally minimal: one best-effort JSON webhook for high-severity unhandled failures only, not a full alert engine.
 
 Runtime guarantees
 - Staging/prod fail fast if DATABASE_URL points at SQLite.

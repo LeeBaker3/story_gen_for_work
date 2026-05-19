@@ -1,9 +1,10 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from . import schemas
 from . import entitlements
 from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
-from .database import AdminAuditEvent, Character, CharacterImage, DynamicList, DynamicListItem, Page, PrivacyRequest, Story, StoryGenerationTask, User
+from .database import AdminAuditEvent, Character, CharacterImage, DynamicList, DynamicListItem, Page, PrivacyRequest, Story, StoryGenerationTask, User, WorkerHeartbeat
 from passlib.context import CryptContext
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
@@ -1283,6 +1284,99 @@ def claim_next_pending_story_generation_task(
     db.commit()
     db.refresh(task)
     return task
+
+
+def upsert_worker_heartbeat(
+    db: Session,
+    *,
+    runtime_id: str,
+    runtime_role: str = "worker",
+    hostname: str | None = None,
+    heartbeat_at: Optional[datetime] = None,
+) -> WorkerHeartbeat:
+    """Persist the latest heartbeat timestamp for a worker runtime."""
+
+    current_time = heartbeat_at or datetime.now(timezone.utc)
+    heartbeat = db.query(WorkerHeartbeat).filter(
+        WorkerHeartbeat.runtime_id == runtime_id,
+    ).first()
+
+    if heartbeat is None:
+        heartbeat = WorkerHeartbeat(
+            runtime_id=runtime_id,
+            runtime_role=runtime_role,
+            hostname=hostname,
+            last_heartbeat_at=current_time,
+        )
+    else:
+        heartbeat.runtime_role = runtime_role
+        heartbeat.hostname = hostname
+        heartbeat.last_heartbeat_at = current_time
+
+    db.add(heartbeat)
+    db.commit()
+    db.refresh(heartbeat)
+    return heartbeat
+
+
+def get_latest_worker_heartbeat(
+    db: Session,
+    *,
+    runtime_role: str = "worker",
+) -> Optional[WorkerHeartbeat]:
+    """Return the most recent worker heartbeat for the requested runtime role."""
+
+    return (
+        db.query(WorkerHeartbeat)
+        .filter(WorkerHeartbeat.runtime_role == runtime_role)
+        .order_by(
+            WorkerHeartbeat.last_heartbeat_at.desc(),
+            WorkerHeartbeat.runtime_id.asc(),
+        )
+        .first()
+    )
+
+
+def count_worker_heartbeats(
+    db: Session,
+    *,
+    runtime_role: str = "worker",
+) -> int:
+    """Return the number of registered worker heartbeat rows."""
+
+    return int(
+        db.query(func.count(WorkerHeartbeat.runtime_id))
+        .filter(WorkerHeartbeat.runtime_role == runtime_role)
+        .scalar()
+        or 0
+    )
+
+
+def get_story_generation_queue_counts(db: Session) -> Dict[str, int]:
+    """Return a compact queue snapshot for operational monitoring."""
+
+    pending_count = int(
+        db.query(func.count(StoryGenerationTask.id))
+        .filter(
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.PENDING.value,
+        )
+        .scalar()
+        or 0
+    )
+    in_progress_count = int(
+        db.query(func.count(StoryGenerationTask.id))
+        .filter(
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.IN_PROGRESS.value,
+        )
+        .scalar()
+        or 0
+    )
+    return {
+        "pending": pending_count,
+        "in_progress": in_progress_count,
+    }
 
 
 def update_story_generation_task_progress(

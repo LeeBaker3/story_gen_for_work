@@ -34,6 +34,7 @@ Run split API + worker locally
 - API: `STORY_GENERATION_RUNTIME_ROLE=api uvicorn backend.main:app --reload`
 - Worker: `STORY_GENERATION_RUNTIME_ROLE=worker python -m backend.story_worker`
 - Default local behavior remains `combined`, which keeps in-process execution for story generation.
+- Ops scrape: set `OPS_METRICS_BEARER_TOKEN` in the shared environment, then scrape `GET /api/v1/ops/metrics` with `Authorization: Bearer <token>`.
 
 ## API shape and routes
 - API prefix: default /api/v1 (configurable)
@@ -50,6 +51,9 @@ Run split API + worker locally
     - GET /api/v1/admin/monitoring/logs/{file}/download (download full log)
     - GET /api/v1/admin/monitoring/stats (basic system stats)
     - GET /api/v1/admin/monitoring/metrics (Prometheus exposition)
+- Ops monitoring (dedicated bearer token required):
+    - GET /api/v1/ops/metrics (Prometheus exposition for machine scrapes)
+    - Includes queue backlog, in-progress task count, registered worker heartbeat rows, latest heartbeat age, and worker healthy/stale state.
 
 Admin monitoring UI highlights
 - Persisted preferences: selected log file, tail length, auto‑refresh, and filters are saved to localStorage.
@@ -126,6 +130,11 @@ Story generation runtime
 - STORY_GENERATION_RUNTIME_ROLE: `combined` keeps API-side execution for local dev; `api` enqueues only; `worker` runs the standalone single-worker poller.
 - STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS: worker polling interval for queued tasks.
 - STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS: conservative timeout for failing stale `in_progress` tasks during worker recovery.
+- STORY_WORKER_RUNTIME_ID: stable identifier written into the worker heartbeat row. Defaults to the host name.
+- WORKER_HEARTBEAT_STALE_AFTER_SECONDS: heartbeat age threshold used by `/api/v1/ops/metrics` to mark the worker healthy or stale.
+- OPS_METRICS_BEARER_TOKEN: dedicated bearer token for the machine-facing scrape path.
+- RUNTIME_ALERT_WEBHOOK_URL: optional generic outbound webhook for high-severity unhandled API and worker runtime failures.
+- RUNTIME_ALERT_WEBHOOK_TIMEOUT_SECONDS: short best-effort delivery timeout for the runtime alert webhook.
 
 Schema migrations
 - Alembic bootstrap files live under `alembic/` with config in `alembic.ini`.

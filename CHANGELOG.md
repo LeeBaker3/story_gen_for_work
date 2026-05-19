@@ -8,12 +8,14 @@ All notable changes to this project will be documented in this file.
 - PRD scope for a user-friendly story editor and basic desktop publishing controls, including MVP boundaries and wizard vs post-generation responsibilities.
 - Prometheus metrics for OpenAI text generation path usage, latency, and error rates.
 - Source-of-truth copy spec for launch trust, support availability, ownership/licensing, and degraded-mode outage messaging.
+- Dedicated ops Prometheus scrape support at `/api/v1/ops/metrics`, backed by a bearer token, shared-DB worker heartbeats, queue visibility, and a minimal high-severity runtime alert webhook.
 
 ### Changed
 - Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
 - Story text generation can use the Responses API via `USE_OPENAI_RESPONSES_API`.
 - Optional resilience: `OPENAI_TEXT_ENABLE_FALLBACK` falls back to the other text path on error.
 - Stories now persist optional `writing_style` when supplied through API, import, or template flows; the wizard still does not expose that input on this branch.
+- Split-runtime documentation now includes the separate ops scrape posture, worker heartbeat semantics, and the generic runtime failure webhook behavior.
 
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.5.0...v0.6.0) (2026-01-05)
 

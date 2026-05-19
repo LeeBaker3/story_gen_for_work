@@ -5,8 +5,10 @@ It includes routes for listing and retrieving log files, which are
 accessible only to authenticated admin users.
 """
 
+import hmac
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 import os
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import PlainTextResponse, FileResponse, Response
 from typing import Dict, List, Optional
 import sys
@@ -21,17 +23,31 @@ from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.settings import get_settings
 from backend import ai_services, crud, schemas, settings as settings_module
-from backend.metrics import APP_LOG_FILES_TOTAL
+from backend.metrics import (
+    APP_LOG_FILES_TOTAL,
+    STORY_GENERATION_TASKS_BACKLOG,
+    STORY_GENERATION_TASKS_IN_PROGRESS,
+    STORY_WORKER_HEALTHY,
+    STORY_WORKER_HEARTBEAT_AGE_SECONDS,
+    STORY_WORKER_LAST_HEARTBEAT_TIMESTAMP_SECONDS,
+    STORY_WORKER_REGISTERED_RUNTIMES,
+)
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 _settings = get_settings()
 LOG_DIRECTORY = _settings.logs_dir or "data/logs"
+ops_bearer = HTTPBearer(auto_error=False)
 
 monitoring_router = APIRouter(
     prefix="/monitoring",
     tags=["monitoring"],
     dependencies=[Depends(get_current_admin_user)]
+)
+
+ops_monitoring_router = APIRouter(
+    prefix="/ops",
+    tags=["ops-monitoring"],
 )
 
 # Record process start time for uptime calculation
@@ -98,6 +114,75 @@ ADMIN_CONFIG_UPDATE_NOTES = [
     "Sensitive values such as OPENAI_API_KEY stay masked and cannot be read or edited from this screen.",
     "Long-running or in-flight tasks keep the config they started with; updated values apply to new requests after save.",
 ]
+
+
+def _require_ops_metrics_bearer_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(ops_bearer),
+) -> None:
+    """Authenticate the machine-facing ops metrics route with a dedicated token."""
+
+    configured_token = get_settings().ops_metrics_bearer_token
+    if not configured_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ops metrics endpoint is not configured.",
+        )
+
+    supplied_token = credentials.credentials if credentials else ""
+    if not credentials or not hmac.compare_digest(supplied_token, configured_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid ops metrics bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def _set_log_file_metric() -> None:
+    """Refresh the log-file metric without failing the scrape."""
+
+    try:
+        count = 0
+        if os.path.isdir(LOG_DIRECTORY):
+            count = len([f for f in os.listdir(
+                LOG_DIRECTORY) if f.endswith(".log")])
+        APP_LOG_FILES_TOTAL.set(count)
+    except Exception:
+        APP_LOG_FILES_TOTAL.set(0)
+
+
+def _refresh_ops_metrics(db: Session) -> None:
+    """Refresh DB-backed operational gauges before emitting Prometheus text."""
+
+    _set_log_file_metric()
+
+    queue_counts = crud.get_story_generation_queue_counts(db)
+    STORY_GENERATION_TASKS_BACKLOG.set(queue_counts["pending"])
+    STORY_GENERATION_TASKS_IN_PROGRESS.set(queue_counts["in_progress"])
+
+    worker_count = crud.count_worker_heartbeats(db)
+    STORY_WORKER_REGISTERED_RUNTIMES.set(worker_count)
+
+    latest_heartbeat = crud.get_latest_worker_heartbeat(db)
+    if latest_heartbeat is None:
+        STORY_WORKER_HEARTBEAT_AGE_SECONDS.set(-1)
+        STORY_WORKER_HEALTHY.set(0)
+        STORY_WORKER_LAST_HEARTBEAT_TIMESTAMP_SECONDS.set(0)
+        return
+
+    heartbeat_at = latest_heartbeat.last_heartbeat_at
+    if heartbeat_at.tzinfo is None or heartbeat_at.tzinfo.utcoffset(heartbeat_at) is None:
+        heartbeat_at = heartbeat_at.replace(tzinfo=timezone.utc)
+
+    heartbeat_age_seconds = max(
+        0.0,
+        (datetime.now(timezone.utc) - heartbeat_at).total_seconds(),
+    )
+    stale_after_seconds = get_settings().worker_heartbeat_stale_after_seconds
+    STORY_WORKER_HEARTBEAT_AGE_SECONDS.set(heartbeat_age_seconds)
+    STORY_WORKER_HEALTHY.set(
+        1 if heartbeat_age_seconds <= stale_after_seconds else 0
+    )
+    STORY_WORKER_LAST_HEARTBEAT_TIMESTAMP_SECONDS.set(heartbeat_at.timestamp())
 
 
 def _build_config_diagnostics_payload(
@@ -291,16 +376,20 @@ def metrics_stub():
     This endpoint is admin-authenticated because this router is mounted under
     the admin prefix.
     """
-    try:
-        count = 0
-        if os.path.isdir(LOG_DIRECTORY):
-            count = len([f for f in os.listdir(
-                LOG_DIRECTORY) if f.endswith(".log")])
-        APP_LOG_FILES_TOTAL.set(count)
-    except Exception:
-        # Never fail metrics endpoint; return metrics with best-effort values.
-        APP_LOG_FILES_TOTAL.set(0)
+    _set_log_file_metric()
 
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@ops_monitoring_router.get(
+    "/metrics",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(_require_ops_metrics_bearer_token)],
+)
+def ops_metrics(db: Session = Depends(get_db)):
+    """Expose machine-facing operational Prometheus metrics behind a bearer token."""
+
+    _refresh_ops_metrics(db)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

@@ -2,6 +2,8 @@ import asyncio
 from typing import Generator
 from datetime import UTC, datetime
 
+import pytest
+
 from backend import ai_services, crud, database, story_generation_service, story_worker
 
 
@@ -100,6 +102,12 @@ def test_run_single_worker_iteration_completes_pending_task(
         lambda: db_session,
     )
 
+    class SettingsStub:
+        story_generation_stale_task_timeout_seconds = 900
+        story_worker_runtime_id = "test-worker-runtime"
+
+    monkeypatch.setattr(story_worker, "get_settings", lambda: SettingsStub())
+
     def override_background_db() -> Generator:
         yield db_session
 
@@ -138,3 +146,73 @@ def test_run_single_worker_iteration_completes_pending_task(
     assert refreshed_story.title == "Queued Story Complete"
     assert len(refreshed_story.pages) == 1
     assert refreshed_story.pages[0].text == "Ava solves the queued task."
+
+    heartbeat = db_session.query(database.WorkerHeartbeat).filter(
+        database.WorkerHeartbeat.runtime_id == "test-worker-runtime",
+    ).one()
+    assert heartbeat.runtime_role == "worker"
+    assert heartbeat.hostname
+
+
+def test_run_single_worker_iteration_upserts_heartbeat_when_idle(
+    db_session,
+    monkeypatch,
+):
+    """The worker should persist a heartbeat even when no task is claimed."""
+
+    class SettingsStub:
+        story_generation_stale_task_timeout_seconds = 900
+        story_worker_runtime_id = "idle-worker-runtime"
+
+    monkeypatch.setattr(story_worker, "get_settings", lambda: SettingsStub())
+    monkeypatch.setattr(story_worker, "SessionLocal", lambda: db_session)
+
+    processed = asyncio.run(story_worker.run_single_worker_iteration())
+
+    assert processed is False
+    heartbeat = db_session.query(database.WorkerHeartbeat).filter(
+        database.WorkerHeartbeat.runtime_id == "idle-worker-runtime",
+    ).one()
+    assert heartbeat.runtime_role == "worker"
+
+
+def test_run_worker_forever_sends_alert_on_unhandled_iteration_exception(
+    monkeypatch,
+):
+    """The worker loop should attempt one high-severity alert on unhandled errors."""
+
+    calls = []
+
+    class SettingsStub:
+        story_generation_worker_poll_interval_seconds = 0.01
+        story_worker_runtime_id = "alert-worker-runtime"
+
+    async def raise_iteration_error():
+        raise RuntimeError("worker exploded")
+
+    async def stop_after_sleep(_seconds):
+        raise asyncio.CancelledError()
+
+    def capture_alert(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(story_worker, "get_settings", lambda: SettingsStub())
+    monkeypatch.setattr(
+        story_worker,
+        "run_single_worker_iteration",
+        raise_iteration_error,
+    )
+    monkeypatch.setattr(asyncio, "sleep", stop_after_sleep)
+    monkeypatch.setattr(
+        story_worker,
+        "send_high_severity_runtime_alert",
+        capture_alert,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(story_worker.run_worker_forever())
+
+    assert len(calls) == 1
+    assert calls[0]["source"] == "worker"
+    assert calls[0]["summary"] == "Unhandled story worker iteration exception"

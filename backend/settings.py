@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 from typing import Any, Dict, List
 from pathlib import Path
 from dotenv import load_dotenv
@@ -328,6 +329,32 @@ class BaseSettings:
         self.story_generation_stale_task_timeout_seconds: int = int(
             os.getenv("STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS", "900")
         )
+        self.story_worker_runtime_id: str = (
+            os.getenv("STORY_WORKER_RUNTIME_ID", socket.gethostname()).strip()
+            or "worker"
+        )
+        self.worker_heartbeat_stale_after_seconds: int = int(
+            os.getenv(
+                "WORKER_HEARTBEAT_STALE_AFTER_SECONDS",
+                str(
+                    max(
+                        int(self.story_generation_worker_poll_interval_seconds * 3),
+                        30,
+                    )
+                ),
+            )
+        )
+        self.ops_metrics_bearer_token: str = os.getenv(
+            "OPS_METRICS_BEARER_TOKEN",
+            "",
+        ).strip()
+        self.runtime_alert_webhook_url: str = os.getenv(
+            "RUNTIME_ALERT_WEBHOOK_URL",
+            "",
+        ).strip()
+        self.runtime_alert_webhook_timeout_seconds: float = float(
+            os.getenv("RUNTIME_ALERT_WEBHOOK_TIMEOUT_SECONDS", "2.0")
+        )
         self._validate_runtime_posture()
         if self.asset_storage_backend != "filesystem":
             self.mount_data_static = False
@@ -491,6 +518,16 @@ class BaseSettings:
         if self.story_generation_stale_task_timeout_seconds <= 0:
             raise RuntimeError(
                 "STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS must be > 0"
+            )
+
+        if self.worker_heartbeat_stale_after_seconds <= 0:
+            raise RuntimeError(
+                "WORKER_HEARTBEAT_STALE_AFTER_SECONDS must be > 0"
+            )
+
+        if self.runtime_alert_webhook_timeout_seconds <= 0:
+            raise RuntimeError(
+                "RUNTIME_ALERT_WEBHOOK_TIMEOUT_SECONDS must be > 0"
             )
 
         if self.asset_storage_backend not in ASSET_STORAGE_BACKENDS:
