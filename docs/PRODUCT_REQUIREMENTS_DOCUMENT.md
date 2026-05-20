@@ -295,6 +295,9 @@ requirements spec only and does not assume any live billing implementation.
 - The source-of-truth copy deck for launch trust, support, ownership, and
     outage messaging lives in
     `docs/specs/launch-trust-support-outage-copy-spec.md`.
+- The source-of-truth backlog for post-beta onboarding and conversion polish
+    lives in
+    `docs/specs/post-beta-onboarding-conversion-polish-backlog.md`.
 - That copy deck is intentionally guidance for future frontend/account work; it
     does not claim the current runtime already exposes every state or banner
     described there.
