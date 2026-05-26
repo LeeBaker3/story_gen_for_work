@@ -2,7 +2,7 @@
 
 Effective date: 2026-05-13
 
-This short-form disclosure is intended for future frontend and support links.
+This short-form disclosure is used by current frontend and support surfaces.
 It reflects the current repository baseline and should stay aligned with the
 actual AI features that are enabled in the running app.
 

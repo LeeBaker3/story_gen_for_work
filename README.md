@@ -1,6 +1,6 @@
 # Story Generator API ![coverage](coverage_badge.svg) [![Release](https://img.shields.io/github/v/release/LeeBaker3/story_gen_for_work?display_name=tag&sort=semver)](https://github.com/LeeBaker3/story_gen_for_work/releases/latest)
 
-FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, inline status feedback, and static content served by the API when enabled.
+FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, forgot-password and account flows, PDF preview, legal/trust pages, inline status feedback, and static content served by the API when enabled.
 
 ## Releases
 - Automated with Release Please (manifest mode) covering three components:
@@ -110,8 +110,8 @@ Logging
 
 OpenAI models and retries
 - OPENAI_API_KEY: key for OpenAI
-- TEXT_MODEL: default gpt-5-mini
-- IMAGE_MODEL: default gpt-image-1.5
+- TEXT_MODEL: default gpt-5.4-mini
+- IMAGE_MODEL: default gpt-image-2
 - USE_OPENAI_RESPONSES_API: 1/true to use Responses API for story text (default: false)
 - OPENAI_TEXT_ENABLE_FALLBACK: 1/true to fall back to the other text path if the primary fails (default: false)
 - RETRY_MAX_ATTEMPTS: default 3
@@ -166,7 +166,9 @@ Docs
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.
-- Use Authorization: Bearer <token> for subsequent requests.
+- Login still returns a bearer token for API clients.
+- Browser flows also receive an HttpOnly auth cookie and the frontend sends credentials with same-origin requests, so browser sessions can rely on cookie auth as well as explicit bearer headers.
+- Use Authorization: Bearer <token> for non-browser clients or direct API calls.
 - Admin-only endpoints require a user with role=admin.
 - A helper script `create_admin.py` exists to create an admin user if needed.
 
@@ -212,10 +214,13 @@ Use the real-API smoke test to validate your API key, text generation, and image
 nvm use
 
 # Install dependencies (first time or after updates)
+npm install
 
+# Run the frontend Jest suite
+npm run test:frontend
 
-# Run only frontend tests (serial to reduce flake)
-## Storage paths
+# CI-style frontend run with junit output
+npm run test:frontend:ci
 
 # Watch mode for development
 npm run test:frontend:watch
@@ -224,8 +229,12 @@ npm run test:frontend:watch
 npm run test:backend
 
 # Run all (frontend then backend)
-- Images are stored under DATA_DIR/images/user_{id}/story_{id}/...
+npm run test:all
 ```
+
+Notes
+- `npm test` maps to `npm run test:frontend`.
+- The frontend test script runs Jest serially with coverage enabled.
 
 #### Node version management
 - The file `.nvmrc` (currently `22`) specifies the expected Node major.

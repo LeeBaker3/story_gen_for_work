@@ -2,6 +2,13 @@
 
 Last updated: 2026-05-06
 
+> Historical planning note
+>
+> This document describes the rollout plan for the E2E frame and should be read
+> as historical planning material. For the current shipped E2E posture, use the
+> repo-root README, repo-root CONFIG guide, the PRD, and the code under
+> backend/tests and scripts.
+
 ## Goal
 
 Build a repeatable cross-stack E2E frame that runs the real FastAPI app, serves

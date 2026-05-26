@@ -3,6 +3,12 @@
 Date: 2026-05-13
 Audience: Founder, Product, Engineering
 
+> Historical review note
+>
+> This document is a point-in-time internal readiness review, not the current
+> product contract. For current shipped behavior and supported configuration,
+> use the repo-root README, repo-root CONFIG guide, the PRD, and the code.
+
 ## Executive Summary
 
 - Verdict: Not ready for commercial launch.

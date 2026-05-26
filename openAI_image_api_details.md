@@ -1,5 +1,13 @@
 
 
+> Reference note
+>
+> This file is an external API reference snapshot and research note. It is not
+> the source of truth for the app's current configuration, model defaults, or
+> enabled image parameters. Use the repo-root README, repo-root CONFIG guide,
+> and the backend code for current application behavior.
+
+
 # 0. Images 
 https://platform.openai.com/docs/api-reference/images
 

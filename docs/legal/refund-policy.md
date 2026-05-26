@@ -2,11 +2,14 @@
 
 Effective date: 2026-05-14
 
-Story Generator does not currently offer paid self-serve plans in this
-repository baseline.
+Story Generator includes billing-related backend primitives and account-support
+guidance in this repository baseline, but this branch should not be read as a
+claim that a fully launched self-serve paid product is exposed in the current
+app shell.
 
-Because there is no live checkout or subscription flow in the current product,
-there is no standalone refund program to invoke through the app at this time.
+Because the current product baseline does not clearly expose a live checkout or
+subscription flow to end users, there is no standalone in-app refund program to
+invoke at this time.
 
 If the product introduces paid plans later, billing and refund terms should be
 published before those plans are made available.

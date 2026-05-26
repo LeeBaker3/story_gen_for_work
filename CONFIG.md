@@ -88,6 +88,19 @@ Provider notes
 
 Authentication
 - LOGIN_RATE_LIMIT: rate limit applied to login attempts (default: 10/minute)
+- SIGNUP_RATE_LIMIT: rate limit applied to public signup requests (default: 5/hour)
+- PASSWORD_RESET_REQUEST_RATE_LIMIT: rate limit applied to password reset requests (default: falls back to LOGIN_RATE_LIMIT)
+- PASSWORD_RESET_CONFIRM_RATE_LIMIT: rate limit applied to password reset confirmations (default: 10/hour)
+- AUTH_COOKIE_NAME: HttpOnly browser auth cookie name set on successful login (default: story_generator_auth)
+- AUTH_COOKIE_SECURE: whether the browser auth cookie requires HTTPS (default: true in prod, false elsewhere)
+- AUTH_COOKIE_SAMESITE: SameSite policy for the browser auth cookie (default: lax)
+- EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW: when true, include reset_token_preview in password-reset request responses outside tests/dev tooling (default: false)
+
+Authentication notes
+- POST /api/v1/token still returns a bearer token for API clients and also sets the configured HttpOnly browser auth cookie.
+- Browser flows use same-origin requests with credentials so cookie auth works without exposing the token to frontend JavaScript.
+- Password reset requests always return a generic success message to avoid revealing whether an account exists.
+- reset_token_preview is intended for tests and local/dev workflows only. In prod-like environments it stays off unless EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW is explicitly enabled.
 
 Billing
 - STRIPE_SECRET_KEY: Stripe secret key used for authenticated Checkout and Customer Portal API calls

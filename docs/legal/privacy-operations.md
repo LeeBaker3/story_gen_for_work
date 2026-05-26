@@ -3,8 +3,10 @@
 Effective date: 2026-05-13
 
 This page describes the current retention, deletion, and export handling for
-Story Generator. It reflects the repository baseline only and does not claim
-automation, billing support, or response times that are not implemented yet.
+Story Generator. It reflects the current shipped workflow: authenticated users
+can submit account export and account deletion requests in-product, and admins
+still fulfill those requests through a manual review workflow rather than an
+automated export bundle or hard-purge pipeline.
 
 ## What The App Stores
 
@@ -54,10 +56,10 @@ deployment vendors.
 
 There is still no self-serve full-account export bundle yet.
 
-Users can now submit an account export request from the authenticated product
-surface. That request is recorded for manual review and fulfillment by an
-admin. Completing the request records the manual fulfillment state only; it
-does not generate or deliver an export bundle automatically.
+Authenticated users can submit an account export request from the product.
+That request is recorded for manual review and fulfillment by an admin.
+Completing the request records the manual fulfillment state only; it does not
+generate or deliver an export bundle automatically.
 
 If a user needs a copy of data currently stored for an account, maintainers can
 handle the request manually through the support process in this pack. The exact
@@ -67,15 +69,15 @@ available uploaded or generated files where practical.
 
 ## Account Deletion Requests
 
-Users can now submit an authenticated account deletion request from the product.
+Authenticated users can submit an account deletion request from the product.
 The request enters a manual admin review workflow.
 
-For now, account deletion requests should be sent through the support process in
-this pack or another private maintainer channel when one is available. Requests
-may require verification that the requester controls the account. Where a
-request can be fulfilled, the current backend implementation records completion
-and may apply the existing soft-delete behavior for the account rather than an
-immediate hard purge.
+Support channels in this pack remain available when a user cannot access the
+product or another private maintainer path is needed. Requests may require
+verification that the requester controls the account. Where a request can be
+fulfilled, the current backend implementation records completion and applies
+the existing soft-delete behavior for the account rather than an immediate
+hard purge.
 
 ## When This Document Changes
 

@@ -2,6 +2,13 @@
 
 Last updated: 2025-08-11
 
+> Historical planning note
+>
+> This document captures implementation planning for work that has since been
+> partially or fully shipped. It is not the current product contract. Use the
+> repo-root README, repo-root CONFIG guide, the PRD, and the code for current
+> behavior.
+
 ## Goals
 
 - Modernize the UI with a cohesive theme, tasteful animations, and micro‑interactions.
