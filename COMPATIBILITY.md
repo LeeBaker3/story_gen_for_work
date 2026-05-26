@@ -9,7 +9,7 @@ Track compatibility between frontend and backend versions and API versions.
 
 | Frontend | Requires Backend | API Version |
 |---------:|------------------:|:-----------|
-| >=0.4.4  | >=0.4.4           | v1         |
+| >=0.6.0  | >=0.6.0           | v1         |
 
 ## Policy
 - Breaking API changes: mark commits with `feat!: ...`, plan deprecation, and update this matrix.

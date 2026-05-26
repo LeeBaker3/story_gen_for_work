@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- UI/UX review notes for the story preview and editor cleanup pass now live in `docs/reviews/UI_UX_review.md`.
+
 ### Changed
 - Frontend shell and account flows now reflect the current branch posture:
 	legal/trust surfaces, entitlement/account messaging, billing entry points,

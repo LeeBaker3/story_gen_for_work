@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Editor, wizard, and admin enhancements now shipped on this branch: writing style/image framing/cover title/readability wizard controls; PDF preview; single-page text regeneration; structural page editing with bounded undo/redo; broadcasts, analytics, safe-subset config editing, and image style mapping management entry points.
 - Prometheus metrics for OpenAI text generation path usage, latency, and error rates.
 - Source-of-truth copy spec for launch trust, support availability, ownership/licensing, and degraded-mode outage messaging.
+- Frontend UI/UX review notes for the preview/editor cleanup pass now live in `docs/reviews/UI_UX_review.md`.
 
 ### Changed
 - Default OpenAI models: `TEXT_MODEL=gpt-5.4-mini`, `IMAGE_MODEL=gpt-image-2`.

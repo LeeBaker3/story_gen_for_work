@@ -12,8 +12,8 @@ FastAPI backend that generates illustrated stories using OpenAI. It handles auth
 
 Latest releases
 - Root: https://github.com/LeeBaker3/story_gen_for_work/releases/latest
-- Backend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/backend-v0.5.0
-- Frontend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/frontend-v0.5.0
+- Backend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/backend-v0.6.0
+- Frontend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/frontend-v0.6.0
 
 ## Quick start
 
