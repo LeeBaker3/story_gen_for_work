@@ -53,7 +53,8 @@ def test_backfill_character_thumbnails_repairs_only_current_users_characters(
     assert create_res.status_code == 201, create_res.text
     character = create_res.json()
 
-    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    user = db_session.query(User).filter(
+        User.username == "user@example.com").one()
     source_rel_path = (
         f"images/user_{user.id}/story_777/references/endpoint-thumb.png"
     )

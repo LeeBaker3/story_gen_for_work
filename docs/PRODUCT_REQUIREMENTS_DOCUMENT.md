@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 
-Updated: 2026-04-27
+Updated: 2026-05-15
 
 ## 1. Purpose
 
@@ -14,8 +14,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 - Story Creation Wizard
     - Step 1 — Basics: Title (optional; AI if blank), Genre, Outline.
     - Step 2 — Characters: Pick from saved Characters or create new; view/update description; generate/regenerate reference image; select 1+ to include.
-    - Step 3 — Options: Pages, Tone, Setting, Text Density, Word-to-Picture Ratio, Image Style, Page Format, and default text placement/font defaults.
-    - On this branch, Step 3 collects the currently wired generation/editor defaults only. It does not yet expose separate wizard inputs for writing style, image fill behavior, cover/title placement preference, or readability treatment.
+    - Step 3 — Options: Pages, Tone, Setting, Writing Style, Text Density, Word-to-Picture Ratio, Image Style, Page Format, layout mode, image framing, cover title placement, readability treatment, and default text placement/font defaults.
     - Step 4 — Review: Summary and confirm.
     - Polish: sticky glass header, animated progress bar (reduced-motion fallback), toasts, and inline modal status feedback (no hidden snackbars).
     - Characters page: search, pagination, selection, modal-based image regenerate with disabled buttons and inline status while busy.
@@ -25,29 +24,29 @@ The Story Generator Web App allows users to generate custom illustrated stories 
     - Title page with cover image; per-page text + image; navigation; edit title/page text; regenerate content; export PDF.
 - Story Editor / Basic Desktop Publishing
     - A user-friendly post-generation editor that gives basic users desktop publishing control without requiring professional design knowledge.
-    - Users can edit story text, choose page-level text placement, set document typography defaults, override individual pages, regenerate page images, and export the edited layout to PDF.
+    - Users can edit story text, choose page-level text placement and alignment, set document typography defaults, apply readability treatments and curated colour swatches, override individual pages, regenerate page images or a single page's text, preview the PDF, and export the edited layout to PDF.
     - Controls should favor simple presets, swatches, sliders, and templates over unrestricted freeform editing.
 - Authentication
-    - Secure login/session; admin role; signup confirmation (double password with client-side validation); forgot password (planned).
+    - Secure login/session; admin role; signup confirmation (double password with client-side validation); forgot password and reset-password flows.
 - Admin Panel
-    - Manage dynamic lists (genres, image styles, text positions, font families) used by forms; user management; content moderation; monitoring (logs, basic stats); diagnostics endpoint for safe configuration checks.
+    - Manage dynamic lists (genres, image styles, text positions, font families) used by forms; user management; content moderation; monitoring (logs, basic stats, broadcasts, analytics); editable safe-subset configuration UI; diagnostics endpoint for safe configuration checks; image style mapping management entry points.
 
 ### 2.2 Frontend
 - HTML/CSS/JS (vanilla) with semantic HTML, scoped queries, and ES6 modules.
-- Wizard state machine; Characters API client; optimistic updates; inline modal status with spinner and aria-live; reduced-motion respected.
+- Wizard state machine; Characters API client; optimistic updates; inline modal status with spinner and aria-live; reduced-motion respected; account hub and legal/trust links surfaced in the product shell.
 
 ### 2.3 Backend
 - FastAPI with SQLAlchemy and Pydantic v2.
-- Text model default: gpt-4.1-mini; image model default: gpt-image-1 (configurable via env).
+- Text model default: gpt-5.4-mini; image model default: gpt-image-2 (configurable via env).
 - Story generation background task; per-page prompts and images saved to disk under `data/` and served under `/static_content/`.
 - Characters domain: CRUD; regenerate image; per-user storage paths; thumbnails/current image.
-- Admin monitoring: logs list/tail/download; stats; config diagnostics at `/api/v1/admin/monitoring/config` (masked key presence, models, mounts, dirs, client init flag).
+- Admin monitoring: logs list/tail/download; stats; safe config diagnostics and editable subset at `/api/v1/admin/monitoring/config`; image style mapping summary; broadcasts and analytics.
 
 ### 2.4 Database (SQLite)
 - Users: username, hashed_password, email, role, is_active.
 - Stories: title, outline, genre, image_style, word_to_picture_ratio, text_density, main_characters JSON, is_draft, generated_at, timestamps.
 - Pages: story_id, page_number, text, image_description, image_path.
-- Story layout/editor state (planned): document style defaults, page format, cover layout, image fit/crop settings, text placement defaults, text-box style defaults, original generated content, edited content, and page-level layout/style overrides.
+- Story layout/editor state: document style defaults, page format, cover layout fields, image fit/crop settings, text placement defaults, text alignment, readability treatment, text-box style defaults, original generated content, edited content, and page-level layout/style overrides.
 - DynamicList: list_name, list_label, description.
 - DynamicListItem: list_name, item_value, item_label, is_active, sort_order, additional_config.
 - StoryGenerationTask: id, story_id, user_id, status, progress, current_step, error_message.
@@ -77,7 +76,7 @@ The Story Generator Web App allows users to generate custom illustrated stories 
 
 ### 3.3 User Management & Authentication
 - FR-AUTH-01/02/03: Register, login, session management.
-- FR-AUTH-04: Forgot password (planned).
+- FR-AUTH-04: Forgot password and password reset confirmation.
 - FR-AUTH-05/06: Token refresh (if added) and clear 401 handling.
 
 ### 3.4 Story Creation & Management
@@ -115,7 +114,7 @@ The editor should be designed for basic users who want storybook layout control,
 - Save editor changes automatically and provide a visible manual Save action.
 - Export the edited story to PDF with layout matching the editor preview as closely as practical.
 
-The following editor controls remain future work on this branch and should not be treated as already implemented MVP behavior: text alignment control, readability treatment selection, curated colour swatches beyond the base picker, contrast warnings, and text-fit warnings.
+The editor already includes text alignment control, readability treatment selection, curated colour swatches, contrast warnings, and text-fit/overflow warnings.
 
 #### Wizard Responsibilities Before Generation
 
@@ -127,9 +126,7 @@ The wizard should collect only choices that materially influence story/image gen
 - Default text density and word-to-picture ratio, already present, should remain generation inputs.
 - Review step should summarize these layout choices before generation.
 
-The following wizard controls remain future work on this branch and should not be treated as already implemented inputs: writing style, image fill/contain behavior, cover/title placement preference, and explicit readability treatment selection.
-
-Stories now persist optional `writing_style` when it is supplied through API, import, or template flows, but that field remains future wizard work on this branch.
+The wizard already exposes writing style, image fill/contain behavior, cover title placement preference, and explicit readability treatment selection, and persists `writing_style` into generation/editor flows.
 
 These wizard settings should be included in image prompt construction. For example, if the user selects bottom text placement, page image prompts should request important visual detail away from the lower text-safe area where possible.
 
@@ -139,44 +136,166 @@ The editor should handle choices that users naturally make after seeing the gene
 
 - Edit page text and title.
 - Select or change text placement per page.
-- Adjust font size, colour, and text-box opacity.
+- Adjust font size, colour, text alignment, readability treatment, and text-box opacity.
 - Change document defaults and apply them to all pages.
 - Clear page-specific overrides and return a page to document defaults.
 - Regenerate one page image while preserving the rest of the story.
-- Regenerate one page's text in a future phase.
-- Reorder, duplicate, add, delete, split, or merge pages in a future phase.
-- Preview the exported PDF before download in a future phase.
+- Regenerate one page's text while preserving the rest of the story.
+- Reorder, duplicate, add, delete, split, and merge pages.
+- Preview the exported PDF before download.
+- Edit cover subtitle and author metadata.
+- Support lightweight bounded undo/redo history for recent editor actions.
 
 #### Future Enhancements Beyond MVP
 
 - Page thumbnails with drag-and-drop reordering.
-- Add, delete, duplicate, split, and merge pages.
 - Image focal point controls for crop/fill behavior.
 - Image brightness overlay and blur-behind-text options.
-- Cover page editor with subtitle and author controls.
 - Template gallery: Picture Book, Early Reader, Classic Storybook, Comic Caption, Poster Style, and Dyslexia Friendly.
-- Undo/redo for recent editing actions.
 - Lightweight revision history beyond original/current content.
 - Export selected pages, cover only, or images only.
 - Download editable story layout JSON for advanced backup/debugging.
 
 ### 3.5 AI Model Integration
 - FR-AI-01: JSON output includes Title, Page, Image_description.
-- FR-AI-02: Defaults to gpt-4.1-mini (text) and gpt-image-1 (image); configurable.
+- FR-AI-02: Defaults to gpt-5.4-mini (text) and gpt-image-2 (image); configurable.
 - FR-AI-03: Optional style mapping flag to adjust API style/prompts; future admin UI may manage.
-- FR-AI-04: Development and test environments should be able to switch, via configuration, to a local OpenAI-compatible model/provider while production defaults remain unchanged. (Backlog #106)
+- FR-AI-04: Development and test environments can switch, via configuration, to a local OpenAI-compatible model/provider while production defaults remain unchanged.
 
 ### 3.6 Administration
 - FR-ADM-01/02/03/04: Admin role, user management, moderation, monitoring.
 - FR-ADM-05/06: Manage dynamic lists and populate dropdowns from DB (implemented).
-- FR-ADM-07: Configuration diagnostics endpoint (admin-only); full editable config UI is future work.
+- FR-ADM-07: Configuration diagnostics endpoint and editable safe-subset config UI (admin-only).
 - FR-ADM-08: Log viewing and filtering.
-- FR-ADM-09/10: Broadcasts and analytics (future).
+- FR-ADM-09/10: Broadcasts and analytics.
 - FR-ADM-11: Data integrity on dynamic content changes (soft delete, in-use indicators, historical value strategy).
 
 ### 3.7 Testing
 - FR-TEST-01: Unit tests for CRUD, AI service interactions, API endpoints.
 - Coverage includes characters CRUD/API (mocked OpenAI), admin lists, monitoring (logs/stats/config), seeding, story generation, and core endpoints.
+
+### 3.8 Commercial Beta Pricing, Trial, and Entitlements
+
+This section defines the product rules for the commercial beta. The current branch already includes entitlement/account surfaces and backend billing plumbing; the rules below remain the product contract for those shipped capabilities.
+
+#### Commercial beta access model
+
+- Commercial beta access is account-scoped. Story generation features are
+    available only to accounts with a valid entitlement.
+- Access states:
+    - `trial`: bounded trial access for new eligible accounts.
+    - `paid-active`: an account with an active paid entitlement.
+    - `grace`: credits are exhausted or billing is paused, but the account can
+        still use non-generation features and existing content.
+    - `suspended`: no new generation is allowed.
+- Users without a valid entitlement can still log in, view trust or account
+    surfaces, and manage existing stories where product policy allows, but they
+    cannot start new generation jobs.
+
+#### Plan and entitlement concepts
+
+- The product should expose one commercial beta plan shape in the UI and API
+    contract, even if the billing provider defines the final SKU behind the
+    scenes.
+- The entitlement record must answer four questions: can the account generate
+    stories, can it regenerate images, when does access renew, and how many
+    credits remain.
+- Pricing rules must stay separate from content ownership, moderation, and
+    story editing.
+
+#### Trial model
+
+- New eligible accounts receive a bounded trial.
+- Trial policy for this beta:
+    - 7 days of access, or 3 story-generation credits, whichever comes first.
+    - Trial access is hard-capped; there is no unlimited time-based trial.
+    - Trial users get the same editor, preview, and export rights as paid users
+        for content they already generated.
+- The trial must clearly communicate the remaining access before the first
+    generation starts.
+
+#### Pricing model
+
+- Commercial beta uses a single monthly paid plan with included usage credits.
+- The public price and included credit count are release-configured values and
+    must not be hardcoded into story or editor logic.
+- No automatic overage billing is allowed in the beta. When included credits are
+    used, generation stops until renewal or manual top-up.
+
+#### Billable usage and quota rules
+
+- One story-generation credit covers the initial generation run for a story,
+    including text generation and the first pass of page images for that story.
+- One image-generation credit covers a manual page image regeneration or a
+    character reference image generation or regeneration.
+- If a future text-only regeneration action is added, it should consume a story
+    generation credit.
+- The following actions are not billable:
+    - login and signup,
+    - browsing stories and characters,
+    - editing saved story text or titles,
+    - previewing, exporting, or downloading PDFs derived from existing content,
+    - trust, support, account, and policy pages,
+    - admin or moderation actions.
+- Credits must be reserved before a provider call starts. Reservations are
+    released only when no provider spend occurred.
+
+#### Exhausted-credit behavior
+
+- When trial credits or paid-plan credits are exhausted, the account enters a
+    generation-locked state rather than a fully read-only state.
+- In generation-locked state, users can still edit existing content, preview,
+    export PDFs, and manage stored assets, but they cannot start new AI-backed
+    generation jobs.
+- The UI should show a clear upgrade, renewal, or top-up call to action instead
+    of a generic failure.
+- Unused credits do not roll over unless a later release explicitly changes that
+    rule.
+
+#### Downgrade and cancel behavior
+
+- Cancellation takes effect at the end of the current paid period.
+- There is no mid-period automatic refund or plan re-rating in the product
+    rules for this beta.
+- After cancellation or downgrade, the account keeps access to existing content
+    until the entitlement ends, then falls back to generation-locked access.
+- Trial access can expire or upgrade to paid; it does not downgrade.
+
+#### Provider-spend fail-safe behavior
+
+- If provider limits, key verification, or service-health checks indicate that
+    new spend is unsafe, generation must fail closed before a provider call is
+    made.
+- Existing stories and non-generation features must remain available when the
+    fail-safe is active.
+- The UI should surface a clear temporary-unavailable message and avoid burning
+    user credits for blocked requests.
+
+#### Copy and input requirements for future frontend/account work
+
+- Future frontend and account surfaces need copy inputs for:
+    - plan name and billing cadence,
+    - price display,
+    - trial length and remaining trial access,
+    - included credits and remaining credits,
+    - renewal date,
+    - upgrade, renew, and top-up CTAs,
+    - cancel and downgrade confirmation text,
+    - exhausted-credit messaging,
+    - provider-outage or spend-fail-safe messaging,
+    - trust and disclosure text that explains AI generation, ownership, and usage
+        limits.
+- These are copy and state requirements, not final marketing strings. The final
+    wording can be decided later, but the UI must expose the states listed above.
+- The source-of-truth copy deck for launch trust, support, ownership, and
+    outage messaging lives in
+    `docs/specs/launch-trust-support-outage-copy-spec.md`.
+- The source-of-truth backlog for post-beta onboarding and conversion polish
+    lives in
+    `docs/specs/post-beta-onboarding-conversion-polish-backlog.md`.
+- That copy deck is intentionally guidance for future frontend/account work; it
+    does not claim the current runtime already exposes every state or banner
+    described there.
 
 ## 4. Deployment & Environment
 - Runs locally: FastAPI, SQLite, HTML/CSS/JS, filesystem for images/logs.
@@ -184,6 +303,7 @@ The editor should handle choices that users naturally make after seeing the gene
 - Future configuration should support a local OpenAI-compatible endpoint for development and testing while preserving hosted OpenAI defaults in production.
 - Static mounts `/static` (frontend) and `/static_content` (data) on by default in dev; off in tests by default.
 - Admin diagnostics at `/api/v1/admin/monitoring/config` for safe verification.
+- Commercial policy docs live under `docs/legal/README.md` and are surfaced in the product UI through rendered legal routes and footer/account links.
 
 ## 5. Development Progress
 
@@ -194,14 +314,14 @@ Status highlights
 - Admin: dynamic lists and monitoring implemented; diagnostics endpoint live.
 - Characters: reusable with regenerate; wizard integration complete.
 - Tests: comprehensive and green; CI uses dummy OPENAI_API_KEY.
-- Pending: forgot password, enhanced analytics/broadcasts, optional image style mapping UI, expanded screenshots in docs.
+- Pending: expanded screenshots in docs and later editor/template enhancements beyond the shipped controls above.
 *   **FR-TEST-01:** Unit Tests: Implement comprehensive unit tests for all backend modules (CRUD operations, AI service interactions, API endpoints). (Previously FR10)
 
 
 
 ## 6. API Contracts
 
-All endpoints are JSON over HTTP and, unless noted, require a Bearer token in the Authorization header. Base API prefix is `/api/v1`. Admin endpoints are under `/api/v1/admin` and require an admin token. Errors follow FastAPI’s default shape: `{ "detail": string }` with appropriate HTTP status codes.
+All endpoints are JSON over HTTP. API clients can use a Bearer token in the Authorization header. Browser flows also use the HttpOnly auth cookie set at login and same-origin credentialed requests. Base API prefix is `/api/v1`. Admin endpoints are under `/api/v1/admin` and require admin authentication. Errors follow FastAPI’s default shape: `{ "detail": string }` with appropriate HTTP status codes.
 
 ### 6.1 Authentication
 
@@ -211,10 +331,21 @@ All endpoints are JSON over HTTP and, unless noted, require a Bearer token in th
 
 - POST `/api/v1/token` — Login
     - Body: form-data { username, password }
-    - 200 OK → Token { access_token, token_type: "bearer" }; 401 on invalid creds
+    - 200 OK → Token { access_token, token_type: "bearer" } and sets the browser auth cookie; 401 on invalid creds
+
+- POST `/api/v1/logout` — Clear browser session cookie
+    - 200 OK → MessageResponse
+
+- POST `/api/v1/password-reset/request` — Start forgot-password flow
+    - Body: ForgotPasswordRequest { identifier }
+    - 200 OK → ForgotPasswordResponse with generic detail; optional `reset_token_preview` only in testing or when explicitly enabled
+
+- POST `/api/v1/password-reset/confirm` — Complete password reset
+    - Body: ResetPasswordConfirm { token, new_password, confirm_password }
+    - 200 OK → MessageResponse; 400 on invalid/expired token
 
 - GET `/api/v1/users/me/` — Current user
-    - 200 OK → User
+    - 200 OK → User via bearer auth or browser auth cookie
 
 ### 6.2 Stories
 

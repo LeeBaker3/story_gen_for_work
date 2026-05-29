@@ -45,6 +45,40 @@ if not OPENAI_API_KEY:
     error_logger.warning(
         "OPENAI_API_KEY not found in environment variables during import; AI services will be disabled until configured.")
 
+
+def _create_openai_client(base_url: str) -> Optional[OpenAI]:
+    """Create an OpenAI client for the provided compatible base URL."""
+
+    if not OPENAI_API_KEY:
+        return None
+    return OpenAI(api_key=OPENAI_API_KEY, base_url=base_url)
+
+
+def _initialize_image_client() -> Optional[OpenAI]:
+    """Create the image client when image generation is enabled."""
+
+    if not getattr(_settings, "enable_image_generation", True):
+        return None
+    return _create_openai_client(
+        getattr(_settings, "openai_image_base_url",
+                "https://api.openai.com/v1")
+    )
+
+
+def refresh_runtime_config() -> None:
+    """Reload runtime AI configuration after safe admin config changes."""
+
+    global _settings, OPENAI_API_KEY, client, image_client, TEXT_MODEL, IMAGE_MODEL
+
+    _settings = get_settings()
+    OPENAI_API_KEY = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
+    client = _create_openai_client(
+        getattr(_settings, "openai_text_base_url", "https://api.openai.com/v1")
+    )
+    image_client = _initialize_image_client()
+    TEXT_MODEL = getattr(_settings, "text_model", "gpt-5-mini")
+    IMAGE_MODEL = getattr(_settings, "image_model", "gpt-image-1.5")
+
 # Define a retry decorator for OpenAI API calls
 
 
@@ -110,8 +144,10 @@ api_retry = retry(
     retry=retry_if_exception(_should_retry_openai_error))
 
 # Initialize the client only if key is available; tests may patch `client`.
-client = OpenAI(api_key=OPENAI_API_KEY,
-                base_url="https://api.openai.com/v1") if OPENAI_API_KEY else None
+client = _create_openai_client(
+    getattr(_settings, "openai_text_base_url", "https://api.openai.com/v1")
+)
+image_client = _initialize_image_client()
 
 EXPECTED_CHATGPT_RESPONSE_KEYS = ["Title", "Pages"]
 EXPECTED_PAGE_KEYS = ["Page_number", "Text",
@@ -252,6 +288,18 @@ def _ensure_client_available():
             "OpenAI API is not configured. Set OPENAI_API_KEY in environment or settings to enable AI features.")
 
 
+def _ensure_image_client_available():
+    """Ensure the image client is ready before making image calls."""
+
+    if image_client is None:
+        error_logger.error(
+            "OpenAI image client not configured. Check image provider settings."
+        )
+        raise ValueError(
+            "OpenAI image generation is not configured. Enable image generation and set OPENAI_API_KEY to use image features."
+        )
+
+
 def _truncate_prompt(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
     """
     Truncates the prompt to the specified maximum length.
@@ -317,6 +365,8 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
     image_style_description = story_input.get('image_style', 'Default')
     if hasattr(image_style_description, 'value'):  # Handle Pydantic Enum
         image_style_description = image_style_description.value
+
+    writing_style = str(story_input.get('writing_style') or '').strip()
 
     # Prepare text density instructions (New Req)
     raw_text_density = story_input.get(
@@ -389,16 +439,94 @@ def generate_story_from_chatgpt(story_input: dict) -> Dict[str, Any]:
 """
 
     editor_settings = story_input.get('editor_settings') or {}
+    raw_layout_mode = (
+        editor_settings.get('layout_mode')
+        or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+    if hasattr(raw_layout_mode, 'value'):
+        raw_layout_mode = raw_layout_mode.value
+    layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
     default_text_position = str(
         editor_settings.get('text_position', 'bottom')
     ).strip().lower()
     if default_text_position not in {'top', 'bottom', 'left', 'right', 'center'}:
         default_text_position = 'bottom'
 
-    text_layout_instruction = (
-        f"Default page text placement is {default_text_position}. "
-        "Every Image_description should compose the artwork so this area stays readable "
-        "and less visually busy for story text overlay."
+    image_fit = str(editor_settings.get('image_fit') or '').strip().lower()
+    if image_fit == 'fill page':
+        image_fit_instruction = (
+            'Compose scenes so artwork can fill the page edge-to-edge while '
+            'keeping essential subjects away from crop-sensitive edges.'
+        )
+    elif image_fit == 'keep artwork contained':
+        image_fit_instruction = (
+            'Keep the main action comfortably inset with safe margins so the '
+            'artwork can sit contained on the page without awkward cropping.'
+        )
+    else:
+        image_fit_instruction = ''
+
+    cover_title_placement = str(
+        editor_settings.get('cover_title_placement') or ''
+    ).strip().lower()
+    if cover_title_placement in {'top', 'center', 'bottom'}:
+        if is_full_page_overlay:
+            cover_title_instruction = (
+                f'On the title page cover, keep the {cover_title_placement} '
+                'area calmer and easier to read for title placement.'
+            )
+        else:
+            cover_title_instruction = (
+                f'On the title page cover, reserve a cleaner '
+                f'{cover_title_placement} area for title placement.'
+            )
+    else:
+        cover_title_instruction = ''
+
+    readability_treatment = str(
+        editor_settings.get('readability_treatment') or ''
+    ).strip().lower()
+    readability_instruction_map = {
+        'high-contrast box': (
+            'Leave enough tonal separation behind the text area to support a '
+            'high-contrast text box.'
+        ),
+        'soft shadow': (
+            'Keep the text area readable with moderate contrast so soft text '
+            'shadow treatment will remain effective.'
+        ),
+        'subtle gradient band': (
+            'Leave a gentle tonal transition behind the text area so a subtle '
+            'gradient band can improve readability without hiding the art.'
+        ),
+    }
+    readability_instruction = readability_instruction_map.get(
+        readability_treatment, ''
+    )
+
+    if is_full_page_overlay:
+        text_layout_instruction = (
+            f"Default page text placement is {default_text_position}. "
+            "Every Image_description should compose the artwork so this area stays calmer, "
+            "less visually busy, and tonally supportive for story text overlay."
+        )
+    else:
+        text_layout_instruction = (
+            f"Default page text placement is {default_text_position}. "
+            "Every Image_description should compose the artwork so this area stays readable "
+            "and can function as a clearly reserved text section for story text overlay."
+        )
+    layout_preference_guidance = " ".join(
+        instruction
+        for instruction in [
+            text_layout_instruction,
+            image_fit_instruction,
+            readability_instruction,
+        ]
+        if instruction
     )
 
     # Enhanced character instructions for the prompt
@@ -526,8 +654,11 @@ Further Instructions:
 - The desired visual style for all images is: '{image_style_description}'. All "Image_description" fields that are not null must reflect this style (e.g., by appending ', {image_style_description} style' or similar phrasing to the description).
 - Optional tone: {story_input.get('tone', 'N/A')}.
 - Optional setting: {story_input.get('setting', 'N/A')}.
+- Optional writing style: {writing_style or 'N/A'}.
 - Page text placement for the layout defaults: {default_text_position}.
-- Layout guidance for all generated page images: {text_layout_instruction}
+- Layout guidance for all generated page images: {layout_preference_guidance}
+- Cover title placement preference: {cover_title_instruction or 'No special cover title placement preference was supplied.'}
+- Readability treatment preference: {readability_instruction or 'No special readability treatment preference was supplied.'}
 
 Output Requirements:
 - The final output MUST be a single JSON object.
@@ -565,6 +696,26 @@ Output Requirements:
   This step-by-step process (1. Scene from Page Text FIRST -> 2. Identify Characters -> 3. Incorporate Character Visuals as specified for page type -> 4. Apply Style) is vital for creating relevant images with consistent characters. The scene description from the page text MUST come first.
 - The final output MUST be a single JSON object. This JSON object must have a top-level key \\'Title\\' (string) and a top-level key \\'Pages\\' (a list of page objects as described above, adhering to the image generation strategy). Do not include any text or explanations outside of this JSON object.
 """
+    extra_prompt_guidance_lines = []
+    if writing_style:
+        extra_prompt_guidance_lines.append(
+            f"- Match the narration voice to this optional writing style when appropriate: '{writing_style}'."
+        )
+    if layout_preference_guidance:
+        extra_prompt_guidance_lines.append(
+            f"- Additional layout preference guidance for all required images: {layout_preference_guidance}"
+        )
+    if cover_title_instruction:
+        extra_prompt_guidance_lines.append(
+            f"- Additional title-page cover guidance: {cover_title_instruction}"
+        )
+    if extra_prompt_guidance_lines:
+        prompt = prompt.replace(
+            "Do not include any text or explanations outside of this JSON object.",
+            "\n".join(extra_prompt_guidance_lines)
+            + "\nDo not include any text or explanations outside of this JSON object.",
+        )
+
     api_logger.debug(
         f"Prompt sent to ChatGPT for story generation (ratio: {word_to_picture_ratio}): {prompt[:500]}...")
 
@@ -701,7 +852,8 @@ async def generate_character_reference_image(character: CharacterDetail, story_i
     resolved_style = resolve_image_style(
         db=db,
         business_style=image_style,
-        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+        mapping_enabled=getattr(
+            _settings, "enable_image_style_mapping", False),
     )
     business_style = resolved_style.business_style or image_style
     prompt_style = resolved_style.prompt_style or business_style
@@ -780,7 +932,8 @@ async def generate_image_for_page(page_content: str, style_reference: str, db: S
     resolved_style = resolve_image_style(
         db=db,
         business_style=style_reference,
-        mapping_enabled=getattr(_settings, "enable_image_style_mapping", False),
+        mapping_enabled=getattr(
+            _settings, "enable_image_style_mapping", False),
     )
     business_style = resolved_style.business_style or style_reference
     prompt_style = resolved_style.prompt_style or business_style
@@ -843,8 +996,13 @@ def generate_image(
     Returns the image as bytes, or None if an error occurred.
     """
     try:
+        if not getattr(_settings, "enable_image_generation", True):
+            app_logger.info(
+                "Skipping AI image generation because ENABLE_IMAGE_GENERATION is disabled."
+            )
+            return None
         # Ensure client is configured early with a clear error
-        _ensure_client_available()
+        _ensure_image_client_available()
         # Truncate the prompt if it's too long
         truncated_prompt = _truncate_prompt(prompt)
 
@@ -879,7 +1037,7 @@ def generate_image(
 
                 if opened_files:
                     try:
-                        response = client.images.edit(
+                        response = image_client.images.edit(
                             model=IMAGE_MODEL,
                             image=opened_files,
                             prompt=truncated_prompt,
@@ -889,7 +1047,7 @@ def generate_image(
                         )
                     except TypeError:
                         # Some SDK versions/models don't accept `style`; retry without it.
-                        response = client.images.edit(
+                        response = image_client.images.edit(
                             model=IMAGE_MODEL,
                             image=opened_files,
                             prompt=truncated_prompt,
@@ -903,7 +1061,7 @@ def generate_image(
         # If no references were provided, or if opening files failed, generate a new image
         if response is None:
             try:
-                response = client.images.generate(
+                response = image_client.images.generate(
                     model=IMAGE_MODEL,
                     prompt=truncated_prompt,
                     size=size,
@@ -912,7 +1070,7 @@ def generate_image(
                     **style_kwargs,
                 )
             except TypeError:
-                response = client.images.generate(
+                response = image_client.images.generate(
                     model=IMAGE_MODEL,
                     prompt=truncated_prompt,
                     size=size,

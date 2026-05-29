@@ -20,6 +20,7 @@
                 <button id="nav-create-story" class="nav-button" style="display:none;">Create New Story</button>
                 <button id="nav-browse-stories" class="nav-button" style="display:none;">My Stories</button>
                 <button id="nav-characters" class="nav-button" style="display:none;">Characters</button>
+                <button id="nav-account" class="nav-button" style="display:none;">Account</button>
                 <a id="nav-admin-panel" href="/static/admin.html" class="nav-button" style="display:none;">Admin Panel</a>
                 <button id="nav-logout" class="nav-button" style="display:none;">Logout</button>
             </div>
@@ -41,6 +42,7 @@
                         <button type="button" id="toggle-login-password" aria-label="Show password" class="password-toggle">Show</button>
                     </div>
                     <button type="submit" class="action-button-info">Login</button>
+                    <p class="auth-switch-message"><a href="#" id="show-forgot-password-link">Forgot password?</a></p>
                     <p class="auth-switch-message">Don't have an account? <a href="#" id="show-signup-link">Sign up</a></p>
                 </form>
                 <!-- Signup Form -->
@@ -61,8 +63,42 @@
                         <input type="password" id="signup-password-confirm" name="password_confirm" required>
                         <button type="button" id="toggle-signup-password-confirm" aria-label="Show password" class="password-toggle">Show</button>
                     </div>
+                    <p class="inline-disclosure" id="signup-disclosure">
+                        By creating an account, you acknowledge the
+                        <a href="/legal/privacy-policy">Privacy Policy</a>,
+                        <a href="/legal/terms-of-service">Terms</a>, and
+                        <a href="/legal/ai-processing-disclosure">AI Processing Disclosure</a>.
+                        Story prompts, character details, and images you choose to submit for AI features may be sent to AI processors and stored with your story record. Do not submit secrets or highly sensitive personal data.
+                    </p>
                     <button type="submit" id="signup-submit-button" class="action-button-info">Sign Up</button>
                     <p class="auth-switch-message">Already have an account? <a href="#" id="show-login-link">Login</a></p>
+                </form>
+                <form id="forgot-password-form" class="auth-form" style="display:none;">
+                    <h3>Forgot Password</h3>
+                    <label for="forgot-password-identifier">Email or Username:</label>
+                    <input type="text" id="forgot-password-identifier" name="identifier" required>
+                    <button type="submit" class="action-button-info">Send Reset Token</button>
+                    <p class="auth-switch-message">If the account exists, the app will issue a reset token. In local development, the reset form may be prefilled automatically.</p>
+                    <p class="auth-switch-message">Already have a reset token? <a href="#" id="show-reset-password-link">Reset password</a></p>
+                    <p class="auth-switch-message">Remembered your password? <a href="#" id="forgot-password-back-to-login-link">Back to login</a></p>
+                </form>
+                <form id="reset-password-form" class="auth-form" style="display:none;" novalidate>
+                    <h3>Reset Password</h3>
+                    <label for="reset-password-token">Reset Token:</label>
+                    <input type="text" id="reset-password-token" name="token" required>
+                    <label for="reset-password-new-password">New Password:</label>
+                    <div class="password-field">
+                        <input type="password" id="reset-password-new-password" name="new_password" required>
+                        <button type="button" id="toggle-reset-password" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <label for="reset-password-confirm-password">Confirm New Password:</label>
+                    <div class="password-field">
+                        <input type="password" id="reset-password-confirm-password" name="confirm_password" required>
+                        <button type="button" id="toggle-reset-password-confirm" aria-label="Show password" class="password-toggle">Show</button>
+                    </div>
+                    <button type="submit" class="action-button-info">Update Password</button>
+                    <p class="auth-switch-message">Need a token first? <a href="#" id="reset-password-request-link">Request one</a></p>
+                    <p class="auth-switch-message">Back to <a href="#" id="reset-password-back-to-login-link">login</a></p>
                 </form>
             </div>
         </section>
@@ -114,12 +150,17 @@
                     <fieldset id="main-characters-fieldset" class="modern-fieldset">
                         <legend>Main Characters (at least 1)</legend>
                         <div class="character-entry">
-                            <div>
+                            <div class="character-entry-header">
+                                <h4 class="character-entry-title">Character 1</h4>
+                                <div class="character-entry-actions wizard-character-row-actions">
+                                    <button type="button" class="character-details-toggle action-button-info" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
+                                    <button type="button" class="wizard-character-picker-trigger action-button-secondary" data-character-index="1" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label for="char-name-1">Name <span class="required-badge">Required</span></label>
                                 <input type="text" id="char-name-1" name="char_name_1" class="char-name" required aria-describedby="main-characters-error">
                             </div>
-                            <!-- Collapsible section for character details -->
-                            <button type="button" class="character-details-toggle" id="char-details-toggle-1" data-target="char-details-1" aria-controls="char-details-1" aria-expanded="false">Show Details</button>
                             <div id="char-details-1" class="character-details-fields" style="display:none;">
                                 <div>
                                     <label for="char-age-1">Age</label>
@@ -148,26 +189,26 @@
                     </fieldset>
                     <div id="main-characters-error" class="field-error" role="alert" aria-live="polite"></div>
                     <button type="button" id="add-character-button" class="action-button-info">Add Another Character</button>
-                    <!-- Show character library in this step -->
-                    <div id="character-library-panel" style="display:none;" aria-label="Character library">
-                        <div class="library-header">
-                            <h3>Your Characters</h3>
-                            <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
-                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
-                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
-                <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
-                            </div>
+                    <div id="wizard-character-library-tools" class="wizard-character-library-tools" aria-label="Selected existing characters">
+                        <div id="selected-characters-chipbar" class="selected-characters-chipbar" aria-live="polite"><em>No existing characters selected.</em></div>
+                        <div class="wizard-character-library-actions">
+                            <button type="button" id="character-create-from-current-btn" class="lib-action-btn action-button-primary" title="Save the characters you typed into your library (no story needed)">Save form characters</button>
                         </div>
-            <p class="character-hint">Tip: Click a card to load its details into the form. Cmd/Ctrl+Click to multi-select for reuse.</p>
-                        <div id="character-list" class="character-grid" aria-live="polite"></div>
-                        <div id="character-pagination" class="pagination-controls"></div>
-                        <div id="character-detail-modal" class="modal" style="display:none;">
-                            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-detail-title">
-                                <h4 id="character-detail-title"></h4>
-                                <div id="character-detail-body"></div>
-                                <button type="button" id="regenerate-character-image-btn" class="action-button-info">Regenerate Image</button>
-                                <button type="button" id="close-character-detail" class="action-button-secondary">Close</button>
+                    </div>
+                    <div id="character-picker-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+                    <div id="character-picker-modal" class="modal" aria-hidden="true">
+                        <div class="modal-content wizard-character-picker-modal-content" role="dialog" aria-modal="true" aria-labelledby="character-picker-title">
+                            <div class="modal-header">
+                                <h3 id="character-picker-title">Choose Existing Character</h3>
+                                <button type="button" id="character-picker-close" class="action-button-secondary">Close</button>
                             </div>
+                            <div class="library-header wizard-character-picker-controls">
+                                <input type="text" id="character-search" placeholder="Search characters" aria-label="Search characters">
+                                <button type="button" id="character-sync-btn" class="lib-action-btn action-button-info" title="Import characters from your stories">Sync from stories</button>
+                            </div>
+                            <p class="character-hint">Select one existing character to fill the current story row.</p>
+                            <div id="character-list" class="character-grid" aria-live="polite"></div>
+                            <div id="character-pagination" class="pagination-controls"></div>
                         </div>
                     </div>
                 </div>
@@ -190,6 +231,12 @@
                     <div>
                         <label for="story-setting">Setting</label>
                         <input type="text" id="story-setting" name="setting" placeholder="e.g., a futuristic city, a magical forest, a small town in the 1950s">
+                    </div>
+                    <div>
+                        <label for="story-writing-style">Writing Style</label>
+                        <select id="story-writing-style" name="writing_style">
+                            <!-- Options will be populated dynamically -->
+                        </select>
                     </div>
                     <div>
                         <label for="story-image-style">Image Style <span class="required-badge">Required</span></label>
@@ -235,6 +282,32 @@
                         </select>
                     </div>
                     <div>
+                        <label for="story-image-fit">Image Framing</label>
+                        <select id="story-image-fit" name="image_fit">
+                            <option value="" selected>Default framing</option>
+                            <option value="Fill page">Fill page</option>
+                            <option value="Keep artwork contained">Keep artwork contained</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-cover-title-placement">Cover Title Placement</label>
+                        <select id="story-cover-title-placement" name="cover_title_placement">
+                            <option value="" selected>Default title placement</option>
+                            <option value="Top">Top</option>
+                            <option value="Center">Center</option>
+                            <option value="Bottom">Bottom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="story-readability-treatment">Readability Treatment</label>
+                        <select id="story-readability-treatment" name="readability_treatment">
+                            <option value="" selected>Default readability treatment</option>
+                            <option value="High-contrast box">High-contrast box</option>
+                            <option value="Soft shadow">Soft shadow</option>
+                            <option value="Subtle gradient band">Subtle gradient band</option>
+                        </select>
+                    </div>
+                    <div>
                             <label>Default Text Placement:</label>
                             <div style="display:flex; gap:0.5rem; align-items:center;">
                                 <select id="story-default-text-position-v" name="default_text_position_v" aria-label="Vertical text placement">
@@ -272,6 +345,12 @@
                         <p class="wizard-step-guidance-detail">Use Back to revise any section, then choose Generate Story when everything looks complete.</p>
                     </div>
                     <h3>Review</h3>
+                    <p class="inline-disclosure inline-disclosure--prominent" id="generation-disclosure">
+                        Generating a story sends the prompt, character details, and any uploaded reference images for this story to AI processors so the app can create text and art. The prompt and generated output may be kept in the story record so you can review, edit, and export it. Avoid secrets or highly sensitive personal data. See the
+                        <a href="/legal/ai-processing-disclosure">AI Processing Disclosure</a>
+                        and
+                        <a href="/legal/privacy-operations">Privacy Operations</a>.
+                    </p>
                     <div id="review-container"></div>
                 </div>
 
@@ -422,13 +501,96 @@
             <div id="story-preview-content">
                 <!-- Generated story pages will be displayed here -->
             </div>
-            <button id="export-pdf-button" class="action-button-info" style="display:none;">Export as PDF</button>
+            <div class="story-preview-actions">
+                <button id="preview-pdf-button" class="action-button-secondary" style="display:none;">Preview PDF</button>
+                <button id="export-pdf-button" class="action-button-info" style="display:none;">Export as PDF</button>
+            </div>
         </section>
+
+        <div id="pdf-preview-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+        <div id="pdf-preview-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="pdf-preview-title" aria-hidden="true">
+            <div class="modal-content pdf-preview-modal-content">
+                <div class="modal-header">
+                    <h3 id="pdf-preview-title">PDF Preview</h3>
+                    <button type="button" id="pdf-preview-close" class="action-button-secondary">Close</button>
+                </div>
+                <p id="pdf-preview-status" class="pdf-preview-status" role="status" aria-live="polite">Preparing PDF preview...</p>
+                <div id="pdf-preview-frame-container" class="pdf-preview-frame-container" hidden>
+                    <iframe id="pdf-preview-frame" title="Story PDF preview" class="pdf-preview-frame"></iframe>
+                </div>
+                <div id="pdf-preview-error" class="pdf-preview-error" role="alert" hidden></div>
+                <div class="modal-actions">
+                    <button type="button" id="pdf-preview-download" class="action-button-primary" disabled>Download PDF</button>
+                </div>
+            </div>
+        </div>
 
         <section id="browse-stories-section" style="display:none;">
             <h2>My Stories</h2>
             <div id="user-stories-list">
                 <!-- List of user's stories will be displayed here -->
+            </div>
+        </section>
+
+        <section id="account-section" style="display:none;">
+            <h2>Account</h2>
+            <p id="account-identity" class="account-summary-text">Signed in account details will appear here.</p>
+            <div
+                id="account-status"
+                class="inline-status inline-status--info"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+            >Account details load when you open this section.</div>
+            <button
+                type="button"
+                id="account-retry-button"
+                class="action-button-secondary"
+                style="display:none; margin-top:0.75rem;"
+            >Retry loading account details</button>
+
+            <div class="account-hub-grid">
+                <section class="account-hub-card" aria-labelledby="account-plan-title">
+                    <p class="account-hub-eyebrow">Plan</p>
+                    <h3 id="account-plan-title">Plan and trial status</h3>
+                    <p id="account-plan-status" class="account-hub-value">Not loaded yet</p>
+                    <p id="account-plan-detail" class="account-summary-text">Open Account to load your current entitlement.</p>
+                </section>
+
+                <section class="account-hub-card" aria-labelledby="account-usage-title">
+                    <p class="account-hub-eyebrow">Usage</p>
+                    <h3 id="account-usage-title">Story and image credits</h3>
+                    <dl class="account-usage-grid">
+                        <div class="account-usage-stat">
+                            <dt>Stories remaining</dt>
+                            <dd id="account-story-credits">--</dd>
+                        </div>
+                        <div class="account-usage-stat">
+                            <dt>Images remaining</dt>
+                            <dd id="account-image-credits">--</dd>
+                        </div>
+                    </dl>
+                    <p id="account-usage-detail" class="account-summary-text">Credit balances will appear here after the account request completes.</p>
+                </section>
+
+                <section class="account-hub-card" aria-labelledby="account-help-title">
+                    <p class="account-hub-eyebrow">Help</p>
+                    <h3 id="account-help-title">Billing and data requests</h3>
+                    <ul class="account-help-list">
+                        <li>
+                            <strong>Billing help:</strong>
+                            Use the <a href="/legal/support-policy">Support policy</a> for billing contact details and the <a href="/legal/refund-policy">Refund policy</a> for refund expectations.
+                        </li>
+                        <li>
+                            <strong>Export requests:</strong>
+                            Follow the <a href="/legal/privacy-operations">Privacy Operations</a> guidance for data access and export requests.
+                        </li>
+                        <li>
+                            <strong>Account deletion:</strong>
+                            Use the <a href="/legal/privacy-operations">Privacy Operations</a> process or the <a href="/legal/support-policy">Support policy</a> contact path for deletion requests.
+                        </li>
+                    </ul>
+                </section>
             </div>
         </section>
         
@@ -481,8 +643,20 @@
 
     </main>
 
-    <footer>
-        <p>&copy; 2025 Story Generator</p>
+    <footer class="app-footer">
+        <div class="app-footer__content">
+            <p class="app-footer__brand">&copy; 2025 Story Generator</p>
+            <nav class="app-footer__nav" aria-label="Legal, support, and trust links">
+                <a href="/legal/privacy-policy">Privacy</a>
+                <a href="/legal/terms-of-service">Terms</a>
+                <a href="/legal/acceptable-use-policy">Acceptable Use</a>
+                <a href="/legal/copyright-ip-policy">Copyright/IP</a>
+                <a href="/legal/support-policy">Support</a>
+                <a href="/legal/support-policy">Contact</a>
+                <a href="/legal/refund-policy">Refunds</a>
+                <a href="/legal/service-status">Status</a>
+            </nav>
+        </div>
     </footer>
 
     <script src="/static/runtime-config.js?v=20260429.1"></script>

@@ -147,12 +147,25 @@ describe('wizard character library: load failure shows inline error', () => {
           <textarea id="story-outline">Outline</textarea>
         </section>
         <section id="step-1-characters" style="display:none;">
-          <div id="character-library-panel" style="display:none;">
-            <input id="character-search" />
-            <div id="character-list"></div>
-            <div id="character-pagination"></div>
+          <div id="main-characters-fieldset">
+            <div class="character-entry">
+              <input id="char-name-1" class="char-name" value="Ava" />
+              <button type="button" class="wizard-character-picker-trigger" data-character-index="1" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
+            </div>
           </div>
-          <div id="main-characters-fieldset"></div>
+          <div id="selected-characters-chipbar"><em>No existing characters selected.</em></div>
+          <button type="button" id="character-create-from-current-btn">Save form characters</button>
+          <div id="character-picker-backdrop" class="modal-backdrop" aria-hidden="true"></div>
+          <div id="character-picker-modal" class="modal" aria-hidden="true">
+            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="character-picker-title">
+              <h3 id="character-picker-title">Choose Existing Character</h3>
+              <button type="button" id="character-picker-close">Close</button>
+              <input id="character-search" />
+              <button type="button" id="character-sync-btn">Sync from stories</button>
+              <div id="character-list"></div>
+              <div id="character-pagination"></div>
+            </div>
+          </div>
         </section>
         <section id="step-2-options" style="display:none;"></section>
         <section id="step-3-review" style="display:none;"></section>
@@ -168,7 +181,7 @@ describe('wizard character library: load failure shows inline error', () => {
     global.fetch = jest.fn(async (url) => {
       const u = String(url);
       if (u.includes('/api/v1/dynamic-lists/')) {
-  return { ok: true, status: 200, json: async () => ([{ item_value: 'fantasy', item_label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
+        return { ok: true, status: 200, json: async () => ([{ item_value: 'fantasy', item_label: 'Fantasy' }]), headers: { get: () => 'application/json' } };
       }
       if (u.match(/\/api\/v1\/characters\/?\?/)) {
         // Library list load fails
@@ -183,17 +196,18 @@ describe('wizard character library: load failure shows inline error', () => {
 
   test('shows inline error message when library load fails', async () => {
     // Enter create flow and go to step 1
-  document.getElementById('nav-create-story').click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  // Fill minimal valid fields to pass step-0 validation
-  document.getElementById('story-genre').value = 'fantasy';
-  document.getElementById('story-outline').value = 'Outline text';
-  document.getElementById('wizard-next').click();
+    document.getElementById('nav-create-story').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Fill minimal valid fields to pass step-0 validation
+    document.getElementById('story-genre').value = 'fantasy';
+    document.getElementById('story-outline').value = 'Outline text';
+    document.getElementById('wizard-next').click();
+    fireEvent.click(document.querySelector('.wizard-character-picker-trigger[data-character-index="1"]'));
 
     await waitFor(() => {
-  const list = document.getElementById('character-list');
-  expect(list).toBeTruthy();
-  expect(list.textContent).toMatch(/Failed to load characters/i);
+      const list = document.getElementById('character-list');
+      expect(list).toBeTruthy();
+      expect(list.textContent).toMatch(/Failed to load characters/i);
     });
   });
 });

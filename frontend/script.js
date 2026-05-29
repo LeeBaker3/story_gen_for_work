@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const navCreateStory = document.getElementById("nav-create-story");
     const navBrowseStories = document.getElementById("nav-browse-stories");
     const navCharacters = document.getElementById("nav-characters");
+    const navAccount = document.getElementById("nav-account");
     const navLogout = document.getElementById("nav-logout");
     const navAdminPanel = document.getElementById("nav-admin-panel");
 
@@ -48,30 +49,69 @@ document.addEventListener("DOMContentLoaded", function () {
         "browse-stories-section",
     );
     const charactersSection = document.getElementById("characters-section");
+    const accountSection = document.getElementById("account-section");
     const adminPanelContainer = document.getElementById("adminPanelContainer"); // ENSURED DECLARATION
     const snackbarEl = document.getElementById("snackbar");
+    const accountIdentity = document.getElementById("account-identity");
+    const accountStatus = document.getElementById("account-status");
+    const accountRetryButton = document.getElementById("account-retry-button");
+    const accountPlanStatus = document.getElementById("account-plan-status");
+    const accountPlanDetail = document.getElementById("account-plan-detail");
+    const accountStoryCredits = document.getElementById("account-story-credits");
+    const accountImageCredits = document.getElementById("account-image-credits");
+    const accountUsageDetail = document.getElementById("account-usage-detail");
 
     // Forms
     const loginForm = document.getElementById("login-form");
     const signupForm = document.getElementById("signup-form");
+    const forgotPasswordForm = document.getElementById("forgot-password-form");
+    const resetPasswordForm = document.getElementById("reset-password-form");
     const storyCreationForm = document.getElementById("story-creation-form");
 
     // Auth view toggle links
     const showSignupLink = document.getElementById("show-signup-link");
     const showLoginLink = document.getElementById("show-login-link");
+    const showForgotPasswordLink = document.getElementById("show-forgot-password-link");
+    const showResetPasswordLink = document.getElementById("show-reset-password-link");
+    const forgotPasswordBackToLoginLink = document.getElementById("forgot-password-back-to-login-link");
+    const resetPasswordBackToLoginLink = document.getElementById("reset-password-back-to-login-link");
+    const resetPasswordRequestLink = document.getElementById("reset-password-request-link");
 
     // Buttons
     const addCharacterButton = document.getElementById("add-character-button");
+    const previewPdfButton = document.getElementById("preview-pdf-button");
     const exportPdfButton = document.getElementById("export-pdf-button");
     const generateStoryButton = document.getElementById("generate-story-button");
     const saveDraftButton = document.getElementById("save-draft-button");
+    const pdfPreviewBackdrop = document.getElementById("pdf-preview-backdrop");
+    const pdfPreviewModal = document.getElementById("pdf-preview-modal");
+    const pdfPreviewCloseButton = document.getElementById("pdf-preview-close");
+    const pdfPreviewStatus = document.getElementById("pdf-preview-status");
+    const pdfPreviewFrameContainer = document.getElementById(
+        "pdf-preview-frame-container",
+    );
+    const pdfPreviewFrame = document.getElementById("pdf-preview-frame");
+    const pdfPreviewError = document.getElementById("pdf-preview-error");
+    const pdfPreviewDownloadButton = document.getElementById(
+        "pdf-preview-download",
+    );
 
     // Generation Progress Elements
     const generationProgressArea = document.getElementById("generation-progress-area");
     const generationProgressBar = document.getElementById("generation-progress-bar");
     const generationStatusMessage = document.getElementById("generation-status-message");
 
-    let authToken = localStorage.getItem("authToken");
+    const LEGACY_AUTH_TOKEN_KEY = "authToken";
+    let hasAuthenticatedSession = false;
+    let pdfPreviewObjectUrl = null;
+    let pdfPreviewFilename = "story.pdf";
+    const accountHubState = {
+        isLoading: false,
+        hasLoaded: false,
+        error: null,
+        user: null,
+        entitlement: null,
+    };
 
     // State variables for draft editing
     let currentStoryId = null;
@@ -81,6 +121,8 @@ document.addEventListener("DOMContentLoaded", function () {
         autosaveTimer: null,
         isSaving: false,
         saveRequested: false,
+        historyPast: [],
+        historyFuture: [],
         saveStatus: {
             state: "saved",
             message: "Saved",
@@ -89,15 +131,26 @@ document.addEventListener("DOMContentLoaded", function () {
         pageImageObjectUrls: new Map(),
         pageImageFetches: new Map(),
     };
+    let nextStoryEditorTempPageId = -1;
     const STORY_EDITOR_DEFAULTS = {
         font_family: "storybook",
         font_size: 28,
         font_color: "#ffffff",
         text_position: "bottom-center",
+        text_alignment: "center",
         text_box_opacity: 0.6,
         page_format: "letter",
         layout_mode: "full-page-overlay",
+        readability_treatment: "",
     };
+    const STORY_EDITOR_HISTORY_LIMIT = 50;
+    const STORY_EDITOR_PAGE_OVERRIDE_FIELDS = [
+        "text_position",
+        "text_alignment",
+        "font_size",
+        "font_color",
+        "text_box_opacity",
+    ];
     const STORY_EDITOR_LAYOUT_OPTIONS = [
         { value: "full-page-overlay", label: "Full-page overlay" },
         { value: "horizontal-split", label: "Horizontal split" },
@@ -115,6 +168,87 @@ document.addEventListener("DOMContentLoaded", function () {
     const STORY_EDITOR_TEXT_POSITIONS_H = ["left", "center", "right"];
     const STORY_EDITOR_POSITION_LABELS_V = { top: "Top", middle: "Middle", bottom: "Bottom" };
     const STORY_EDITOR_POSITION_LABELS_H = { left: "Left", center: "Centre", right: "Right" };
+    const STORY_EDITOR_TEXT_ALIGNMENT_OPTIONS = [
+        { value: "left", label: "Left" },
+        { value: "center", label: "Centre" },
+        { value: "right", label: "Right" },
+    ];
+    const STORY_EDITOR_READABILITY_OPTIONS = [
+        { value: "", label: "Default readability treatment" },
+        { value: "High-contrast box", label: "High-contrast box" },
+        { value: "Soft shadow", label: "Soft shadow" },
+        { value: "Subtle gradient band", label: "Subtle gradient band" },
+    ];
+    const STORY_EDITOR_COLOR_SWATCHES = [
+        "#ffffff",
+        "#f8e16c",
+        "#ffe1c6",
+        "#d6f5ff",
+        "#1f2937",
+        "#8b1e3f",
+    ];
+
+    function getLegacyAuthToken() {
+        const token = localStorage.getItem(LEGACY_AUTH_TOKEN_KEY);
+        return typeof token === "string" ? token.trim() : "";
+    }
+
+    function clearLegacyAuthToken() {
+        localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
+    }
+
+    function buildAuthenticatedHeaders(headers = {}) {
+        const nextHeaders = { ...headers };
+        const token = getLegacyAuthToken();
+        if (token) {
+            nextHeaders.Authorization = `Bearer ${token}`;
+        }
+        return nextHeaders;
+    }
+
+    function buildAuthenticatedFetchOptions(options = {}) {
+        return {
+            ...options,
+            credentials: "include",
+            headers: buildAuthenticatedHeaders(options.headers || {}),
+        };
+    }
+
+    function enterAuthenticatedApp() {
+        hasAuthenticatedSession = true;
+        resetAccountHub();
+        updateNav(true);
+        if (window.location.hash === "#browse") {
+            showSection(browseStoriesSection);
+            loadAndDisplayUserStories();
+            return;
+        }
+        showSection(storyCreationSection);
+        populateAllDropdowns();
+    }
+
+    async function bootstrapAuthenticatedSession() {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/v1/users/me/`,
+                buildAuthenticatedFetchOptions({
+                    method: "GET",
+                    headers: { Accept: "application/json" },
+                }),
+            );
+            if (!response.ok) {
+                if (response.status === 401) {
+                    clearLegacyAuthToken();
+                }
+                return false;
+            }
+            hasAuthenticatedSession = true;
+            return true;
+        } catch (error) {
+            console.warn("[auth] Session bootstrap failed.", error);
+            return false;
+        }
+    }
 
     function normalizeLayoutMode(layoutMode) {
         const normalized = String(layoutMode || STORY_EDITOR_DEFAULTS.layout_mode)
@@ -143,6 +277,166 @@ document.addEventListener("DOMContentLoaded", function () {
         return "Full-page image with editable text overlay";
     }
 
+    function setPdfActionButtonsVisibility(isVisible) {
+        const displayValue = isVisible ? "inline-block" : "none";
+        [previewPdfButton, exportPdfButton].forEach((button) => {
+            if (!button) {
+                return;
+            }
+            button.style.display = displayValue;
+        });
+        if (exportPdfButton) {
+            exportPdfButton.classList.add("action-button-info");
+        }
+    }
+
+    function revokePdfPreviewUrl() {
+        if (!pdfPreviewObjectUrl || !window.URL?.revokeObjectURL) {
+            pdfPreviewObjectUrl = null;
+            return;
+        }
+        try {
+            window.URL.revokeObjectURL(pdfPreviewObjectUrl);
+        } catch (error) {
+            console.warn("[PDFPreview] Failed to revoke preview URL.", error);
+        }
+        pdfPreviewObjectUrl = null;
+    }
+
+    function closePdfPreviewModal() {
+        if (pdfPreviewFrame) {
+            pdfPreviewFrame.removeAttribute("src");
+        }
+        if (pdfPreviewModal) {
+            pdfPreviewModal.classList.remove("open");
+            pdfPreviewModal.setAttribute("aria-hidden", "true");
+        }
+        if (pdfPreviewBackdrop) {
+            pdfPreviewBackdrop.classList.remove("open");
+            pdfPreviewBackdrop.setAttribute("aria-hidden", "true");
+        }
+        revokePdfPreviewUrl();
+    }
+
+    function openPdfPreviewModal() {
+        if (pdfPreviewModal) {
+            pdfPreviewModal.classList.add("open");
+            pdfPreviewModal.setAttribute("aria-hidden", "false");
+        }
+        if (pdfPreviewBackdrop) {
+            pdfPreviewBackdrop.classList.add("open");
+            pdfPreviewBackdrop.setAttribute("aria-hidden", "false");
+        }
+    }
+
+    function setPdfPreviewLoadingState(message) {
+        if (pdfPreviewStatus) {
+            pdfPreviewStatus.hidden = false;
+            pdfPreviewStatus.textContent = message;
+        }
+        if (pdfPreviewFrameContainer) {
+            pdfPreviewFrameContainer.hidden = true;
+        }
+        if (pdfPreviewError) {
+            pdfPreviewError.hidden = true;
+            pdfPreviewError.textContent = "";
+        }
+        if (pdfPreviewDownloadButton) {
+            pdfPreviewDownloadButton.disabled = true;
+        }
+    }
+
+    function setPdfPreviewReadyState(objectUrl) {
+        if (pdfPreviewStatus) {
+            pdfPreviewStatus.hidden = false;
+            pdfPreviewStatus.textContent = "PDF preview ready.";
+        }
+        if (pdfPreviewError) {
+            pdfPreviewError.hidden = true;
+            pdfPreviewError.textContent = "";
+        }
+        if (pdfPreviewFrameContainer) {
+            pdfPreviewFrameContainer.hidden = false;
+        }
+        if (pdfPreviewFrame) {
+            pdfPreviewFrame.src = objectUrl;
+        }
+        if (pdfPreviewDownloadButton) {
+            pdfPreviewDownloadButton.disabled = false;
+        }
+    }
+
+    function setPdfPreviewErrorState(message) {
+        if (pdfPreviewStatus) {
+            pdfPreviewStatus.hidden = true;
+        }
+        if (pdfPreviewFrameContainer) {
+            pdfPreviewFrameContainer.hidden = true;
+        }
+        if (pdfPreviewFrame) {
+            pdfPreviewFrame.removeAttribute("src");
+        }
+        if (pdfPreviewError) {
+            pdfPreviewError.hidden = false;
+            pdfPreviewError.textContent = message;
+        }
+        if (pdfPreviewDownloadButton) {
+            pdfPreviewDownloadButton.disabled = true;
+        }
+    }
+
+    function getPdfFilenameFromDisposition(contentDisposition) {
+        let filename = "story.pdf";
+        if (!contentDisposition) {
+            return filename;
+        }
+        const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+        if (filenameMatch && filenameMatch.length > 1) {
+            filename = filenameMatch[1];
+        }
+        return filename;
+    }
+
+    function triggerPdfDownload(url, filename) {
+        const anchor = document.createElement("a");
+        anchor.style.display = "none";
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+    }
+
+    async function fetchStoryPdfBlob(disposition = "attachment") {
+        const response = await fetch(
+            `${API_BASE_URL}/api/v1/stories/${currentStoryId}/pdf?disposition=${encodeURIComponent(disposition)}`,
+            buildAuthenticatedFetchOptions({
+                method: "GET",
+            }),
+        );
+
+        if (!response.ok) {
+            let errorDetail = "Unknown error";
+            try {
+                const errorData = await response.json();
+                errorDetail = errorData.detail || JSON.stringify(errorData);
+            } catch (e) {
+                errorDetail = await response.text();
+            }
+            throw new Error(
+                `PDF export failed: ${response.status} ${response.statusText}. Detail: ${errorDetail}`,
+            );
+        }
+
+        const blob = await response.blob();
+        return {
+            blob,
+            filename: getPdfFilenameFromDisposition(
+                response.headers.get("content-disposition"),
+            ),
+        };
+    }
+
     // Content Areas
     const storyPreviewContent = document.getElementById("story-preview-content");
     const userStoriesList = document.getElementById("user-stories-list");
@@ -151,8 +445,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const adminUserTableBody = document.getElementById("adminUserTableBody"); // ENSURED DECLARATION (MOVED HERE)
 
     let characterCount = 1;
-    // Which character form slot is currently active (focused) for library loading
-    let activeCharacterIndex = 1;
 
     // --- Character Library State (Phase 3) ---
     const characterLibraryState = {
@@ -161,19 +453,39 @@ document.addEventListener("DOMContentLoaded", function () {
         q: '',
         total: 0,
         items: [],
-        selectedIds: new Set(),
+        selectedByIndex: new Map(),
+        activeIndex: 1,
+        restoreFocusEl: null,
+        initialized: false,
     };
 
     function getLibraryEls() {
         const stepPanel = document.getElementById('step-1-characters');
         if (!stepPanel) return {};
-        return {
-            panel: stepPanel.querySelector('#character-library-panel'),
+        const elements = {
+            chipBar: stepPanel.querySelector('#selected-characters-chipbar'),
+            createFromCurrentBtn: stepPanel.querySelector('#character-create-from-current-btn'),
+            modal: stepPanel.querySelector('#character-picker-modal'),
+            backdrop: stepPanel.querySelector('#character-picker-backdrop'),
+            close: stepPanel.querySelector('#character-picker-close'),
+            title: stepPanel.querySelector('#character-picker-title'),
             search: stepPanel.querySelector('#character-search'),
+            syncBtn: stepPanel.querySelector('#character-sync-btn'),
             list: stepPanel.querySelector('#character-list'),
             pagination: stepPanel.querySelector('#character-pagination'),
-            detailModal: stepPanel.querySelector('#character-detail-modal'),
         };
+        const modalContent = elements.modal?.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.classList.add('wizard-character-picker-modal-content');
+        }
+        if (elements.list) {
+            elements.list.classList.add('character-grid');
+            elements.list.setAttribute('aria-live', 'polite');
+        }
+        if (elements.pagination) {
+            elements.pagination.classList.add('pagination-controls');
+        }
+        return elements;
     }
 
     function debounce(fn, wait = 350) {
@@ -182,6 +494,110 @@ document.addEventListener("DOMContentLoaded", function () {
             clearTimeout(t);
             t = setTimeout(() => fn(...args), wait);
         };
+    }
+
+    function getSelectedCharacterIds() {
+        return Array.from(
+            new Set(
+                Array.from(characterLibraryState.selectedByIndex.values())
+                    .map((item) => item?.id)
+                    .filter((id) => Number.isInteger(id)),
+            ),
+        );
+    }
+
+    function getCharacterSelectionLabel(selection, index) {
+        const name = String(selection?.name || '').trim();
+        if (name) {
+            return `Character ${index}: ${name}`;
+        }
+        if (Number.isInteger(selection?.id)) {
+            return `Character ${index}: #${selection.id}`;
+        }
+        return `Character ${index}`;
+    }
+
+    function renderCharacterSelectionChips() {
+        const { chipBar } = getLibraryEls();
+        if (!chipBar) {
+            return;
+        }
+
+        const selections = Array.from(characterLibraryState.selectedByIndex.entries())
+            .sort((left, right) => left[0] - right[0]);
+        if (selections.length === 0) {
+            chipBar.innerHTML = '<em>No existing characters selected.</em>';
+            return;
+        }
+
+        chipBar.innerHTML = selections.map(([index, selection]) => `
+            <span class="selected-character-chip" data-character-index="${index}">
+                <span class="selected-character-chip-label">${escapeHTML(getCharacterSelectionLabel(selection, index))}</span>
+                <button type="button" class="remove-chip" data-character-index="${index}" aria-label="Remove existing character from story row ${index}">×</button>
+            </span>
+        `).join('');
+
+        chipBar.querySelectorAll('.remove-chip').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                const index = Number.parseInt(
+                    event.currentTarget.getAttribute('data-character-index'),
+                    10,
+                );
+                if (Number.isNaN(index)) {
+                    return;
+                }
+                characterLibraryState.selectedByIndex.delete(index);
+                renderCharacterSelectionChips();
+                renderCharacterList();
+            });
+        });
+    }
+
+    function closeCharacterPickerModal(options = {}) {
+        const { restoreFocus = true } = options;
+        const { modal, backdrop } = getLibraryEls();
+        if (modal) {
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+        if (backdrop) {
+            backdrop.classList.remove('open');
+            backdrop.setAttribute('aria-hidden', 'true');
+        }
+        if (restoreFocus && characterLibraryState.restoreFocusEl instanceof HTMLElement) {
+            characterLibraryState.restoreFocusEl.focus();
+        }
+        characterLibraryState.restoreFocusEl = null;
+    }
+
+    async function openCharacterPickerModal(index, triggerButton) {
+        const { modal, backdrop, title, search } = getLibraryEls();
+        if (!modal || !backdrop) {
+            return;
+        }
+
+        characterLibraryState.activeIndex = index;
+        characterLibraryState.restoreFocusEl = triggerButton instanceof HTMLElement
+            ? triggerButton
+            : null;
+
+        if (title) {
+            title.textContent = `Choose Existing Character for Character ${index}`;
+        }
+
+        backdrop.classList.add('open');
+        backdrop.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        if (!characterLibraryState.initialized || characterLibraryState.items.length === 0) {
+            await loadCharacterLibrary();
+        } else {
+            renderCharacterList();
+            renderPagination();
+        }
+
+        search?.focus();
     }
 
     function syncCharacterDetailsDisclosure(toggleButton, detailsDiv) {
@@ -416,6 +832,7 @@ document.addEventListener("DOMContentLoaded", function () {
         console.log("[populateAllDropdowns] Starting to populate all dropdowns.");
         // Phase 2 rename alignment: list names are now 'genres' and 'image_styles'
         populateDropdown("story-genre", "genres");
+        populateDropdown("story-writing-style", "writing_styles");
         populateDropdown("story-image-style", "image_styles");
         populateDropdown("story-word-to-picture-ratio", "word_to_picture_ratio");
         populateDropdown("story-text-density", "text_density");
@@ -664,12 +1081,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (generateStoryButton) generateStoryButton.style.display = wizardStep === 3 ? 'inline-block' : 'none';
         // If on review, populate summary
         if (wizardStep === 3) populateReview();
-        // Ensure character library is visible in Characters step and initialized once
+        // Ensure the wizard character picker is wired when the Characters step is active.
         if (wizardStep === 1) {
             initCharacterLibraryUI();
         } else {
-            const { panel } = getLibraryEls();
-            if (panel) panel.style.display = 'none';
+            closeCharacterPickerModal({ restoreFocus: false });
         }
     }
 
@@ -1617,10 +2033,13 @@ document.addEventListener("DOMContentLoaded", function () {
             <p><strong>Outline:</strong> ${escapeHTML(data.story_outline || '(empty)')}</p>
             <p><strong>Characters:</strong> ${escapeHTML(characters.length ? characters.join(', ') : '(none)')}</p>
             <p><strong>Reused characters:</strong> ${reusedCount}</p>
+            <p><strong>Writing style:</strong> ${escapeHTML(data.writing_style || '(not set)')}</p>
             <p><strong>Pages:</strong> ${escapeHTML(data.num_pages || '(not set)')} | <strong>Style:</strong> ${escapeHTML(data.image_style || '(not set)')}</p>
             <p><strong>Ratio:</strong> ${escapeHTML(data.word_to_picture_ratio || '(not set)')} | <strong>Density:</strong> ${escapeHTML(data.text_density || '(not set)')}</p>
             <p><strong>Page format:</strong> ${escapeHTML(pageFormatLabels[pageFormat] || pageFormat)}</p>
             <p><strong>Layout mode:</strong> ${escapeHTML(getLayoutModeLabel(layoutMode))} | <strong>Text position:</strong> ${escapeHTML(editorSettings.text_position || 'bottom')}</p>
+            <p><strong>Image framing:</strong> ${escapeHTML(editorSettings.image_fit || '(default)')} | <strong>Cover title placement:</strong> ${escapeHTML(editorSettings.cover_title_placement || '(default)')}</p>
+            <p><strong>Readability treatment:</strong> ${escapeHTML(editorSettings.readability_treatment || '(default)')}</p>
             <p><strong>Font:</strong> ${escapeHTML(editorSettings.font_family || 'storybook')} ${escapeHTML(editorSettings.font_size || 28)}px | <strong>Colour:</strong> ${escapeHTML(editorSettings.font_color || '#ffffff')} | <strong>Text box opacity:</strong> ${escapeHTML(editorSettings.text_box_opacity ?? 0.6)}</p>
         `;
         review.appendChild(s);
@@ -1668,36 +2087,29 @@ document.addEventListener("DOMContentLoaded", function () {
     // --- INITIALIZATION ---
     // initializeCharacterDetailsToggle(document.querySelector('.character-details-toggle')); // Moved to after first entry ensure
     initializeDropdownRetryButtons();
-    updateNav(!!authToken);
-    if (!!authToken) {
-        if (window.location.hash === "#browse") {
-            showSection(browseStoriesSection);
-            loadAndDisplayUserStories();
-        } else {
-            showSection(storyCreationSection);
-            populateAllDropdowns(); // Populate all dropdowns on load if logged in
-        }
-        initializeWizardValidationA11y();
-        // Initialize wizard UI state on load
-        goToStep(0);
-        // Add first character entry if not already present by HTML
-        if (
-            document.querySelectorAll("#main-characters-fieldset .character-entry")
-                .length === 0
-        ) {
-            // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
-            // The first character is expected to be in the HTML or handled by reset.
-            // For now, let's assume resetFormAndState or initial HTML handles the first one.
-        } else {
-            // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
-            // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
-            // if (firstCharToggle) {
-            //     initializeCharacterDetailsToggle(firstCharToggle);
-            // }
-        }
+    updateNav(false);
+    initializeWizardValidationA11y();
+    goToStep(0);
+    if (
+        document.querySelectorAll("#main-characters-fieldset .character-entry")
+            .length === 0
+    ) {
+        // addCharacterEntry(); // This was one place it was called, but addCharacterEntry itself is for *additional* characters.
+        // The first character is expected to be in the HTML or handled by reset.
+        // For now, let's assume resetFormAndState or initial HTML handles the first one.
     } else {
-        showSection(authSection);
+        // If the first character entry is already in HTML, ensure its state is correct (handled by event delegation now)
+        // const firstCharToggle = document.querySelector('#main-characters-fieldset .character-entry .character-details-toggle');
+        // if (firstCharToggle) {
+        //     initializeCharacterDetailsToggle(firstCharToggle);
+        // }
     }
+    showSection(authSection);
+    bootstrapAuthenticatedSession().then((restoredSession) => {
+        if (restoredSession) {
+            enterAuthenticatedApp();
+        }
+    });
 
     // --- UTILITY FUNCTIONS ---
     function showSpinner() {
@@ -1786,6 +2198,19 @@ document.addEventListener("DOMContentLoaded", function () {
         characterCount = 1; // Reset character count
         console.log("[resetFormAndState] characterCount reset to 1.");
 
+        characterLibraryState.page = 1;
+        characterLibraryState.q = '';
+        characterLibraryState.items = [];
+        characterLibraryState.total = 0;
+        characterLibraryState.selectedByIndex.clear();
+        characterLibraryState.activeIndex = 1;
+        const { search } = getLibraryEls();
+        if (search) {
+            search.value = '';
+        }
+        renderCharacterSelectionChips();
+        closeCharacterPickerModal({ restoreFocus: false });
+
         // Reset draft-specific state
         currentStoryId = null;
         currentStoryIsDraft = false;
@@ -1805,11 +2230,10 @@ document.addEventListener("DOMContentLoaded", function () {
             console.log("[resetFormAndState] Story title input cleared.");
         }
 
-        // Hide PDF button as no story is actively being previewed after a reset from creation
-        if (exportPdfButton) {
-            exportPdfButton.style.display = "none";
-            console.log("[resetFormAndState] exportPdfButton hidden.");
-        }
+        // Hide PDF actions as no story is actively being previewed after a reset.
+        setPdfActionButtonsVisibility(false);
+        closePdfPreviewModal();
+        console.log("[resetFormAndState] PDF action buttons hidden.");
 
         showSection(storyCreationSection); // Ensure the creation form is visible
         updateStepUI();
@@ -1841,8 +2265,9 @@ document.addEventListener("DOMContentLoaded", function () {
             <hr>
             <div class="character-entry-header">
                 <h4 class="character-entry-title">Character ${characterCount}</h4>
-                <div class="character-entry-actions">
-                    <button type="button" class="character-details-toggle" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
+                <div class="character-entry-actions wizard-character-row-actions">
+                    <button type="button" class="character-details-toggle action-button-info" id="char-details-toggle-${characterCount}" data-target="char-details-${characterCount}" aria-controls="char-details-${characterCount}" aria-expanded="false">Show Details</button>
+                    <button type="button" class="wizard-character-picker-trigger action-button-secondary" data-character-index="${characterCount}" aria-haspopup="dialog" aria-controls="character-picker-modal">Add existing character</button>
                     <button type="button" class="remove-character-button action-button-danger" aria-label="Delete character ${characterCount} from this story">Delete from Story</button>
                 </div>
             </div>
@@ -1941,6 +2366,13 @@ document.addEventListener("DOMContentLoaded", function () {
             ...(settings || {}),
         };
         normalized.layout_mode = normalizeLayoutMode(normalized.layout_mode);
+        normalized.text_alignment = normalizeTextAlignment(
+            normalized.text_alignment,
+            normalized.text_position,
+        );
+        normalized.readability_treatment = normalizeReadabilityTreatment(
+            normalized.readability_treatment,
+        );
         return normalized;
     }
 
@@ -1953,8 +2385,72 @@ document.addEventListener("DOMContentLoaded", function () {
         return state;
     }
 
+    function findStoryEditorPageIndex(story, pageId) {
+        return Array.isArray(story?.pages)
+            ? story.pages.findIndex((page) => page.id === pageId)
+            : -1;
+    }
+
+    function renumberStoryEditorPages(story) {
+        if (!story || !Array.isArray(story.pages)) return;
+        story.pages.forEach((page, index) => {
+            page.page_number = index === 0 ? 0 : index;
+        });
+        story.num_pages = Math.max(story.pages.length - 1, 0);
+        const coverPage = story.pages[0];
+        if (coverPage) {
+            story.title = coverPage.text || story.title || "Untitled Story";
+        }
+    }
+
+    function createStoryEditorDraftPage(story, page = {}) {
+        const now = new Date().toISOString();
+        const draftPage = {
+            id: page.id ?? nextStoryEditorTempPageId--,
+            story_id: page.story_id ?? story?.id ?? null,
+            page_number: page.page_number ?? 1,
+            text: page.text || "",
+            image_description: page.image_description ?? null,
+            image_path: page.image_path ?? null,
+            editor_state: normalizePageEditorState({
+                text: page.text || "",
+                image_path: page.image_path ?? null,
+                editor_state: page.editor_state || {},
+            }),
+            created_at: page.created_at || now,
+            updated_at: page.updated_at || now,
+        };
+        draftPage.__original = JSON.parse(JSON.stringify(draftPage));
+        return draftPage;
+    }
+
+    function resolveStoryEditorSplitIndex(text, preferredIndex) {
+        const normalizedText = String(text || "");
+        if (normalizedText.length <= 1) return 0;
+
+        let splitIndex = Number.isInteger(preferredIndex)
+            ? preferredIndex
+            : Math.floor(normalizedText.length / 2);
+        splitIndex = Math.max(1, Math.min(normalizedText.length - 1, splitIndex));
+
+        for (let offset = 0; offset < normalizedText.length; offset += 1) {
+            const rightIndex = splitIndex + offset;
+            if (/\s/.test(normalizedText[rightIndex] || "")) {
+                return Math.min(normalizedText.length - 1, rightIndex + 1);
+            }
+            const leftIndex = splitIndex - offset;
+            if (/\s/.test(normalizedText[leftIndex] || "")) {
+                return Math.max(1, leftIndex + 1);
+            }
+        }
+
+        return splitIndex;
+    }
+
     function cloneStoryForEditor(story) {
         const cloned = JSON.parse(JSON.stringify(story));
+        if (cloned.cover_subtitle == null) cloned.cover_subtitle = "";
+        if (cloned.cover_author == null) cloned.cover_author = "";
         cloned.editor_settings = normalizeStoryEditorSettings(cloned.editor_settings);
         cloned.pages = Array.isArray(cloned.pages)
             ? cloned.pages
@@ -1968,15 +2464,341 @@ document.addEventListener("DOMContentLoaded", function () {
         return cloned;
     }
 
+    function createStoryEditorHistorySnapshot(story) {
+        if (!story) return null;
+        return {
+            title: story.title || "",
+            cover_subtitle: story.cover_subtitle || "",
+            cover_author: story.cover_author || "",
+            editor_settings: normalizeStoryEditorSettings(story.editor_settings),
+            pages: Array.isArray(story.pages)
+                ? story.pages.map((page) => ({
+                    id: page.id,
+                    story_id: page.story_id,
+                    page_number: page.page_number,
+                    text: page.text || "",
+                    image_description: page.image_description || null,
+                    image_path: page.image_path || null,
+                    editor_state: normalizePageEditorState(page),
+                    created_at: page.created_at || null,
+                    updated_at: page.updated_at || null,
+                }))
+                : [],
+        };
+    }
+
+    function serializeStoryEditorHistorySnapshot(snapshot) {
+        return JSON.stringify(snapshot || null);
+    }
+
+    function canUndoStoryEditorChange() {
+        return storyEditorState.historyPast.length > 0;
+    }
+
+    function canRedoStoryEditorChange() {
+        return storyEditorState.historyFuture.length > 0;
+    }
+
+    function updateStoryEditorHistoryControls() {
+        const undoButton = document.getElementById("story-editor-undo-button");
+        const redoButton = document.getElementById("story-editor-redo-button");
+        if (undoButton) undoButton.disabled = !canUndoStoryEditorChange();
+        if (redoButton) redoButton.disabled = !canRedoStoryEditorChange();
+    }
+
+    function resetStoryEditorHistory() {
+        storyEditorState.historyPast = [];
+        storyEditorState.historyFuture = [];
+        updateStoryEditorHistoryControls();
+    }
+
+    function mergeStoryEditorHistorySnapshot(currentStory, snapshot) {
+        const nextStory = cloneStoryForEditor(currentStory);
+        if (!snapshot) return nextStory;
+
+        nextStory.title = snapshot.title || "";
+        nextStory.cover_subtitle = snapshot.cover_subtitle || "";
+        nextStory.cover_author = snapshot.cover_author || "";
+        nextStory.editor_settings = normalizeStoryEditorSettings(
+            snapshot.editor_settings,
+        );
+
+        nextStory.pages = Array.isArray(snapshot.pages)
+            ? snapshot.pages.map((page) => ({
+                ...page,
+                editor_state: normalizePageEditorState(page),
+            }))
+            : [];
+        renumberStoryEditorPages(nextStory);
+
+        return nextStory;
+    }
+
+    function recordStoryEditorHistoryChange(beforeSnapshot, afterSnapshot) {
+        if (!beforeSnapshot || !afterSnapshot) return false;
+
+        if (
+            serializeStoryEditorHistorySnapshot(beforeSnapshot)
+            === serializeStoryEditorHistorySnapshot(afterSnapshot)
+        ) {
+            return false;
+        }
+
+        storyEditorState.historyPast.push(beforeSnapshot);
+        if (storyEditorState.historyPast.length > STORY_EDITOR_HISTORY_LIMIT) {
+            storyEditorState.historyPast.shift();
+        }
+        storyEditorState.historyFuture = [];
+        updateStoryEditorHistoryControls();
+        return true;
+    }
+
+    function applyStoryEditorMutation(
+        mutator,
+        { refresh = "live", autosave = true } = {},
+    ) {
+        const story = storyEditorState.story;
+        if (!story) return false;
+
+        const beforeSnapshot = createStoryEditorHistorySnapshot(story);
+        mutator(story);
+        const afterSnapshot = createStoryEditorHistorySnapshot(story);
+        const changed = recordStoryEditorHistoryChange(
+            beforeSnapshot,
+            afterSnapshot,
+        );
+
+        if (!changed) return false;
+
+        if (refresh === "render") {
+            renderStoryEditor();
+        } else if (refresh === "live") {
+            applyLivePreviewUpdate();
+        }
+
+        if (autosave) {
+            scheduleStoryEditorAutosave();
+        }
+
+        return true;
+    }
+
+    function applyStoryEditorHistoryDirection(direction) {
+        const sourceStack =
+            direction === "undo"
+                ? storyEditorState.historyPast
+                : storyEditorState.historyFuture;
+        const destinationStack =
+            direction === "undo"
+                ? storyEditorState.historyFuture
+                : storyEditorState.historyPast;
+
+        if (!storyEditorState.story || sourceStack.length === 0) return;
+
+        destinationStack.push(
+            createStoryEditorHistorySnapshot(storyEditorState.story),
+        );
+        const snapshot = sourceStack.pop();
+        storyEditorState.story = mergeStoryEditorHistorySnapshot(
+            storyEditorState.story,
+            snapshot,
+        );
+        renderStoryEditor();
+        scheduleStoryEditorAutosave();
+        updateStoryEditorHistoryControls();
+    }
+
+    function handleStoryEditorHistoryKeydown(event) {
+        if (!event || event.defaultPrevented || event.altKey) return;
+        if (!event.ctrlKey && !event.metaKey) return;
+
+        const key = String(event.key || "").toLowerCase();
+        const isUndo = key === "z" && !event.shiftKey;
+        const isRedo = key === "y" || (key === "z" && event.shiftKey);
+
+        if (!isUndo && !isRedo) return;
+
+        event.preventDefault();
+        if (isUndo) {
+            applyStoryEditorHistoryDirection("undo");
+            return;
+        }
+        applyStoryEditorHistoryDirection("redo");
+    }
+
     function getPageEffectiveSettings(story, page) {
         const settings = normalizeStoryEditorSettings(story?.editor_settings);
         const editorState = normalizePageEditorState(page);
-        ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
+        [
+            "text_position",
+            "text_alignment",
+            "font_size",
+            "font_color",
+            "text_box_opacity",
+        ].forEach((key) => {
             if (editorState[key] !== undefined && editorState[key] !== null && editorState[key] !== "") {
                 settings[key] = editorState[key];
             }
         });
+        settings.text_alignment = normalizeTextAlignment(
+            settings.text_alignment,
+            settings.text_position,
+        );
+        settings.readability_treatment = normalizeReadabilityTreatment(
+            settings.readability_treatment,
+        );
         return settings;
+    }
+
+    function normalizeTextAlignment(alignment, textPosition) {
+        const normalized = String(alignment || "").trim().toLowerCase();
+        if (["left", "center", "right"].includes(normalized)) {
+            return normalized;
+        }
+        return parseTextPosition(textPosition).h;
+    }
+
+    function normalizeReadabilityTreatment(value) {
+        const normalized = String(value || "").trim().toLowerCase();
+        return STORY_EDITOR_READABILITY_OPTIONS.find(
+            (option) => String(option.value).trim().toLowerCase() === normalized,
+        )?.value || "";
+    }
+
+    function getReadabilityOpacity(settings) {
+        const baseOpacity = Math.max(
+            0,
+            Math.min(1, Number(settings.text_box_opacity ?? 0.6)),
+        );
+        const treatment = normalizeReadabilityTreatment(
+            settings.readability_treatment,
+        );
+        if (treatment === "High-contrast box") {
+            return Math.max(baseOpacity, 0.82);
+        }
+        if (treatment === "Subtle gradient band") {
+            return Math.max(baseOpacity, 0.52);
+        }
+        if (treatment === "Soft shadow") {
+            return Math.max(baseOpacity * 0.35, 0.14);
+        }
+        return baseOpacity;
+    }
+
+    function hexToRgb(value) {
+        const normalized = String(value || "").trim();
+        const match = normalized.match(/^#?([0-9a-f]{6})$/i);
+        if (!match) return { r: 255, g: 255, b: 255 };
+        const hex = match[1];
+        return {
+            r: parseInt(hex.slice(0, 2), 16),
+            g: parseInt(hex.slice(2, 4), 16),
+            b: parseInt(hex.slice(4, 6), 16),
+        };
+    }
+
+    function relativeLuminance({ r, g, b }) {
+        const channels = [r, g, b].map((channel) => {
+            const normalized = channel / 255;
+            return normalized <= 0.03928
+                ? normalized / 12.92
+                : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+    }
+
+    function contrastRatio(a, b) {
+        const lighter = Math.max(a, b);
+        const darker = Math.min(a, b);
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    function getPreviewTextBoxMetrics(settings) {
+        const stageWidth = 612;
+        const stageHeight = 792;
+        const layoutMode = normalizeLayoutMode(settings.layout_mode);
+        if (layoutMode === "horizontal-split") {
+            return { width: stageWidth, height: stageHeight * 0.38 };
+        }
+        if (layoutMode === "vertical-split") {
+            return { width: stageWidth * 0.44, height: stageHeight };
+        }
+
+        const positionStyle = getTextPositionStyle(settings.text_position);
+        return {
+            width: (parseFloat(positionStyle.width) / 100) * stageWidth,
+            height: (parseFloat(positionStyle.height) / 100) * stageHeight,
+        };
+    }
+
+    function estimateWrappedLineCount(text, boxWidth, fontSize) {
+        const safeWidth = Math.max(80, boxWidth - 32);
+        const charsPerLine = Math.max(8, Math.floor(safeWidth / (fontSize * 0.56)));
+        return String(text || "")
+            .split(/\n+/)
+            .reduce((count, line) => count + Math.max(1, Math.ceil(Math.max(line.length, 1) / charsPerLine)), 0);
+    }
+
+    function getPreviewTextValue(story, page) {
+        if (parseInt(page?.page_number, 10) === 0) {
+            return [
+                story?.title || "Untitled Story",
+                story?.cover_subtitle || "",
+                story?.cover_author ? `By ${story.cover_author}` : "",
+            ].filter(Boolean).join("\n");
+        }
+        return page?.text || "";
+    }
+
+    function getStoryEditorWarnings(story, page) {
+        const settings = getPageEffectiveSettings(story, page);
+        const warnings = [];
+        const contrast = contrastRatio(
+            relativeLuminance(hexToRgb(settings.font_color || "#ffffff")),
+            0.58 * (1 - getReadabilityOpacity(settings)),
+        );
+
+        if (contrast < 4.5) {
+            warnings.push({
+                type: "contrast",
+                message: "Low contrast warning: text may be hard to read against the artwork.",
+            });
+        }
+
+        const { width, height } = getPreviewTextBoxMetrics(settings);
+        const fontSize = Math.max(12, parseInt(settings.font_size, 10) || 28);
+        const lineHeight = fontSize * 1.28;
+        const estimatedLines = estimateWrappedLineCount(
+            getPreviewTextValue(story, page),
+            width,
+            fontSize,
+        );
+        const maxLines = Math.max(1, Math.floor((height - 32) / lineHeight));
+        if (estimatedLines > maxLines) {
+            warnings.push({
+                type: "overflow",
+                message: "Text overflow warning: this copy is likely too long for the current text box.",
+            });
+        }
+
+        return warnings;
+    }
+
+    function renderPageWarnings(story, page, preview) {
+        const warningContainer = preview
+            ?.querySelector(`.story-editor-page-warnings[data-page-id="${page.id}"]`);
+        const warnings = getStoryEditorWarnings(story, page);
+        if (preview) {
+            preview.classList.toggle("story-editor-page-preview--warning", warnings.length > 0);
+            preview.classList.toggle(
+                "story-editor-page-preview--contrast-warning",
+                warnings.some((warning) => warning.type === "contrast"),
+            );
+        }
+        if (!warningContainer) return;
+        warningContainer.innerHTML = warnings.map((warning) => (
+            `<p class="story-editor-page-warning story-editor-page-warning--${warning.type}">${escapeHTML(warning.message)}</p>`
+        )).join("");
     }
 
     function getTextPositionStyle(position) {
@@ -2042,6 +2864,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const layoutMode = normalizeLayoutMode(settings.layout_mode);
         const positionStyle = getTextPositionStyle(settings.text_position);
         const { v, h } = parseTextPosition(settings.text_position);
+        const textAlignment = normalizeTextAlignment(
+            settings.text_alignment,
+            settings.text_position,
+        );
+        const readabilityTreatment = normalizeReadabilityTreatment(
+            settings.readability_treatment,
+        );
         const justifyContent = v === "top"
             ? "flex-start"
             : v === "middle"
@@ -2052,7 +2881,7 @@ document.addEventListener("DOMContentLoaded", function () {
             : h === "center"
                 ? "center"
                 : "flex-end";
-        const textAlign = h === "right" ? "right" : h === "center" ? "center" : "left";
+        const textAlign = textAlignment;
 
         pageStage.dataset.layoutMode = layoutMode;
         if (imageSlot) {
@@ -2088,9 +2917,28 @@ document.addEventListener("DOMContentLoaded", function () {
         textCard.style.padding = "1rem";
         textCard.style.fontSize = `${Math.max(12, parseInt(settings.font_size, 10) || 28)}px`;
         textCard.style.color = settings.font_color || "#ffffff";
-        const opacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
-        textCard.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
+        textCard.style.textAlign = textAlign;
         textCard.style.fontFamily = "inherit";
+        textCard.dataset.readabilityTreatment = readabilityTreatment || "default";
+        textCard.style.backgroundColor = `rgba(0, 0, 0, ${getReadabilityOpacity(settings)})`;
+        textCard.style.backgroundImage = "";
+        textCard.style.textShadow = "none";
+        textCard.style.outline = "none";
+        textCard.style.backdropFilter = "none";
+        textCard.style.webkitBackdropFilter = "none";
+
+        if (readabilityTreatment === "Soft shadow") {
+            textCard.style.textShadow = "0 2px 12px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.65)";
+        } else if (readabilityTreatment === "Subtle gradient band") {
+            const baseOpacity = Math.max(0, Math.min(1, Number(settings.text_box_opacity ?? 0.6)));
+            const peakOpacity = Math.max(baseOpacity + 0.2, 0.52);
+            textCard.style.backgroundColor = "transparent";
+            textCard.style.backgroundImage = `linear-gradient(180deg, rgba(0, 0, 0, ${Math.max(baseOpacity, 0.18)}) 0%, rgba(0, 0, 0, ${peakOpacity}) 50%, rgba(0, 0, 0, ${Math.max(baseOpacity, 0.18)}) 100%)`;
+            textCard.style.backdropFilter = "blur(1px)";
+            textCard.style.webkitBackdropFilter = "blur(1px)";
+        } else if (readabilityTreatment === "High-contrast box") {
+            textCard.style.outline = "1px solid rgba(255, 255, 255, 0.1)";
+        }
 
         if (layoutMode === "horizontal-split" || layoutMode === "vertical-split") {
             pageStage.style.display = "grid";
@@ -2140,42 +2988,62 @@ document.addEventListener("DOMContentLoaded", function () {
             const textContent = preview.querySelector(
                 ".story-editor-text-card-content"
             );
-            if (textContent) textContent.textContent = page.text || "";
+            if (textContent) {
+                if (parseInt(page.page_number, 10) === 0) {
+                    textContent.innerHTML = createCoverPreviewMarkup(story);
+                } else {
+                    textContent.textContent = page.text || "";
+                }
+            }
+            renderPageWarnings(story, page, preview);
         });
+    }
+
+    function createCoverPreviewMarkup(story) {
+        const title = escapeHTML(story?.title || "Untitled Story");
+        const subtitle = escapeHTML(story?.cover_subtitle || "");
+        const author = escapeHTML(story?.cover_author || "");
+        return `
+            <div class="story-editor-cover-preview">
+                <div class="story-editor-cover-title">${title}</div>
+                ${subtitle ? `<div class="story-editor-cover-subtitle">${subtitle}</div>` : ""}
+                ${author ? `<div class="story-editor-cover-author">By ${author}</div>` : ""}
+            </div>
+        `;
     }
 
     function buildStoryEditorPayload({ includeAllPages = false } = {}) {
         const story = storyEditorState.story;
         if (!story) return null;
-        const changedPages = [];
-        (story.pages || []).forEach((page) => {
-            const original = page.__original || {};
-            const state = page.editor_state || {};
-            const payloadState = {};
+        const changedPages = (story.pages || []).map((page, index) => {
+            const state = normalizePageEditorState(page);
+            const payloadState = {
+                original_text: state.original_text,
+                original_image_path: state.original_image_path,
+            };
 
-            ["text_position", "font_size", "font_color", "text_box_opacity"].forEach((key) => {
-                if (state[key] !== undefined && state[key] !== original.editor_state?.[key]) {
+            STORY_EDITOR_PAGE_OVERRIDE_FIELDS.forEach((key) => {
+                if (state[key] !== undefined && state[key] !== null && state[key] !== "") {
                     payloadState[key] = state[key];
                 }
             });
 
-            const textChanged = page.text !== original.text;
-            if (includeAllPages || textChanged || Object.keys(payloadState).length > 0) {
-                changedPages.push({
-                    id: page.id,
-                    text: page.text,
-                    editor_state: {
-                        original_text: state.original_text,
-                        original_image_path: state.original_image_path,
-                        ...payloadState,
-                    },
-                });
-            }
+            return {
+                id: page.id > 0 ? page.id : null,
+                page_number: index === 0 ? 0 : index,
+                text: page.text || "",
+                image_description: page.image_description || null,
+                image_path: page.image_path || null,
+                editor_state: payloadState,
+            };
         });
 
         return {
             title: story.title,
+            cover_subtitle: story.cover_subtitle,
+            cover_author: story.cover_author,
             editor_settings: story.editor_settings,
+            replace_pages: true,
             pages: changedPages,
         };
     }
@@ -2271,12 +3139,16 @@ document.addEventListener("DOMContentLoaded", function () {
             `/api/v1/stories/${story.id}/pages/${pageId}/restore-text`,
             "POST",
         );
-        const page = story.pages.find((item) => item.id === pageId);
-        if (!page || !updatedPage) return;
-        page.text = updatedPage.text;
-        page.editor_state = normalizePageEditorState(updatedPage);
-        if (parseInt(page.page_number, 10) === 0) story.title = updatedPage.text;
-        renderStoryEditor();
+        if (!updatedPage) return;
+        applyStoryEditorMutation((editorStory) => {
+            const page = editorStory.pages.find((item) => item.id === pageId);
+            if (!page) return;
+            page.text = updatedPage.text;
+            page.editor_state = normalizePageEditorState(updatedPage);
+            if (parseInt(page.page_number, 10) === 0) {
+                editorStory.title = updatedPage.text;
+            }
+        }, { refresh: "render", autosave: false });
         displayMessage("Original page text restored.", "success");
     }
 
@@ -2287,12 +3159,32 @@ document.addEventListener("DOMContentLoaded", function () {
             `/api/v1/stories/${story.id}/pages/${pageId}/restore-image`,
             "POST",
         );
-        const page = story.pages.find((item) => item.id === pageId);
-        if (!page || !updatedPage) return;
-        page.image_path = updatedPage.image_path;
-        page.editor_state = normalizePageEditorState(updatedPage);
-        renderStoryEditor();
+        if (!updatedPage) return;
+        applyStoryEditorMutation((editorStory) => {
+            const page = editorStory.pages.find((item) => item.id === pageId);
+            if (!page) return;
+            page.image_path = updatedPage.image_path;
+            page.editor_state = normalizePageEditorState(updatedPage);
+        }, { refresh: "render", autosave: false });
         displayMessage("Original page image restored.", "success");
+    }
+
+    async function regenerateStoryPageText(pageId) {
+        const story = storyEditorState.story;
+        if (!story) return;
+        const updatedPage = await apiRequest(
+            `/api/v1/stories/${story.id}/pages/${pageId}/regenerate-text`,
+            "POST",
+        );
+        if (!updatedPage) return;
+        applyStoryEditorMutation((editorStory) => {
+            const page = editorStory.pages.find((item) => item.id === pageId);
+            if (!page) return;
+            page.text = updatedPage.text;
+            page.image_description = updatedPage.image_description || page.image_description;
+            page.editor_state = normalizePageEditorState(updatedPage);
+        }, { refresh: "render", autosave: false });
+        displayMessage("Page text regenerated.", "success");
     }
 
     async function regenerateStoryPageImage(pageId) {
@@ -2302,11 +3194,13 @@ document.addEventListener("DOMContentLoaded", function () {
             `/api/v1/stories/${story.id}/pages/${pageId}/regenerate-image`,
             "POST",
         );
-        const page = story.pages.find((item) => item.id === pageId);
-        if (!page || !updatedPage) return;
-        page.image_path = updatedPage.image_path;
-        page.editor_state = normalizePageEditorState(updatedPage);
-        renderStoryEditor();
+        if (!updatedPage) return;
+        applyStoryEditorMutation((editorStory) => {
+            const page = editorStory.pages.find((item) => item.id === pageId);
+            if (!page) return;
+            page.image_path = updatedPage.image_path;
+            page.editor_state = normalizePageEditorState(updatedPage);
+        }, { refresh: "render", autosave: false });
         displayMessage("Page image regenerated.", "success");
     }
 
@@ -2323,6 +3217,37 @@ document.addEventListener("DOMContentLoaded", function () {
             const selected = option.value === normalized ? "selected" : "";
             return `<option value="${option.value}" ${selected}>${option.label}</option>`;
         }).join("");
+    }
+
+    function createTextAlignmentOptions(selectedValue) {
+        const normalized = normalizeTextAlignment(selectedValue);
+        return STORY_EDITOR_TEXT_ALIGNMENT_OPTIONS.map((option) => {
+            const selected = option.value === normalized ? "selected" : "";
+            return `<option value="${option.value}" ${selected}>${option.label}</option>`;
+        }).join("");
+    }
+
+    function createReadabilityTreatmentOptions(selectedValue) {
+        const normalized = normalizeReadabilityTreatment(selectedValue);
+        return STORY_EDITOR_READABILITY_OPTIONS.map((option) => {
+            const selected = option.value === normalized ? "selected" : "";
+            return `<option value="${option.value}" ${selected}>${option.label}</option>`;
+        }).join("");
+    }
+
+    function createColorSwatches(targetId, selectedValue) {
+        const normalized = String(selectedValue || "").trim().toLowerCase();
+        return `
+            <div class="story-editor-color-swatches" role="group" aria-label="Curated text colour swatches">
+                ${STORY_EDITOR_COLOR_SWATCHES.map((color) => {
+            const isSelected = color.toLowerCase() === normalized;
+            const swatchClass = relativeLuminance(hexToRgb(color)) > 0.8
+                ? " story-editor-color-swatch--light"
+                : "";
+            return `<button type="button" class="story-editor-color-swatch${swatchClass}" data-color-swatch-target="${targetId}" data-color-value="${color}" aria-label="Use ${color} text" aria-pressed="${isSelected ? "true" : "false"}" style="background:${color};"></button>`;
+        }).join("")}
+            </div>
+        `;
     }
 
     function createTextPositionOptions(selectedValue) {
@@ -2408,15 +3333,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function fetchPrivateStoryPageImageObjectUrl(storyId, pageId) {
-        const token = localStorage.getItem("authToken");
         const response = await fetch(
             `${API_BASE_URL}/api/v1/stories/${storyId}/pages/${pageId}/image`,
-            {
+            buildAuthenticatedFetchOptions({
                 method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            },
+            }),
         );
 
         if (!response.ok) {
@@ -2445,6 +3366,14 @@ document.addEventListener("DOMContentLoaded", function () {
             setStoryPageImageSlotContent(
                 slot,
                 createStoryPageImageElement(staticContentUrl(page.image_path)),
+            );
+            return;
+        }
+
+        if (Number(page.id) <= 0) {
+            setStoryPageImageSlotContent(
+                slot,
+                '<div class="story-editor-page-image story-editor-page-image--placeholder">Save to load image</div>',
             );
             return;
         }
@@ -2549,7 +3478,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!storyPreviewContent || !story) {
             console.error("[displayStory] Story preview content area or story data is missing.");
             displayMessage("Could not display story preview.", "error");
-            if (exportPdfButton) exportPdfButton.style.display = "none";
+            setPdfActionButtonsVisibility(false);
             return;
         }
 
@@ -2560,6 +3489,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const shell = document.createElement("div");
         shell.className = "story-editor-shell";
+        shell.tabIndex = -1;
         const saveStatus = storyEditorState.saveStatus || {
             state: "saved",
             message: "Saved",
@@ -2571,9 +3501,23 @@ document.addEventListener("DOMContentLoaded", function () {
                 <div class="story-editor-title-group">
                     <label class="story-editor-field-label" for="story-editor-title">Story Title</label>
                     <input id="story-editor-title" class="story-editor-title-input" type="text" value="${escapeHTML(story.title || "Untitled Story")}">
+                    <div class="story-editor-cover-fields">
+                        <div>
+                            <label class="story-editor-field-label" for="story-editor-cover-subtitle">Cover Subtitle</label>
+                            <input id="story-editor-cover-subtitle" class="story-editor-title-input" type="text" value="${escapeHTML(story.cover_subtitle || "")}" placeholder="Optional subtitle">
+                        </div>
+                        <div>
+                            <label class="story-editor-field-label" for="story-editor-cover-author">Cover Author</label>
+                            <input id="story-editor-cover-author" class="story-editor-title-input" type="text" value="${escapeHTML(story.cover_author || "")}" placeholder="Optional author name">
+                        </div>
+                    </div>
                 </div>
                 <div class="story-editor-toolbar-actions">
                     ${previewAvailable ? '<button type="button" id="story-editor-preview-button" class="action-button-secondary">Back to Preview</button>' : ''}
+                    <div class="story-editor-history-actions" aria-label="Editor history controls">
+                        <button type="button" id="story-editor-undo-button" class="action-button-secondary" ${canUndoStoryEditorChange() ? "" : "disabled"} aria-label="Undo recent change">Undo</button>
+                        <button type="button" id="story-editor-redo-button" class="action-button-secondary" ${canRedoStoryEditorChange() ? "" : "disabled"} aria-label="Redo recent change">Redo</button>
+                    </div>
                     <span id="story-editor-save-status" class="story-editor-save-status" role="status" aria-live="polite" aria-atomic="true" data-state="${saveStatus.state}">${escapeHTML(saveStatus.message)}</span>
                     <button type="button" id="story-editor-retry-save-button" class="action-button-secondary" style="display:${saveStatus.showRetry ? "inline-flex" : "none"};">Retry save</button>
                     <button type="button" id="story-editor-save-button" class="action-button-primary">Save</button>
@@ -2589,9 +3533,16 @@ document.addEventListener("DOMContentLoaded", function () {
                     <label class="story-editor-field-label" for="story-editor-font-size">Font Size</label>
                         <input id="story-editor-font-size" class="story-editor-number" type="number" min="16" max="56" step="1" value="${Number(story.editor_settings.font_size || 28)}">
                     <label class="story-editor-field-label" for="story-editor-font-color">Font Colour</label>
-                    <input id="story-editor-font-color" class="story-editor-color" type="color" value="${story.editor_settings.font_color || "#ffffff"}">
+                    <div class="story-editor-color-row">
+                        <input id="story-editor-font-color" class="story-editor-color" type="color" value="${story.editor_settings.font_color || "#ffffff"}">
+                    </div>
+                    ${createColorSwatches("story-editor-font-color", story.editor_settings.font_color || "#ffffff")}
                     <label class="story-editor-field-label">Text Position</label>
                     ${createTextPositionSelects(story.editor_settings.text_position, "story-editor-text-position", null)}
+                    <label class="story-editor-field-label" for="story-editor-text-alignment">Text Alignment</label>
+                    <select id="story-editor-text-alignment" class="story-editor-select">${createTextAlignmentOptions(story.editor_settings.text_alignment)}</select>
+                    <label class="story-editor-field-label" for="story-editor-readability-treatment">Readability Treatment</label>
+                    <select id="story-editor-readability-treatment" class="story-editor-select">${createReadabilityTreatmentOptions(story.editor_settings.readability_treatment)}</select>
                         <div style="display:flex;align-items:center;gap:0.5rem;">
                             <label class="story-editor-field-label" for="story-editor-text-opacity" style="margin:0;">Text Box Opacity</label>
                             <span id="story-editor-text-opacity-value" style="font-size:0.85rem;color:#a8b3c7;min-width:2.5rem;text-align:right;">${Math.round((story.editor_settings.text_box_opacity ?? 0.6) * 100)}%</span>
@@ -2604,15 +3555,37 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
 
         storyPreviewContent.appendChild(shell);
+        shell.addEventListener("keydown", handleStoryEditorHistoryKeydown);
         shell.querySelector("#story-editor-preview-button")?.addEventListener("click", () => {
             renderStoryReadOnlyPreview();
         });
+        shell.querySelector("#story-editor-undo-button")?.addEventListener("click", () => {
+            applyStoryEditorHistoryDirection("undo");
+        });
+        shell.querySelector("#story-editor-redo-button")?.addEventListener("click", () => {
+            applyStoryEditorHistoryDirection("redo");
+        });
         const titleInput = shell.querySelector("#story-editor-title");
         titleInput.addEventListener("input", (event) => {
-            story.title = event.target.value;
-            const coverPage = story.pages.find((page) => parseInt(page.page_number, 10) === 0);
-            if (coverPage) coverPage.text = story.title;
-            scheduleStoryEditorAutosave();
+            applyStoryEditorMutation((editorStory) => {
+                editorStory.title = event.target.value;
+                const coverPage = editorStory.pages.find(
+                    (page) => parseInt(page.page_number, 10) === 0,
+                );
+                if (coverPage) coverPage.text = editorStory.title;
+            });
+        });
+
+        shell.querySelector("#story-editor-cover-subtitle")?.addEventListener("input", (event) => {
+            applyStoryEditorMutation((editorStory) => {
+                editorStory.cover_subtitle = event.target.value;
+            });
+        });
+
+        shell.querySelector("#story-editor-cover-author")?.addEventListener("input", (event) => {
+            applyStoryEditorMutation((editorStory) => {
+                editorStory.cover_author = event.target.value;
+            });
         });
 
         [
@@ -2620,13 +3593,15 @@ document.addEventListener("DOMContentLoaded", function () {
             ["#story-editor-font-family", "font_family", (value) => value],
             ["#story-editor-font-size", "font_size", (value) => parseInt(value, 10)],
             ["#story-editor-font-color", "font_color", (value) => value],
+            ["#story-editor-text-alignment", "text_alignment", (value) => normalizeTextAlignment(value, story.editor_settings.text_position)],
+            ["#story-editor-readability-treatment", "readability_treatment", (value) => normalizeReadabilityTreatment(value)],
             ["#story-editor-text-opacity", "text_box_opacity", (value) => Number(value)],
         ].forEach(([selector, key, parser]) => {
             const input = shell.querySelector(selector);
             input.addEventListener("input", (event) => {
-                story.editor_settings[key] = parser(event.target.value);
-                applyLivePreviewUpdate();
-                scheduleStoryEditorAutosave();
+                applyStoryEditorMutation((editorStory) => {
+                    editorStory.editor_settings[key] = parser(event.target.value);
+                });
             });
         });
 
@@ -2644,9 +3619,23 @@ document.addEventListener("DOMContentLoaded", function () {
             element.addEventListener("input", () => {
                 const vertical = shell.querySelector("#story-editor-text-position-v")?.value || "bottom";
                 const horizontal = shell.querySelector("#story-editor-text-position-h")?.value || "center";
-                story.editor_settings.text_position = combineTextPosition(vertical, horizontal);
-                applyLivePreviewUpdate();
-                scheduleStoryEditorAutosave();
+                applyStoryEditorMutation((editorStory) => {
+                    editorStory.editor_settings.text_position = combineTextPosition(
+                        vertical,
+                        horizontal,
+                    );
+                });
+            });
+        });
+
+        shell.querySelectorAll("[data-color-swatch-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const targetId = button.dataset.colorSwatchTarget;
+                const value = button.dataset.colorValue;
+                const targetInput = document.getElementById(targetId);
+                if (!targetInput) return;
+                targetInput.value = value;
+                targetInput.dispatchEvent(new Event("input", { bubbles: true }));
             });
         });
 
@@ -2666,6 +3655,10 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
             story.pages.forEach((page) => {
                 const pageSettings = getPageEffectiveSettings(story, page);
+                const isCoverPage = parseInt(page.page_number, 10) === 0;
+                const canMoveUp = !isCoverPage && parseInt(page.page_number, 10) > 1;
+                const canMoveDown = !isCoverPage && parseInt(page.page_number, 10) < story.pages.length - 1;
+                const canMerge = !isCoverPage && parseInt(page.page_number, 10) < story.pages.length - 1;
                 const pageCard = document.createElement("article");
                 pageCard.className = "story-editor-page-card";
                 pageCard.innerHTML = `
@@ -2677,7 +3670,15 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div class="story-editor-page-actions">
                             <button type="button" class="action-button-secondary" data-action="restore-text" data-page-id="${page.id}">Restore Text</button>
                             <button type="button" class="action-button-secondary" data-action="restore-image" data-page-id="${page.id}">Restore Image</button>
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-info" data-action="regen-text" data-page-id="${page.id}">Regenerate Text</button>`}
                             <button type="button" class="action-button-info" data-action="regen-image" data-page-id="${page.id}">Regenerate Image</button>
+                            <button type="button" class="action-button-secondary" data-action="add-page" data-page-id="${page.id}">Add Page After</button>
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="duplicate-page" data-page-id="${page.id}">Duplicate</button>`}
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="move-up" data-page-id="${page.id}" ${canMoveUp ? "" : "disabled"}>Move Up</button>`}
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="move-down" data-page-id="${page.id}" ${canMoveDown ? "" : "disabled"}>Move Down</button>`}
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="split-page" data-page-id="${page.id}">Split</button>`}
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="merge-page" data-page-id="${page.id}" ${canMerge ? "" : "disabled"}>Merge Next</button>`}
+                            ${isCoverPage ? "" : `<button type="button" class="action-button-secondary" data-action="delete-page" data-page-id="${page.id}">Delete</button>`}
                         </div>
                     </div>
                     <div class="story-editor-page-layout">
@@ -2685,9 +3686,10 @@ document.addEventListener("DOMContentLoaded", function () {
                             <div class="story-editor-page-stage">
                                 <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? `<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>` : `<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>`}</div>
                                 <div class="story-editor-text-card">
-                                    <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
+                                    <div class="story-editor-text-card-content">${parseInt(page.page_number, 10) === 0 ? createCoverPreviewMarkup(story) : escapeHTML(page.text || "")}</div>
                                 </div>
                             </div>
+                            <div class="story-editor-page-warnings" data-page-id="${page.id}"></div>
                         </div>
                         <div class="story-editor-page-controls">
                             <label class="story-editor-field-label">Page Text</label>
@@ -2696,6 +3698,10 @@ document.addEventListener("DOMContentLoaded", function () {
                                 <label class="story-editor-field-label">Text Position Override</label>
                                 ${createTextPositionSelects(page.editor_state.text_position || pageSettings.text_position, "page-text-pos-" + page.id, page.id)}
                             </div>
+                            <div>
+                                <label class="story-editor-field-label">Text Alignment Override</label>
+                                <select class="story-editor-select" data-page-field="text_alignment" data-page-id="${page.id}">${createTextAlignmentOptions(page.editor_state.text_alignment || pageSettings.text_alignment)}</select>
+                            </div>
                             <div class="story-editor-inline-grid">
                                 <div>
                                     <label class="story-editor-field-label">Font Size Override</label>
@@ -2703,7 +3709,10 @@ document.addEventListener("DOMContentLoaded", function () {
                                 </div>
                                 <div>
                                     <label class="story-editor-field-label">Font Colour Override</label>
-                                    <input class="story-editor-color" data-page-field="font_color" data-page-id="${page.id}" type="color" value="${page.editor_state.font_color || pageSettings.font_color || "#ffffff"}">
+                                    <div class="story-editor-color-row">
+                                        <input id="story-editor-page-font-color-${page.id}" class="story-editor-color" data-page-field="font_color" data-page-id="${page.id}" type="color" value="${page.editor_state.font_color || pageSettings.font_color || "#ffffff"}">
+                                    </div>
+                                    ${createColorSwatches(`story-editor-page-font-color-${page.id}`, page.editor_state.font_color || pageSettings.font_color || "#ffffff")}
                                 </div>
                             </div>
                             <div>
@@ -2731,42 +3740,65 @@ document.addEventListener("DOMContentLoaded", function () {
                 const imageSlot = pageCard.querySelector(".story-editor-page-image-slot");
                 const textCard = pageCard.querySelector(".story-editor-text-card");
                 applyEditorPreviewStyles(pageStage, imageSlot, textCard, pageSettings);
+                renderPageWarnings(story, page, pageCard.querySelector(".story-editor-page-preview"));
                 pagesContainer.appendChild(pageCard);
                 void hydrateStoryPageImage(story, page);
             });
         }
 
+        pagesContainer.querySelectorAll("[data-color-swatch-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const targetId = button.dataset.colorSwatchTarget;
+                const value = button.dataset.colorValue;
+                const targetInput = document.getElementById(targetId);
+                if (!targetInput) return;
+                targetInput.value = value;
+                targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+        });
+
         pagesContainer.querySelectorAll("[data-page-field]").forEach((input) => {
             input.addEventListener("input", (event) => {
                 const pageId = parseInt(event.target.dataset.pageId, 10);
                 const field = event.target.dataset.pageField;
-                const page = story.pages.find((item) => item.id === pageId);
-                if (!page) return;
-                if (field === "text") {
-                    page.text = event.target.value;
-                    if (parseInt(page.page_number, 10) === 0) story.title = event.target.value;
-                } else if (field === "text_position_v" || field === "text_position_h") {
-                    const pageCard = event.target.closest(".story-editor-page-card");
-                    const verticalInput = pageCard?.querySelector(`[data-page-field="text_position_v"][data-page-id="${pageId}"]`);
-                    const horizontalInput = pageCard?.querySelector(`[data-page-field="text_position_h"][data-page-id="${pageId}"]`);
-                    const vertical = verticalInput?.value || "bottom";
-                    const horizontal = horizontalInput?.value || "center";
-                    page.editor_state.text_position = combineTextPosition(vertical, horizontal);
-                } else if (field === "text_box_opacity") {
-                    page.editor_state[field] = event.target.value === "" ? null : Number(event.target.value);
-                    const valueEl = event.target
-                        .closest(".story-editor-page-controls")
-                        ?.querySelector(`[data-page-opacity-value="${pageId}"]`);
-                    if (valueEl) {
-                        valueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+                applyStoryEditorMutation((editorStory) => {
+                    const page = editorStory.pages.find((item) => item.id === pageId);
+                    if (!page) return;
+                    if (field === "text") {
+                        page.text = event.target.value;
+                        if (parseInt(page.page_number, 10) === 0) {
+                            editorStory.title = event.target.value;
+                        }
+                    } else if (field === "text_position_v" || field === "text_position_h") {
+                        const pageCard = event.target.closest(".story-editor-page-card");
+                        const verticalInput = pageCard?.querySelector(`[data-page-field="text_position_v"][data-page-id="${pageId}"]`);
+                        const horizontalInput = pageCard?.querySelector(`[data-page-field="text_position_h"][data-page-id="${pageId}"]`);
+                        const vertical = verticalInput?.value || "bottom";
+                        const horizontal = horizontalInput?.value || "center";
+                        page.editor_state.text_position = combineTextPosition(
+                            vertical,
+                            horizontal,
+                        );
+                    } else if (field === "text_box_opacity") {
+                        page.editor_state[field] = event.target.value === ""
+                            ? null
+                            : Number(event.target.value);
+                        const valueEl = event.target
+                            .closest(".story-editor-page-controls")
+                            ?.querySelector(`[data-page-opacity-value="${pageId}"]`);
+                        if (valueEl) {
+                            valueEl.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+                        }
+                    } else if (field === "font_size") {
+                        page.editor_state[field] = event.target.value
+                            ? parseInt(event.target.value, 10)
+                            : null;
+                    } else if (field === "text_alignment") {
+                        page.editor_state[field] = event.target.value || null;
+                    } else {
+                        page.editor_state[field] = event.target.value || null;
                     }
-                } else if (field === "font_size") {
-                    page.editor_state[field] = event.target.value ? parseInt(event.target.value, 10) : null;
-                } else {
-                    page.editor_state[field] = event.target.value || null;
-                }
-                applyLivePreviewUpdate();
-                scheduleStoryEditorAutosave();
+                });
             });
         });
 
@@ -2777,12 +3809,141 @@ document.addEventListener("DOMContentLoaded", function () {
                 const page = story.pages.find((item) => item.id === pageId);
                 if (!page) return;
                 if (action === "clear-overrides") {
-                    page.editor_state.text_position = null;
-                    page.editor_state.font_size = null;
-                    page.editor_state.font_color = null;
-                    page.editor_state.text_box_opacity = null;
-                    renderStoryEditor();
-                    scheduleStoryEditorAutosave();
+                    applyStoryEditorMutation((editorStory) => {
+                        const targetPage = editorStory.pages.find(
+                            (item) => item.id === pageId,
+                        );
+                        if (!targetPage) return;
+                        targetPage.editor_state.text_position = null;
+                        targetPage.editor_state.text_alignment = null;
+                        targetPage.editor_state.font_size = null;
+                        targetPage.editor_state.font_color = null;
+                        targetPage.editor_state.text_box_opacity = null;
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "add-page") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex < 0) return;
+                        editorStory.pages.splice(
+                            pageIndex + 1,
+                            0,
+                            createStoryEditorDraftPage(editorStory),
+                        );
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "duplicate-page") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex < 0) return;
+                        const sourcePage = editorStory.pages[pageIndex];
+                        const duplicatePage = createStoryEditorDraftPage(editorStory, {
+                            text: sourcePage.text,
+                            image_description: sourcePage.image_description,
+                            image_path: sourcePage.image_path,
+                            editor_state: {
+                                ...normalizePageEditorState(sourcePage),
+                                original_text: sourcePage.text || "",
+                                original_image_path: sourcePage.image_path || null,
+                            },
+                        });
+                        editorStory.pages.splice(pageIndex + 1, 0, duplicatePage);
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "move-up" || action === "move-down") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex <= 0) return;
+                        const swapIndex = action === "move-up"
+                            ? pageIndex - 1
+                            : pageIndex + 1;
+                        if (swapIndex <= 0 || swapIndex >= editorStory.pages.length) return;
+                        const [movingPage] = editorStory.pages.splice(pageIndex, 1);
+                        editorStory.pages.splice(swapIndex, 0, movingPage);
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "delete-page") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex <= 0) return;
+                        editorStory.pages.splice(pageIndex, 1);
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "split-page") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex <= 0) return;
+                        const targetPage = editorStory.pages[pageIndex];
+                        const textarea = document.querySelector(
+                            `[data-page-field="text"][data-page-id="${pageId}"]`,
+                        );
+                        const splitIndex = resolveStoryEditorSplitIndex(
+                            targetPage.text,
+                            textarea?.selectionStart,
+                        );
+                        if (splitIndex <= 0 || splitIndex >= String(targetPage.text || "").length) return;
+                        const firstText = String(targetPage.text || "").slice(0, splitIndex).trim();
+                        const secondText = String(targetPage.text || "").slice(splitIndex).trim();
+                        if (!firstText || !secondText) return;
+                        targetPage.text = firstText;
+                        targetPage.editor_state.original_text = firstText;
+                        const splitPage = createStoryEditorDraftPage(editorStory, {
+                            text: secondText,
+                            image_description: null,
+                            image_path: null,
+                            editor_state: {
+                                original_text: secondText,
+                                original_image_path: null,
+                            },
+                        });
+                        editorStory.pages.splice(pageIndex + 1, 0, splitPage);
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "merge-page") {
+                    applyStoryEditorMutation((editorStory) => {
+                        const pageIndex = findStoryEditorPageIndex(editorStory, pageId);
+                        if (pageIndex <= 0 || pageIndex >= editorStory.pages.length - 1) return;
+                        const targetPage = editorStory.pages[pageIndex];
+                        const nextPage = editorStory.pages[pageIndex + 1];
+                        targetPage.text = [targetPage.text, nextPage.text]
+                            .filter(Boolean)
+                            .join("\n\n")
+                            .trim();
+                        targetPage.editor_state.original_text = targetPage.text;
+                        editorStory.pages.splice(pageIndex + 1, 1);
+                        renumberStoryEditorPages(editorStory);
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "restore-text" && page.id <= 0) {
+                    applyStoryEditorMutation((editorStory) => {
+                        const targetPage = editorStory.pages.find((item) => item.id === pageId);
+                        if (!targetPage) return;
+                        targetPage.text = normalizePageEditorState(targetPage).original_text || "";
+                    }, { refresh: "render" });
+                    return;
+                }
+                if (action === "restore-image" && page.id <= 0) {
+                    applyStoryEditorMutation((editorStory) => {
+                        const targetPage = editorStory.pages.find((item) => item.id === pageId);
+                        if (!targetPage) return;
+                        targetPage.image_path = normalizePageEditorState(targetPage).original_image_path || null;
+                    }, { refresh: "render" });
+                    return;
+                }
+                if ((action === "regen-image" || action === "regen-text") && page.id <= 0) {
+                    displayMessage("Save the story once before regenerating this page.", "error");
                     return;
                 }
                 showSpinner();
@@ -2791,6 +3952,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         await restoreStoryPageText(pageId);
                     } else if (action === "restore-image") {
                         await restoreStoryPageImage(pageId);
+                    } else if (action === "regen-text") {
+                        await regenerateStoryPageText(pageId);
                     } else if (action === "regen-image") {
                         await regenerateStoryPageImage(pageId);
                     }
@@ -2802,10 +3965,9 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
-        if (exportPdfButton) {
-            exportPdfButton.style.display = story.pages && story.pages.length > 0 ? "inline-block" : "none";
-            exportPdfButton.classList.add("action-button-info");
-        }
+        setPdfActionButtonsVisibility(Boolean(story.pages && story.pages.length > 0));
+
+        updateStoryEditorHistoryControls();
     }
 
     function renderStoryReadOnlyPreview() {
@@ -2813,7 +3975,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!storyPreviewContent || !story) {
             console.error("[renderStoryReadOnlyPreview] Story preview content area or story data is missing.");
             displayMessage("Could not display story preview.", "error");
-            if (exportPdfButton) exportPdfButton.style.display = "none";
+            setPdfActionButtonsVisibility(false);
             return;
         }
 
@@ -2843,6 +4005,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         <div><dt>Font Size</dt><dd>${Number(story.editor_settings.font_size || STORY_EDITOR_DEFAULTS.font_size)}px</dd></div>
                         <div><dt>Font Colour</dt><dd>${escapeHTML(story.editor_settings.font_color || STORY_EDITOR_DEFAULTS.font_color)}</dd></div>
                         <div><dt>Text Position</dt><dd>${escapeHTML(story.editor_settings.text_position || STORY_EDITOR_DEFAULTS.text_position)}</dd></div>
+                        <div><dt>Text Alignment</dt><dd>${escapeHTML(normalizeTextAlignment(story.editor_settings.text_alignment, story.editor_settings.text_position))}</dd></div>
+                        <div><dt>Readability</dt><dd>${escapeHTML(story.editor_settings.readability_treatment || "Default")}</dd></div>
                         <div><dt>Text Box Opacity</dt><dd>${Math.round(Number(story.editor_settings.text_box_opacity ?? STORY_EDITOR_DEFAULTS.text_box_opacity) * 100)}%</dd></div>
                     </dl>
                 </aside>
@@ -2875,7 +4039,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <div class="story-editor-page-stage">
                                 <div class="story-editor-page-image-slot" data-page-id="${page.id}">${page.image_path ? '<div class="story-editor-page-image story-editor-page-image--placeholder">Loading image...</div>' : '<div class="story-editor-page-image story-editor-page-image--placeholder">Image unavailable</div>'}</div>
                                 <div class="story-editor-text-card">
-                                    <div class="story-editor-text-card-content">${escapeHTML(page.text || "")}</div>
+                                    <div class="story-editor-text-card-content">${parseInt(page.page_number, 10) === 0 ? createCoverPreviewMarkup(story) : escapeHTML(page.text || "")}</div>
                                 </div>
                             </div>
                         </div>
@@ -2890,10 +4054,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
 
-        if (exportPdfButton) {
-            exportPdfButton.style.display = story.pages && story.pages.length > 0 ? "inline-block" : "none";
-            exportPdfButton.classList.add("action-button-info");
-        }
+        setPdfActionButtonsVisibility(Boolean(story.pages && story.pages.length > 0));
     }
 
     // Function to render the story preview/editor
@@ -2901,12 +4062,14 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!story) {
             console.error("[displayStory] Story data is missing.");
             displayMessage("Could not display story preview.", "error");
-            if (exportPdfButton) exportPdfButton.style.display = "none";
+            setPdfActionButtonsVisibility(false);
             return;
         }
         console.log("[displayStory] Story object received:", JSON.parse(JSON.stringify(story)));
         storyEditorState.story = cloneStoryForEditor(story);
+        nextStoryEditorTempPageId = -1;
         storyEditorState.previewAvailable = options.previewAvailable !== false;
+        clearTimeout(storyEditorState.autosaveTimer);
         storyEditorState.saveStatus = {
             state: "saved",
             message: "Saved",
@@ -2915,6 +4078,7 @@ document.addEventListener("DOMContentLoaded", function () {
         storyEditorState.story.pages.forEach((page) => {
             page.__original = JSON.parse(JSON.stringify(page));
         });
+        resetStoryEditorHistory();
         if (options.mode === "preview") {
             renderStoryReadOnlyPreview();
         } else {
@@ -2933,6 +4097,7 @@ document.addEventListener("DOMContentLoaded", function () {
             storyPreviewSection,
             browseStoriesSection,
             charactersSection,
+            accountSection,
             adminPanelContainer,
         ].forEach((section) => {
             if (section) section.style.display = "none";
@@ -2952,7 +4117,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // we don't know if a story is loaded yet, so PDF button should be hidden.
             // displayStory will manage its visibility based on actual content.
             if (sectionToShow === storyPreviewSection) {
-                if (exportPdfButton) exportPdfButton.style.display = "none";
+                setPdfActionButtonsVisibility(false);
             }
         }
     }
@@ -2985,12 +4150,259 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function resetAccountHub() {
+        accountHubState.isLoading = false;
+        accountHubState.hasLoaded = false;
+        accountHubState.error = null;
+        accountHubState.user = null;
+        accountHubState.entitlement = null;
+        renderAccountHub();
+        setAccountStatusState(
+            "info",
+            "Account details load when you open this section.",
+        );
+    }
+
+    function setAccountStatusState(type, message, options = {}) {
+        const { showRetry = false } = options;
+
+        if (accountStatus) {
+            accountStatus.className = `inline-status inline-status--${type}`;
+            accountStatus.textContent = String(message || "");
+        }
+        if (accountRetryButton) {
+            accountRetryButton.style.display = showRetry ? "inline-block" : "none";
+            accountRetryButton.disabled = accountHubState.isLoading;
+        }
+    }
+
+    function formatCreditSummary(balance) {
+        if (!balance || typeof balance.remaining !== "number") {
+            return "Unavailable";
+        }
+        const total = typeof balance.total === "number" ? balance.total : 0;
+        return `${balance.remaining} of ${total}`;
+    }
+
+    function getEntitlementHeading(entitlement) {
+        const accessState = String(entitlement?.access_state || "").toLowerCase();
+
+        if (accessState === "trial") {
+            return entitlement?.trial_expires_at
+                ? `Trial active until ${formatDate(entitlement.trial_expires_at)}`
+                : "Trial active";
+        }
+
+        if (accessState === "paid-active") {
+            return entitlement?.renews_at
+                ? `Paid plan active until ${formatDate(entitlement.renews_at)}`
+                : "Paid plan active";
+        }
+
+        if (accessState === "grace") {
+            return entitlement?.renews_at
+                ? `Billing grace period until ${formatDate(entitlement.renews_at)}`
+                : "Billing grace period";
+        }
+
+        if (accessState === "suspended") {
+            return "Entitlement suspended";
+        }
+
+        return "Entitlement status unavailable";
+    }
+
+    function getEntitlementDetail(entitlement) {
+        if (!entitlement) {
+            return "Open Account to load your current entitlement.";
+        }
+
+        if (!entitlement.active_entitlement) {
+            return "No active entitlement is currently available for story or image generation.";
+        }
+
+        if (entitlement.can_generate_stories || entitlement.can_generate_images) {
+            return "Your current account can use the available story and image credits shown below.";
+        }
+
+        return "Generation is currently unavailable for this account state. Use the support links below if you need help.";
+    }
+
+    function renderAccountHub() {
+        if (accountIdentity) {
+            if (accountHubState.user) {
+                const username = accountHubState.user.username || "Account";
+                const email = accountHubState.user.email
+                    ? ` (${accountHubState.user.email})`
+                    : "";
+                accountIdentity.textContent = `Signed in as ${username}${email}.`;
+            } else {
+                accountIdentity.textContent = "Signed in account details will appear here.";
+            }
+        }
+
+        if (accountPlanStatus) {
+            accountPlanStatus.textContent = accountHubState.entitlement
+                ? getEntitlementHeading(accountHubState.entitlement)
+                : "Not loaded yet";
+        }
+        if (accountPlanDetail) {
+            accountPlanDetail.textContent = getEntitlementDetail(
+                accountHubState.entitlement,
+            );
+        }
+        if (accountStoryCredits) {
+            accountStoryCredits.textContent = formatCreditSummary(
+                accountHubState.entitlement?.story_credits,
+            );
+        }
+        if (accountImageCredits) {
+            accountImageCredits.textContent = formatCreditSummary(
+                accountHubState.entitlement?.image_credits,
+            );
+        }
+        if (accountUsageDetail) {
+            accountUsageDetail.textContent = accountHubState.entitlement
+                ? "Remaining credits reflect the current backend entitlement balance."
+                : "Credit balances will appear here after the account request completes.";
+        }
+    }
+
+    async function fetchAccountResource(endpoint) {
+        const response = await fetch(
+            `${API_BASE_URL}${endpoint}`,
+            buildAuthenticatedFetchOptions({
+                method: "GET",
+                headers: { Accept: "application/json" },
+            }),
+        );
+
+        let responseData = null;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            responseData = await response.json().catch(() => null);
+        } else {
+            const text = await response.text().catch(() => "");
+            responseData = text ? { detail: text } : null;
+        }
+
+        if (!response.ok) {
+            const detail = responseData?.detail
+                ? String(responseData.detail)
+                : `Request failed with status ${response.status}`;
+            if (response.status === 401) {
+                hasAuthenticatedSession = false;
+                clearLegacyAuthToken();
+                updateNav(false);
+                if (typeof showLoginForm === "function") {
+                    showLoginForm();
+                }
+            }
+            throw new Error(detail);
+        }
+
+        return responseData;
+    }
+
+    async function loadAccountHub(forceRefresh = false) {
+        if (!hasAuthenticatedSession || !accountSection) {
+            return;
+        }
+        if (accountHubState.isLoading) {
+            return;
+        }
+        if (accountHubState.hasLoaded && !forceRefresh) {
+            setAccountStatusState("success", "Account details are up to date.");
+            return;
+        }
+
+        accountHubState.isLoading = true;
+        accountHubState.error = null;
+        accountSection.setAttribute("aria-busy", "true");
+        setAccountStatusState("info", "Loading account details...");
+        if (accountPlanStatus) {
+            accountPlanStatus.textContent = "Loading account details...";
+        }
+        if (accountPlanDetail) {
+            accountPlanDetail.textContent = "Checking your current plan and trial status.";
+        }
+        if (accountStoryCredits) {
+            accountStoryCredits.textContent = "Loading...";
+        }
+        if (accountImageCredits) {
+            accountImageCredits.textContent = "Loading...";
+        }
+        if (accountUsageDetail) {
+            accountUsageDetail.textContent = "Fetching credit balances from your account.";
+        }
+
+        try {
+            const [user, entitlement] = await Promise.all([
+                fetchAccountResource("/api/v1/users/me"),
+                fetchAccountResource("/api/v1/users/me/entitlement"),
+            ]);
+            accountHubState.user = user;
+            accountHubState.entitlement = entitlement;
+            accountHubState.hasLoaded = true;
+            renderAccountHub();
+            setAccountStatusState("success", "Account details are up to date.");
+        } catch (error) {
+            accountHubState.user = null;
+            accountHubState.entitlement = null;
+            accountHubState.hasLoaded = false;
+            accountHubState.error = error;
+            renderAccountHub();
+            setAccountStatusState(
+                "error",
+                `We couldn't load your account details. ${error.message || "Please retry."}`,
+                { showRetry: true },
+            );
+        } finally {
+            accountHubState.isLoading = false;
+            accountSection.setAttribute("aria-busy", "false");
+            if (accountRetryButton) {
+                accountRetryButton.disabled = false;
+            }
+        }
+    }
+
+    function setAuthMode(mode) {
+        const authSectionHeading = authSection?.querySelector("h2");
+        const formsByMode = {
+            login: loginForm,
+            signup: signupForm,
+            forgot: forgotPasswordForm,
+            reset: resetPasswordForm,
+        };
+        const headingByMode = {
+            login: "Login",
+            signup: "Sign Up",
+            forgot: "Forgot Password",
+            reset: "Reset Password",
+        };
+
+        Object.entries(formsByMode).forEach(([key, formEl]) => {
+            if (formEl) {
+                formEl.style.display = key === mode ? "block" : "none";
+            }
+        });
+
+        if (authSectionHeading && headingByMode[mode]) {
+            authSectionHeading.textContent = headingByMode[mode];
+        }
+    }
+
+    function showLoginForm() {
+        setAuthMode("login");
+    }
+
     function updateNav(isLoggedIn) {
         if (isLoggedIn) {
             navLoginSignup.style.display = "none";
             navCreateStory.style.display = "inline-block";
             navBrowseStories.style.display = "inline-block";
             if (navCharacters) navCharacters.style.display = "inline-block";
+            if (navAccount) navAccount.style.display = "inline-block";
             navLogout.style.display = "inline-block";
             // Show admin link only if user is admin
             fetchAndSetUserRole(); // Call this to determine if admin link should be shown
@@ -2999,12 +4411,14 @@ document.addEventListener("DOMContentLoaded", function () {
             navCreateStory.style.display = "none";
             navBrowseStories.style.display = "none";
             if (navCharacters) navCharacters.style.display = "none";
+            if (navAccount) navAccount.style.display = "none";
             navLogout.style.display = "none";
             if (navAdminPanel) navAdminPanel.style.display = "none"; // Hide admin panel link on logout
             // Explicitly hide app sections and close any character modal
             try {
                 if (charactersSection) charactersSection.style.display = 'none';
                 if (storyCreationSection) storyCreationSection.style.display = 'none';
+                if (accountSection) accountSection.style.display = 'none';
                 const modal = document.getElementById('char-modal');
                 const backdrop = document.getElementById('char-modal-backdrop');
                 if (modal) modal.classList.remove('open');
@@ -3020,7 +4434,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function fetchAndSetUserRole() {
-        if (!localStorage.getItem("authToken")) {
+        if (!hasAuthenticatedSession) {
             if (navAdminPanel) navAdminPanel.style.display = "none";
             return;
         }
@@ -3092,7 +4506,6 @@ document.addEventListener("DOMContentLoaded", function () {
         body = null,
         isFormData = false,
     ) {
-        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - START >>>>>');
         try {
             // console.log('[apiRequest] Received body parameter (cleaned):', body === null ? null : JSON.parse(JSON.stringify(body)));
         } catch (e) {
@@ -3102,34 +4515,25 @@ document.addEventListener("DOMContentLoaded", function () {
                 body,
             );
         }
-        // console.log('[apiRequest] Received endpoint:', endpoint, 'Method:', method, 'isFormData:', isFormData);
 
-        const token = localStorage.getItem("authToken"); // Corrected: Use 'authToken'
-        const headers = {
-            Authorization: `Bearer ${token}`,
-        };
+        const headers = buildAuthenticatedHeaders();
         if (!isFormData) {
             headers["Content-Type"] = "application/json";
         }
 
-        const options = {
+        const options = buildAuthenticatedFetchOptions({
             method: method,
             headers: headers,
-        };
+        });
 
         if (body !== null && !isFormData) {
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 1 - Stringifying body for options.body >>>>>');
             try {
                 options.body = JSON.stringify(body);
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 2 - options.body after stringify >>>>>');
-                // console.log('[apiRequest] options.body (this is the string that will be sent):', options.body);
             } catch (e) {
-                // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - ERROR STRINGIFYING BODY >>>>>', e);
                 console.error(
                     "[apiRequest] Body object that failed to stringify:",
                     body,
                 );
-                // Display error to user and stop
                 displayMessage(
                     "Error preparing data for the server. See console for details.",
                     "error",
@@ -3142,28 +4546,11 @@ document.addEventListener("DOMContentLoaded", function () {
             console.log("[apiRequest] options.body is FormData.");
         }
 
-        // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 3 - Final options object before fetch >>>>>');
-        // console.log('[apiRequest] Final options object structure (logged directly):', options);
-        try {
-            // console.log('[apiRequest] Final options object (cleaned for inspection):', JSON.parse(JSON.stringify(options)));
-        } catch (e) {
-            console.error(
-                "[apiRequest] Could not stringify/parse final options for logging:",
-                e,
-                options,
-            );
-        }
-
-        // console.log('[apiRequest] Attempting to fetch URL:', `${API_BASE_URL}${endpoint}`);
         try {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 4 - Fetch returned >>>>>');
-            // console.log('[apiRequest] Response status:', response.status, 'Response ok:', response.ok);
-
             let responseData;
 
             if (!response.ok) {
-                // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 5A - Response NOT OK >>>>>');
                 try {
                     responseData = await response.json();
                 } catch (e) {
@@ -3175,7 +4562,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     };
                 }
                 let errorDetailRaw = responseData && responseData.detail ? responseData.detail : `Unknown error. Status: ${response.status}`;
-                // If FastAPI returns a list of validation errors, format them nicely
                 let errorDetail;
                 if (Array.isArray(errorDetailRaw)) {
                     errorDetail = errorDetailRaw.map(e => {
@@ -3188,18 +4574,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     errorDetail = String(errorDetailRaw);
                 }
                 console.error(`[apiRequest] API Error: ${errorDetail}`, responseData);
-                // Handle expired/invalid token (401)
-                if (
-                    response.status === 401 &&
-                    errorDetail &&
-                    errorDetail.toLowerCase().includes("token")
-                ) {
+                if (response.status === 401 && errorDetail) {
                     displayMessage(
                         "Your session has expired. Please log in again.",
                         "error",
                     );
-                    localStorage.removeItem("authToken");
-                    // Optionally, redirect to login or show login modal
+                    hasAuthenticatedSession = false;
+                    clearLegacyAuthToken();
+                    updateNav(false);
                     if (typeof showLoginForm === "function") showLoginForm();
                 } else {
                     displayMessage(String(errorDetail), "error");
@@ -3207,8 +4589,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error(String(errorDetail));
             }
 
-            // If response.ok is true
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 5B - Response OK, processing body >>>>>');
             try {
                 const contentType = response.headers.get("content-type");
                 if (
@@ -3216,19 +4596,15 @@ document.addEventListener("DOMContentLoaded", function () {
                     response.headers.get("content-length") === "0"
                 ) {
                     responseData = null;
-                    // console.log('[apiRequest] Success response data (No Content / Empty Body)');
                 } else if (
                     contentType &&
                     contentType.indexOf("application/json") !== -1
                 ) {
                     responseData = await response.json();
-                    // console.log('[apiRequest] Success response data (JSON):', responseData);
                 } else {
                     responseData = await response.text();
-                    // console.log('[apiRequest] Success response data (Text):', responseData);
                 }
             } catch (e) {
-                // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - ERROR PARSING SUCCESS RESPONSE BODY >>>>>', e);
                 displayMessage(
                     "Error processing server response. See console.",
                     "error",
@@ -3236,10 +4612,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw e;
             }
 
-            // console.log('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - STEP 6 - Returning responseData >>>>>');
             return responseData;
         } catch (error) {
-            // console.error('<<<<< SCRIPT_JS_VERSION_DEBUG_A - apiRequest - FETCH FAILED or error in response handling >>>>>', error);
             hideSpinner();
             displayMessage(
                 error.message ||
@@ -3377,13 +4751,9 @@ document.addEventListener("DOMContentLoaded", function () {
     async function deleteStory(storyId) {
         if (!confirm("Are you sure you want to delete this story?")) return;
         try {
-            const token = localStorage.getItem("authToken");
-            const response = await fetch(`${API_BASE_URL}/api/v1/stories/${storyId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/v1/stories/${storyId}`, buildAuthenticatedFetchOptions({
                 method: "DELETE",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+            }));
             if (!response.ok) {
                 let errorDetail = "Unknown error";
                 try {
@@ -3412,28 +4782,49 @@ document.addEventListener("DOMContentLoaded", function () {
     if (showSignupLink) {
         showSignupLink.addEventListener("click", (e) => {
             e.preventDefault();
-            if (loginForm && signupForm && authSection) {
-                loginForm.style.display = "none";
-                signupForm.style.display = "block";
-                const authSectionHeading = authSection.querySelector("h2");
-                if (authSectionHeading) {
-                    authSectionHeading.textContent = "Sign Up";
-                }
-            }
+            setAuthMode("signup");
         });
     }
 
     if (showLoginLink) {
         showLoginLink.addEventListener("click", (e) => {
             e.preventDefault();
-            if (loginForm && signupForm && authSection) {
-                signupForm.style.display = "none";
-                loginForm.style.display = "block";
-                const authSectionHeading = authSection.querySelector("h2");
-                if (authSectionHeading) {
-                    authSectionHeading.textContent = "Login";
-                }
-            }
+            showLoginForm();
+        });
+    }
+
+    if (showForgotPasswordLink) {
+        showForgotPasswordLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            setAuthMode("forgot");
+        });
+    }
+
+    if (showResetPasswordLink) {
+        showResetPasswordLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            setAuthMode("reset");
+        });
+    }
+
+    if (forgotPasswordBackToLoginLink) {
+        forgotPasswordBackToLoginLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            showLoginForm();
+        });
+    }
+
+    if (resetPasswordBackToLoginLink) {
+        resetPasswordBackToLoginLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            showLoginForm();
+        });
+    }
+
+    if (resetPasswordRequestLink) {
+        resetPasswordRequestLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            setAuthMode("forgot");
         });
     }
 
@@ -3455,12 +4846,43 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    if (navAccount) {
+        navAccount.addEventListener("click", async () => {
+            showSection(accountSection);
+            await loadAccountHub();
+        });
+    }
+
+    if (accountRetryButton) {
+        accountRetryButton.addEventListener("click", async () => {
+            await loadAccountHub(true);
+        });
+    }
+
     // --- AUTHENTICATION ---
+    const forgotPasswordFlowPresent = Boolean(
+        showForgotPasswordLink
+        || forgotPasswordBackToLoginLink
+        || resetPasswordRequestLink,
+    );
+    const resetPasswordFlowPresent = Boolean(
+        showResetPasswordLink
+        || resetPasswordBackToLoginLink
+        || resetPasswordRequestLink
+        || forgotPasswordForm,
+    );
+
     if (!signupForm) {
         console.error("[auth] signupForm not found; signup will not work.");
     }
     if (!loginForm) {
         console.error("[auth] loginForm not found; login will not work.");
+    }
+    if (!forgotPasswordForm && forgotPasswordFlowPresent) {
+        console.error("[auth] forgotPasswordForm not found; reset request will not work.");
+    }
+    if (!resetPasswordForm && resetPasswordFlowPresent) {
+        console.error("[auth] resetPasswordForm not found; password reset will not work.");
     }
     if (signupForm) console.log("[auth] Signup form listener attaching...");
     signupForm && signupForm.addEventListener("submit", async (e) => {
@@ -3478,8 +4900,7 @@ document.addEventListener("DOMContentLoaded", function () {
             await apiRequest("/api/v1/users/", "POST", { username, email, password }); // Add email to payload
             displayMessage("Signup successful! Please login.", "success");
             signupForm.reset();
-            if (loginForm) loginForm.style.display = "block";
-            signupForm.style.display = "none";
+            showLoginForm();
         } catch (error) { }
     });
 
@@ -3496,6 +4917,7 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch(`${API_BASE_URL}/api/v1/token`, {
                 method: "POST",
+                credentials: "include",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
@@ -3505,12 +4927,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 const errorData = await response.json().catch(() => ({ detail: "Login failed" }));
                 throw new Error(errorData.detail || "Login failed");
             }
-            const data = await response.json();
-            authToken = data.access_token;
-            localStorage.setItem("authToken", authToken);
-            updateNav(true);
-            showSection(storyCreationSection); // Show creation form first
-            populateAllDropdowns(); // Populate dropdowns
+            await response.json();
+            clearLegacyAuthToken();
+            enterAuthenticatedApp();
             loadAndDisplayUserStories(); // Then load stories
             displayMessage("Login successful!", "success");
 
@@ -3521,13 +4940,97 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    navLogout.addEventListener("click", () => {
-        authToken = null;
-        localStorage.removeItem("authToken");
+    forgotPasswordForm && forgotPasswordForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const identifier =
+            forgotPasswordForm.identifier?.value
+            || document.getElementById("forgot-password-identifier")?.value;
+
+        try {
+            const response = await apiRequest(
+                "/api/v1/password-reset/request",
+                "POST",
+                { identifier },
+            );
+            const resetTokenInput = document.getElementById("reset-password-token");
+            if (response?.reset_token_preview && resetTokenInput) {
+                resetTokenInput.value = response.reset_token_preview;
+            }
+            displayMessage(
+                response?.reset_token_preview
+                    ? "Reset token issued. The reset form has been prefilled for this local environment."
+                    : (response?.detail || "If the account exists, a reset token has been issued."),
+                "success",
+                { persistMs: 5000 },
+            );
+            setAuthMode("reset");
+        } catch (error) {
+            displayMessage(
+                error.message || "Could not request a password reset.",
+                "error",
+            );
+        }
+    });
+
+    resetPasswordForm && resetPasswordForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const token =
+            resetPasswordForm.token?.value
+            || document.getElementById("reset-password-token")?.value;
+        const newPassword =
+            resetPasswordForm.new_password?.value
+            || document.getElementById("reset-password-new-password")?.value;
+        const confirmPassword =
+            resetPasswordForm.confirm_password?.value
+            || document.getElementById("reset-password-confirm-password")?.value;
+
+        if (newPassword !== confirmPassword) {
+            displayMessage("Passwords do not match. Please re-enter.", "error");
+            return;
+        }
+
+        try {
+            const response = await apiRequest(
+                "/api/v1/password-reset/confirm",
+                "POST",
+                {
+                    token,
+                    new_password: newPassword,
+                    confirm_password: confirmPassword,
+                },
+            );
+            displayMessage(
+                response?.detail || "Password reset successful.",
+                "success",
+            );
+            resetPasswordForm.reset();
+            forgotPasswordForm?.reset();
+            showLoginForm();
+        } catch (error) {
+            displayMessage(
+                error.message || "Could not reset the password.",
+                "error",
+            );
+        }
+    });
+
+    navLogout.addEventListener("click", async () => {
+        try {
+            await fetch(
+                `${API_BASE_URL}/api/v1/logout`,
+                buildAuthenticatedFetchOptions({ method: "POST" }),
+            );
+        } catch (error) {
+            console.warn("[auth] Logout request failed.", error);
+        }
+        hasAuthenticatedSession = false;
+        clearLegacyAuthToken();
+        resetAccountHub();
         updateNav(false);
         displayMessage("Logged out.", "info");
         currentStoryId = null;
-        exportPdfButton.style.display = "none";
+        setPdfActionButtonsVisibility(false);
+        closePdfPreviewModal();
     });
 
     // --- STORY CREATION / DRAFT HANDLING ---
@@ -3577,6 +5080,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const ratioVal = document.getElementById("story-word-to-picture-ratio").value;
         const densityVal = document.getElementById("story-text-density").value;
         const imageStyleVal = document.getElementById("story-image-style").value;
+        const writingStyleVal = document.getElementById("story-writing-style")?.value;
+        const imageFitVal = document.getElementById("story-image-fit")?.value;
+        const coverTitlePlacementVal = document.getElementById("story-cover-title-placement")?.value;
+        const readabilityTreatmentVal = document.getElementById("story-readability-treatment")?.value;
         const pageFormatVal =
             document.getElementById("story-page-format")?.value
             || STORY_EDITOR_DEFAULTS.page_format;
@@ -3602,7 +5109,7 @@ document.addEventListener("DOMContentLoaded", function () {
             tone: document.getElementById("story-tone").value,
             setting: document.getElementById("story-setting").value,
             // Phase 3: add selected existing characters by id
-            character_ids: Array.from(characterLibraryState.selectedIds),
+            character_ids: getSelectedCharacterIds(),
             editor_settings: {
                 page_format: pageFormatVal,
                 layout_mode: layoutModeVal,
@@ -3618,9 +5125,17 @@ document.addEventListener("DOMContentLoaded", function () {
             },
         };
 
+        if (writingStyleVal) payload.writing_style = writingStyleVal;
         if (ratioVal) payload.word_to_picture_ratio = ratioVal;
         if (densityVal) payload.text_density = densityVal;
         if (imageStyleVal) payload.image_style = imageStyleVal;
+        if (imageFitVal) payload.editor_settings.image_fit = imageFitVal;
+        if (coverTitlePlacementVal) {
+            payload.editor_settings.cover_title_placement = coverTitlePlacementVal;
+        }
+        if (readabilityTreatmentVal) {
+            payload.editor_settings.readability_treatment = readabilityTreatmentVal;
+        }
 
         return payload;
     }
@@ -3994,6 +5509,71 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    if (pdfPreviewCloseButton) {
+        pdfPreviewCloseButton.addEventListener("click", () => {
+            closePdfPreviewModal();
+        });
+    }
+
+    if (pdfPreviewBackdrop) {
+        pdfPreviewBackdrop.addEventListener("click", () => {
+            closePdfPreviewModal();
+        });
+    }
+
+    if (pdfPreviewModal) {
+        pdfPreviewModal.addEventListener("click", (event) => {
+            if (event.target === pdfPreviewModal) {
+                closePdfPreviewModal();
+            }
+        });
+    }
+
+    window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && pdfPreviewModal?.classList.contains("open")) {
+            closePdfPreviewModal();
+        }
+    });
+
+    if (pdfPreviewDownloadButton) {
+        pdfPreviewDownloadButton.addEventListener("click", () => {
+            if (!pdfPreviewObjectUrl) {
+                displayMessage("Open a PDF preview before downloading.", "error");
+                return;
+            }
+            triggerPdfDownload(pdfPreviewObjectUrl, pdfPreviewFilename);
+            displayMessage("PDF downloaded from preview.", "success");
+        });
+    }
+
+    if (previewPdfButton) {
+        previewPdfButton.addEventListener("click", async () => {
+            if (!currentStoryId) {
+                displayMessage(
+                    "No story selected or story ID is missing. Cannot preview PDF.",
+                    "error",
+                );
+                return;
+            }
+
+            openPdfPreviewModal();
+            revokePdfPreviewUrl();
+            setPdfPreviewLoadingState("Preparing PDF preview... Please wait.");
+
+            try {
+                const { blob, filename } = await fetchStoryPdfBlob("inline");
+                pdfPreviewFilename = filename;
+                pdfPreviewObjectUrl = window.URL.createObjectURL(blob);
+                setPdfPreviewReadyState(pdfPreviewObjectUrl);
+                displayMessage("PDF preview ready.", "success");
+            } catch (error) {
+                console.error("[PDFPreview] Error preparing PDF preview:", error);
+                setPdfPreviewErrorState(`Error previewing PDF: ${error.message}`);
+                displayMessage(`Error previewing PDF: ${error.message}`, "error");
+            }
+        });
+    }
+
     // --- PDF EXPORT ---
     if (exportPdfButton) {
         exportPdfButton.addEventListener("click", async () => {
@@ -4009,50 +5589,10 @@ document.addEventListener("DOMContentLoaded", function () {
             showSpinner();
 
             try {
-                const token = localStorage.getItem("authToken");
-                const response = await fetch(
-                    `${API_BASE_URL}/api/v1/stories/${currentStoryId}/pdf`,
-                    {
-                        // Changed endpoint to /pdf
-                        method: "GET",
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    },
-                );
-
-                if (!response.ok) {
-                    let errorDetail = "Unknown error";
-                    try {
-                        const errorData = await response.json();
-                        errorDetail = errorData.detail || JSON.stringify(errorData);
-                    } catch (e) {
-                        errorDetail = await response.text();
-                    }
-                    throw new Error(
-                        `PDF export failed: ${response.status} ${response.statusText}. Detail: ${errorDetail}`,
-                    );
-                }
-
-                const blob = await response.blob();
-                const contentDisposition = response.headers.get("content-disposition");
-                let filename = "story.pdf"; // Default filename
-                if (contentDisposition) {
-                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
-                    if (filenameMatch && filenameMatch.length > 1) {
-                        filename = filenameMatch[1];
-                    }
-                }
-
+                const { blob, filename } = await fetchStoryPdfBlob("attachment");
                 const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.style.display = "none";
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
+                triggerPdfDownload(url, filename);
                 window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
 
                 displayMessage("PDF exported successfully!", "success");
             } catch (error) {
@@ -4089,6 +5629,8 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("story-num-pages").value = storyData.num_pages || 5;
         document.getElementById("story-tone").value = storyData.tone || "";
         document.getElementById("story-setting").value = storyData.setting || "";
+        document.getElementById("story-writing-style").value =
+            storyData.writing_style || "";
         document.getElementById("story-word-to-picture-ratio").value =
             storyData.word_to_picture_ratio || "One image per page";
         document.getElementById("story-text-density").value =
@@ -4106,6 +5648,24 @@ document.addEventListener("DOMContentLoaded", function () {
             layoutModeEl.value = normalizeLayoutMode(
                 editorSettings.layout_mode || STORY_EDITOR_DEFAULTS.layout_mode,
             );
+        }
+        const imageFitEl = document.getElementById("story-image-fit");
+        if (imageFitEl) {
+            imageFitEl.value = editorSettings.image_fit || "";
+        }
+        const coverTitlePlacementEl = document.getElementById(
+            "story-cover-title-placement",
+        );
+        if (coverTitlePlacementEl) {
+            coverTitlePlacementEl.value =
+                editorSettings.cover_title_placement || "";
+        }
+        const readabilityTreatmentEl = document.getElementById(
+            "story-readability-treatment",
+        );
+        if (readabilityTreatmentEl) {
+            readabilityTreatmentEl.value =
+                editorSettings.readability_treatment || "";
         }
         const prefillPos = parseTextPosition(
             editorSettings.text_position || STORY_EDITOR_DEFAULTS.text_position,
@@ -4129,6 +5689,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (index > 0) entry.remove();
         });
         characterCount = 0;
+        characterLibraryState.selectedByIndex.clear();
 
         if (storyData.main_characters && storyData.main_characters.length > 0) {
             storyData.main_characters.forEach((char, index) => {
@@ -4179,6 +5740,18 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
+        if (Array.isArray(storyData.character_ids)) {
+            storyData.character_ids.forEach((id, index) => {
+                if (Number.isInteger(id)) {
+                    characterLibraryState.selectedByIndex.set(index + 1, {
+                        id,
+                        name: `#${id}`,
+                    });
+                }
+            });
+        }
+        renderCharacterSelectionChips();
+
         if (isEditingDraft) {
             currentStoryId = storyData.id;
             currentStoryIsDraft = true;
@@ -4212,14 +5785,178 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
-    // ---- Character Library: rendering, selection, pagination ----
+    function fillCharacterFormFromItem(item, index) {
+        while (characterCount < index) addCharacterEntry();
+        const nameEl = document.getElementById(`char-name-${index}`);
+        const ageEl = document.getElementById(`char-age-${index}`);
+        const genderEl = document.getElementById(`char-gender-${index}`);
+        const physEl = document.getElementById(`char-physical-appearance-${index}`);
+        const clothEl = document.getElementById(`char-clothing-style-${index}`);
+        const traitsEl = document.getElementById(`char-key-traits-${index}`);
+
+        if (nameEl) nameEl.value = item?.name || '';
+        if (ageEl) ageEl.value = (item && item.age != null) ? item.age : '';
+        if (genderEl) {
+            if (genderEl.tagName === 'SELECT' && (!genderEl.options || genderEl.options.length <= 1)) {
+                try { populateDropdown(`char-gender-${index}`, 'genders'); } catch (e) { }
+            }
+            const val = item?.gender || '';
+            if (val) {
+                const options = Array.from(genderEl.options || []);
+                const match = options.find((option) => option.value.toLowerCase() === val.toLowerCase());
+                if (match) {
+                    genderEl.value = match.value;
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    genderEl.appendChild(opt);
+                    genderEl.value = val;
+                }
+            } else {
+                genderEl.value = '';
+            }
+        }
+        if (physEl) physEl.value = item?.description || item?.physical_appearance || '';
+        if (clothEl) clothEl.value = item?.clothing_style || '';
+        if (traitsEl) traitsEl.value = item?.key_traits || '';
+
+        const detailsDiv = document.getElementById(`char-details-${index}`);
+        const toggleBtn = document.getElementById(`char-details-toggle-${index}`);
+        if (detailsDiv && toggleBtn) {
+            detailsDiv.style.display = 'none';
+            syncCharacterDetailsDisclosure(toggleBtn, detailsDiv);
+        }
+    }
+
+    async function loadCharacterLibrary() {
+        const { list } = getLibraryEls();
+        if (!list) {
+            return;
+        }
+
+        try {
+            const params = new URLSearchParams();
+            if (characterLibraryState.q) params.set('q', characterLibraryState.q);
+            params.set('page', String(characterLibraryState.page));
+            params.set('page_size', String(characterLibraryState.pageSize));
+            const res = await apiRequest(`/api/v1/characters/?${params.toString()}`);
+            characterLibraryState.items = res?.items || [];
+            characterLibraryState.total = res?.total || 0;
+            characterLibraryState.initialized = true;
+            renderCharacterList();
+            renderPagination();
+        } catch (err) {
+            const msg = (err && err.message)
+                ? `Failed to load characters: ${escapeHTML(err.message)}`
+                : 'Failed to load characters.';
+            list.innerHTML = `<p class="error-message">${msg}</p>`;
+            console.error('[Character Library] Load failed:', err);
+        }
+    }
+
+    function renderCharacterList() {
+        const { list } = getLibraryEls();
+        if (!list) {
+            return;
+        }
+        if (!characterLibraryState.items.length) {
+            list.innerHTML = '<p>No characters found.</p>';
+            return;
+        }
+
+        const activeSelection = characterLibraryState.selectedByIndex.get(
+            characterLibraryState.activeIndex,
+        );
+        list.innerHTML = characterLibraryState.items.map((item) => {
+            const selected = activeSelection?.id === item.id;
+            const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
+            return `
+                <button type="button" class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" aria-pressed="${selected ? 'true' : 'false'}">
+                    <div class="thumb">
+                        ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail">` : '<div class="no-thumb">No image</div>'}
+                    </div>
+                    <div class="meta">
+                        <div class="name">
+                            <span>${escapeHTML(item.name)}</span>
+                            <span>#${item.id}</span>
+                        </div>
+                    </div>
+                </button>`;
+        }).join('');
+
+        list.querySelectorAll('.character-card').forEach((card) => {
+            card.addEventListener('click', async () => {
+                const id = parseInt(card.getAttribute('data-id'), 10);
+                const item = characterLibraryState.items.find((candidate) => candidate.id === id);
+                if (!item) {
+                    return;
+                }
+
+                let detail = item;
+                try {
+                    detail = await apiRequest(`/api/v1/characters/${id}`);
+                } catch (err) {
+                    console.warn('[Character Library] Failed to fetch detail for character', id, err);
+                }
+
+                const targetIdx = characterLibraryState.activeIndex || 1;
+                fillCharacterFormFromItem(detail || item, targetIdx);
+                characterLibraryState.selectedByIndex.set(targetIdx, {
+                    id,
+                    name: detail?.name || item.name || `#${id}`,
+                });
+                renderCharacterSelectionChips();
+                closeCharacterPickerModal();
+                displayMessage(`Loaded "${item?.name || 'Character'}" into Character ${targetIdx}.`, 'success', { persistMs: 2500 });
+            });
+        });
+    }
+
+    function renderPagination() {
+        const { pagination } = getLibraryEls();
+        if (!pagination) {
+            return;
+        }
+        const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
+        const cur = characterLibraryState.page;
+        pagination.innerHTML = `
+            <button id="lib-prev" ${cur <= 1 ? 'disabled' : ''} class="action-button-secondary">Prev</button>
+            <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
+            <button id="lib-next" ${cur >= totalPages ? 'disabled' : ''} class="action-button-secondary">Next</button>
+        `;
+        const prev = pagination.querySelector('#lib-prev');
+        const next = pagination.querySelector('#lib-next');
+        if (prev) prev.addEventListener('click', async () => {
+            if (characterLibraryState.page > 1) {
+                characterLibraryState.page -= 1;
+                await loadCharacterLibrary();
+            }
+        });
+        if (next) next.addEventListener('click', async () => {
+            if (characterLibraryState.page < totalPages) {
+                characterLibraryState.page += 1;
+                await loadCharacterLibrary();
+            }
+        });
+    }
+
+    // ---- Character Library: modal picker wiring ----
     async function initCharacterLibraryUI() {
-        const { panel, search, list, pagination } = getLibraryEls();
-        if (!panel || !list || !pagination) return;
-        // Show panel
-        panel.style.display = 'block';
-        // Wire Sync button once
-        const syncBtn = panel.querySelector('#character-sync-btn');
+        const {
+            createFromCurrentBtn,
+            close,
+            backdrop,
+            modal,
+            search,
+            syncBtn,
+            list,
+            pagination,
+        } = getLibraryEls();
+        if (!list || !pagination) return;
+
+        renderCharacterSelectionChips();
+
         if (syncBtn && !syncBtn._wired) {
             syncBtn.addEventListener('click', async () => {
                 try {
@@ -4234,14 +5971,12 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             syncBtn._wired = true;
         }
-        // Wire Create-from-current button
-        const createFromCurrentBtn = panel.querySelector('#character-create-from-current-btn');
+
         if (createFromCurrentBtn && !createFromCurrentBtn._wired) {
             createFromCurrentBtn.addEventListener('click', async () => {
                 try {
-                    // Build minimal characters from the current form entries (name only is fine)
                     const entries = Array.from(document.querySelectorAll('#main-characters-fieldset .character-entry'));
-                    const payloads = entries.map(entry => {
+                    const payloads = entries.map((entry) => {
                         const name = entry.querySelector('input[id^="char-name-"]')?.value?.trim();
                         const ageVal = entry.querySelector('input[id^="char-age-"]')?.value?.trim();
                         return {
@@ -4253,18 +5988,17 @@ document.addEventListener("DOMContentLoaded", function () {
                             key_traits: entry.querySelector('textarea[id^="char-key-traits-"]')?.value?.trim() || '',
                             image_style: document.getElementById('story-image-style')?.value || undefined,
                         };
-                    }).filter(c => c.name);
+                    }).filter((character) => character.name);
                     if (payloads.length === 0) {
                         displayMessage('Add at least one character name first.', 'warning');
                         return;
                     }
                     displayMessage('Saving characters to your library...', 'info');
-                    for (const p of payloads) {
+                    for (const payload of payloads) {
                         try {
-                            await apiRequest('/api/v1/characters/', 'POST', { ...p, generate_image: false });
+                            await apiRequest('/api/v1/characters/', 'POST', { ...payload, generate_image: false });
                         } catch (e) {
-                            // Continue saving others, but log errors
-                            console.error('[Create From Current] Failed to save character', p.name, e);
+                            console.error('[Create From Current] Failed to save character', payload.name, e);
                         }
                     }
                     await loadCharacterLibrary();
@@ -4276,31 +6010,6 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             createFromCurrentBtn._wired = true;
         }
-        // Selected chips bar
-        let chips = panel.querySelector('#selected-characters-chipbar');
-        if (!chips) {
-            chips = document.createElement('div');
-            chips.id = 'selected-characters-chipbar';
-            chips.style.margin = '6px 0 10px';
-            panel.insertBefore(chips, panel.firstChild);
-        }
-        const renderChips = () => {
-            const ids = Array.from(characterLibraryState.selectedIds);
-            if (ids.length === 0) {
-                chips.innerHTML = '<em>No existing characters selected.</em>';
-                return;
-            }
-            chips.innerHTML = ids.map(id => `<span class="chip" data-id="${id}" style="display:inline-block;padding:4px 8px;border:1px solid #4f8cff;border-radius:999px;margin:2px;color:#e5eaf2;background:#23272f;">#${id} <button data-id="${id}" class="remove-chip" style="margin-left:6px;background:transparent;border:none;color:#a6b0c3;cursor:pointer;">×</button></span>`).join('');
-            chips.querySelectorAll('.remove-chip').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = parseInt(e.currentTarget.getAttribute('data-id'), 10);
-                    characterLibraryState.selectedIds.delete(id);
-                    // Re-render list to reflect deselection
-                    renderCharacterList();
-                    renderChips();
-                });
-            });
-        };
 
         const onSearch = debounce(async () => {
             characterLibraryState.q = (search?.value || '').trim();
@@ -4311,152 +6020,32 @@ document.addEventListener("DOMContentLoaded", function () {
             search.addEventListener('input', onSearch);
             search._wired = true;
         }
-        await loadCharacterLibrary();
-
-        async function loadCharacterLibrary() {
-            try {
-                const params = new URLSearchParams();
-                if (characterLibraryState.q) params.set('q', characterLibraryState.q);
-                params.set('page', String(characterLibraryState.page));
-                params.set('page_size', String(characterLibraryState.pageSize));
-                const res = await apiRequest(`/api/v1/characters/?${params.toString()}`);
-                characterLibraryState.items = res?.items || [];
-                characterLibraryState.total = res?.total || 0;
-                renderCharacterList();
-                renderPagination();
-                renderChips();
-            } catch (err) {
-                const msg = (err && err.message) ? `Failed to load characters: ${escapeHTML(err.message)}` : 'Failed to load characters.';
-                list.innerHTML = `<p class="error-message">${msg}</p>`;
-                console.error('[Character Library] Load failed:', err);
-            }
+        if (close && !close._wired) {
+            close.addEventListener('click', () => closeCharacterPickerModal());
+            close._wired = true;
         }
-
-        function fillCharacterFormFromItem(item, index) {
-            // Ensure enough character entries exist
-            while (characterCount < index) addCharacterEntry();
-            const nameEl = document.getElementById(`char-name-${index}`);
-            const ageEl = document.getElementById(`char-age-${index}`);
-            const genderEl = document.getElementById(`char-gender-${index}`);
-            const physEl = document.getElementById(`char-physical-appearance-${index}`);
-            const clothEl = document.getElementById(`char-clothing-style-${index}`);
-            const traitsEl = document.getElementById(`char-key-traits-${index}`);
-
-            if (nameEl) nameEl.value = item?.name || '';
-            if (ageEl) ageEl.value = (item && item.age != null) ? item.age : '';
-            if (genderEl) {
-                // If it's a select without options, populate it
-                if (genderEl.tagName === 'SELECT' && (!genderEl.options || genderEl.options.length <= 1)) {
-                    try { populateDropdown(`char-gender-${index}`, 'genders'); } catch (e) { }
-                }
-                const val = item?.gender || '';
-                if (val) {
-                    const opts = Array.from(genderEl.options || []).map(o => o.value.toLowerCase());
-                    const cur = val.toLowerCase();
-                    if (opts.includes(cur)) {
-                        genderEl.value = Array.from(genderEl.options).find(o => o.value.toLowerCase() === cur).value;
-                    } else {
-                        const opt = document.createElement('option');
-                        opt.value = val; opt.textContent = val;
-                        genderEl.appendChild(opt);
-                        genderEl.value = val;
-                    }
-                } else {
-                    genderEl.value = '';
-                }
-            }
-            if (physEl) physEl.value = item?.description || item?.physical_appearance || '';
-            if (clothEl) clothEl.value = item?.clothing_style || '';
-            if (traitsEl) traitsEl.value = item?.key_traits || '';
-
-            // Collapse details for a clean view
-            const detailsDiv = document.getElementById(`char-details-${index}`);
-            const toggleBtn = document.getElementById(`char-details-toggle-${index}`);
-            if (detailsDiv && toggleBtn) {
-                detailsDiv.style.display = 'none';
-                toggleBtn.textContent = 'Show Details';
-            }
+        if (backdrop && !backdrop._wired) {
+            backdrop.addEventListener('click', () => closeCharacterPickerModal());
+            backdrop._wired = true;
         }
-
-        function renderCharacterList() {
-            if (!list) return;
-            if (!characterLibraryState.items.length) {
-                list.innerHTML = '<p>No characters found.</p>';
-                return;
-            }
-            list.innerHTML = characterLibraryState.items.map(item => {
-                const selected = characterLibraryState.selectedIds.has(item.id);
-                const imgSrc = item.thumbnail_path ? staticContentUrl(item.thumbnail_path) : '';
-                return `
-                <div class="character-card${selected ? ' selected' : ''}" data-id="${item.id}" style="border:1px solid ${selected ? '#4f8cff' : '#333'};border-radius:8px;padding:8px;cursor:pointer;background:${selected ? '#1f2937' : '#111'};">
-                    ${imgSrc ? `<img src="${imgSrc}" alt="${escapeHTML(item.name)} thumbnail" style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;" />` : '<div style="height:140px;background:#222;border-radius:6px;"></div>'}
-                    <div style="margin-top:6px;color:#e5eaf2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHTML(item.name)} <span style="color:#a6b0c3;font-size:0.85em;">(#${item.id})</span></div>
-                </div>`;
-            }).join('');
-            // Wire selection and load behavior
-            list.querySelectorAll('.character-card').forEach(card => {
-                card.addEventListener('click', async (e) => {
-                    const id = parseInt(card.getAttribute('data-id'), 10);
-                    const item = characterLibraryState.items.find(it => it.id === id);
-                    // Cmd/Ctrl+click toggles selection without loading
-                    if (e && (e.metaKey || e.ctrlKey)) {
-                        if (characterLibraryState.selectedIds.has(id)) {
-                            characterLibraryState.selectedIds.delete(id);
-                            card.classList.remove('selected');
-                            card.style.borderColor = '#333';
-                            card.style.background = '#111';
-                        } else {
-                            characterLibraryState.selectedIds.add(id);
-                            card.classList.add('selected');
-                            card.style.borderColor = '#4f8cff';
-                            card.style.background = '#1f2937';
-                        }
-                        renderChips();
-                        return;
-                    }
-                    // Plain click: load into current active slot and mark as selected
-                    const targetIdx = activeCharacterIndex || 1;
-                    let detail = item;
-                    try {
-                        // Fetch full details (age, gender, traits, etc.)
-                        detail = await apiRequest(`/api/v1/characters/${id}`);
-                    } catch (err) {
-                        // Fall back to list item if detail fails
-                        console.warn('[Character Library] Failed to fetch detail for character', id, err);
-                    }
-                    fillCharacterFormFromItem(detail || item, targetIdx);
-                    characterLibraryState.selectedIds.add(id);
-                    renderChips();
-                    displayMessage(`Loaded "${item?.name || 'Character'}" into Character ${targetIdx}.`, 'success', { persistMs: 2500 });
-                });
-            });
-        }
-
-        function renderPagination() {
-            if (!pagination) return;
-            const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
-            const cur = characterLibraryState.page;
-            // Simple prev/next
-            pagination.innerHTML = `
-                <button id="lib-prev" ${cur <= 1 ? 'disabled' : ''} class="action-button-secondary">Prev</button>
-                <span style="margin:0 8px;">Page ${cur} of ${totalPages}</span>
-                <button id="lib-next" ${cur >= totalPages ? 'disabled' : ''} class="action-button-secondary">Next</button>
-            `;
-            const prev = pagination.querySelector('#lib-prev');
-            const next = pagination.querySelector('#lib-next');
-            if (prev) prev.addEventListener('click', async () => {
-                if (characterLibraryState.page > 1) {
-                    characterLibraryState.page -= 1;
-                    await loadCharacterLibrary();
+        if (modal && !modal._wired) {
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    closeCharacterPickerModal();
                 }
             });
-            if (next) next.addEventListener('click', async () => {
-                const totalPages = Math.max(1, Math.ceil(characterLibraryState.total / characterLibraryState.pageSize));
-                if (characterLibraryState.page < totalPages) {
-                    characterLibraryState.page += 1;
-                    await loadCharacterLibrary();
+            modal._wired = true;
+        }
+        if (!window.__wizardCharacterPickerEscapeBound) {
+            window.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    const { modal: pickerModal } = getLibraryEls();
+                    if (pickerModal?.classList.contains('open')) {
+                        closeCharacterPickerModal();
+                    }
                 }
             });
+            window.__wizardCharacterPickerEscapeBound = true;
         }
     }
 
@@ -4477,7 +6066,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const m = el.id.match(/-(\d+)$/);
             if (m) {
                 const idx = parseInt(m[1], 10);
-                if (!Number.isNaN(idx)) activeCharacterIndex = idx;
+                if (!Number.isNaN(idx)) characterLibraryState.activeIndex = idx;
             }
         });
         mainCharactersFieldset.addEventListener("click", function (event) {
@@ -4487,8 +6076,24 @@ document.addEventListener("DOMContentLoaded", function () {
             if (target.classList.contains("remove-character-button")) {
                 const characterEntry = target.closest(".character-entry");
                 if (characterEntry) {
+                    const nameInput = characterEntry.querySelector('input[id^="char-name-"]');
+                    const match = nameInput?.id?.match(/-(\d+)$/);
+                    const index = match ? Number.parseInt(match[1], 10) : Number.NaN;
+                    if (!Number.isNaN(index)) {
+                        characterLibraryState.selectedByIndex.delete(index);
+                        renderCharacterSelectionChips();
+                        renderCharacterList();
+                    }
                     characterEntry.remove();
                     updateStepUI();
+                }
+                return;
+            }
+
+            if (target.classList.contains('wizard-character-picker-trigger')) {
+                const idx = Number.parseInt(target.getAttribute('data-character-index'), 10);
+                if (!Number.isNaN(idx)) {
+                    openCharacterPickerModal(idx, target);
                 }
                 return;
             }

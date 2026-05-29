@@ -1,8 +1,10 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from . import schemas
+from . import entitlements
 from backend.logging_config import error_logger
 # Added DynamicList, DynamicListItem
-from .database import User, Story, Page, DynamicList, DynamicListItem, StoryGenerationTask, Character, CharacterImage
+from .database import AdminAuditEvent, Character, CharacterImage, DynamicList, DynamicListItem, Page, PrivacyRequest, Story, StoryGenerationTask, User, WorkerHeartbeat
 from passlib.context import CryptContext
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
@@ -98,6 +100,7 @@ def validate_story_dynamic_list_values(
 
     return resolved_values
 
+
 def get_story_editor_settings(story: Story) -> Dict[str, Any]:
     """Return normalized document editor settings for a story."""
 
@@ -126,7 +129,14 @@ def get_effective_page_editor_settings(story: Story, page: Page) -> Dict[str, An
 
     settings = get_story_editor_settings(story)
     page_state = get_page_editor_state(page)
-    for key in ("text_position", "font_family", "font_size", "font_color"):
+    for key in (
+        "text_position",
+        "text_alignment",
+        "font_family",
+        "font_size",
+        "font_color",
+        "text_box_opacity",
+    ):
         value = page_state.get(key)
         if value not in (None, ""):
             settings[key] = value
@@ -171,6 +181,15 @@ def get_user_by_username(db: Session, username: str):
         User.username == username).first()
 
 
+def get_user_by_password_reset_token_hash(
+    db: Session,
+    token_hash: str,
+) -> Optional[User]:
+    return db.query(User).filter(
+        User.password_reset_token_hash == token_hash
+    ).first()
+
+
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = pwd_context.hash(user.password)
     db_user = User(
@@ -182,9 +201,174 @@ def create_user(db: Session, user: schemas.UserCreate):
         is_active=user.is_active if user.is_active is not None else True
     )  # Added user.email
     db.add(db_user)
+    db.flush()
+    entitlements.provision_trial_entitlement(db, db_user.id)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+def set_user_password_reset_token(
+    db: Session,
+    user: User,
+    *,
+    token_hash: str,
+    expires_at: datetime,
+) -> User:
+    user.password_reset_token_hash = token_hash
+    user.password_reset_token_expires_at = expires_at
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def clear_user_password_reset_token(db: Session, user: User) -> User:
+    user.password_reset_token_hash = None
+    user.password_reset_token_expires_at = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_password(db: Session, user: User, hashed_password: str) -> User:
+    user.hashed_password = hashed_password
+    user.password_reset_token_hash = None
+    user.password_reset_token_expires_at = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def create_admin_audit_event(
+    db: Session,
+    *,
+    admin_user_id: int,
+    event_type: str,
+    target_type: str,
+    target_id: Optional[int] = None,
+    metadata_json: Optional[Dict[str, Any]] = None,
+    commit: bool = True,
+) -> AdminAuditEvent:
+    """Persist a sparse audit record for a sensitive admin mutation."""
+
+    audit_event = AdminAuditEvent(
+        admin_user_id=admin_user_id,
+        event_type=event_type,
+        target_type=target_type,
+        target_id=target_id,
+        metadata_json=metadata_json or {},
+    )
+    db.add(audit_event)
+    if commit:
+        db.commit()
+        db.refresh(audit_event)
+    else:
+        db.flush()
+    return audit_event
+
+
+def _mark_user_soft_deleted(db_user: User) -> None:
+    """Apply the repository's existing soft-delete posture to a user row."""
+
+    db_user.is_deleted = True
+    db_user.is_active = False
+
+
+def create_privacy_request(
+    db: Session,
+    *,
+    user_id: int,
+    request_type: schemas.PrivacyRequestType,
+) -> PrivacyRequest:
+    """Create a privacy request unless an open request of the same type exists."""
+
+    duplicate = db.query(PrivacyRequest).filter(
+        PrivacyRequest.user_id == user_id,
+        PrivacyRequest.request_type == request_type.value,
+        PrivacyRequest.status.in_(
+            [
+                schemas.PrivacyRequestStatus.SUBMITTED.value,
+                schemas.PrivacyRequestStatus.IN_REVIEW.value,
+            ]
+        ),
+    ).first()
+    if duplicate is not None:
+        raise ValueError("duplicate_open_request")
+
+    privacy_request = PrivacyRequest(
+        user_id=user_id,
+        request_type=request_type.value,
+        status=schemas.PrivacyRequestStatus.SUBMITTED.value,
+    )
+    db.add(privacy_request)
+    db.commit()
+    db.refresh(privacy_request)
+    return privacy_request
+
+
+def get_privacy_requests_for_user(db: Session, *, user_id: int) -> List[PrivacyRequest]:
+    """Return a user's privacy requests ordered from newest to oldest."""
+
+    return db.query(PrivacyRequest).filter(
+        PrivacyRequest.user_id == user_id,
+    ).order_by(PrivacyRequest.created_at.desc(), PrivacyRequest.id.desc()).all()
+
+
+def get_privacy_requests_admin(db: Session) -> List[PrivacyRequest]:
+    """Return all privacy requests for admin review."""
+
+    return db.query(PrivacyRequest).order_by(
+        PrivacyRequest.created_at.desc(),
+        PrivacyRequest.id.desc(),
+    ).all()
+
+
+def get_privacy_request(db: Session, *, request_id: int) -> Optional[PrivacyRequest]:
+    """Return one privacy request by id."""
+
+    return db.query(PrivacyRequest).filter(PrivacyRequest.id == request_id).first()
+
+
+def update_privacy_request_status(
+    db: Session,
+    *,
+    request_id: int,
+    status_value: schemas.PrivacyRequestStatus,
+    admin_user_id: int,
+) -> Optional[PrivacyRequest]:
+    """Update a privacy request status and apply delete completion when needed."""
+
+    privacy_request = get_privacy_request(db, request_id=request_id)
+    if privacy_request is None:
+        return None
+
+    next_status = status_value.value
+    if privacy_request.status == next_status:
+        return privacy_request
+
+    privacy_request.status = next_status
+    privacy_request.reviewed_by_admin_id = admin_user_id
+    privacy_request.completed_at = (
+        datetime.now(timezone.utc)
+        if next_status == schemas.PrivacyRequestStatus.COMPLETED.value
+        else None
+    )
+
+    if (
+        privacy_request.request_type
+        == schemas.PrivacyRequestType.ACCOUNT_DELETE.value
+        and next_status == schemas.PrivacyRequestStatus.COMPLETED.value
+    ):
+        db_user = db.query(User).filter(User.id == privacy_request.user_id).first()
+        if db_user is not None and not db_user.is_deleted:
+            _mark_user_soft_deleted(db_user)
+
+    db.commit()
+    db.refresh(privacy_request)
+    return privacy_request
 
 # Admin CRUD for Users
 
@@ -236,6 +420,8 @@ def create_story_db_entry(db: Session, story_data: schemas.StoryBase, user_id: i
 
     db_story = Story(
         title=final_title,  # Title can be None for drafts
+        cover_subtitle=story_data.cover_subtitle,
+        cover_author=story_data.cover_author,
         genre=resolved_values["genre"],
         # Changed from outline to story_outline
         story_outline=story_data.story_outline,
@@ -279,6 +465,8 @@ def create_story_draft(db: Session, story_data: schemas.StoryCreate, user_id: in
 
     db_story_draft = Story(
         title=story_data.title,  # Can be None or a preliminary title
+        cover_subtitle=story_data.cover_subtitle,
+        cover_author=story_data.cover_author,
         genre=resolved_values["genre"],
         story_outline=story_data.story_outline,
         main_characters=jsonable_encoder(story_data.main_characters),
@@ -409,6 +597,101 @@ def update_story_title(db: Session, story_id: int, new_title: str) -> Optional[S
     return None
 
 
+def _build_editor_state_for_page_update(
+    db_page: Optional[Page],
+    page_update: schemas.StoryEditorPageUpdate,
+    fallback_text: str,
+    fallback_image_path: Optional[str],
+) -> Dict[str, Any]:
+    """Build a page editor state while preserving restore baselines."""
+
+    state = get_page_editor_state(db_page) if db_page is not None else {}
+    if page_update.editor_state is not None:
+        state.update(page_update.editor_state.model_dump(exclude_none=True))
+    if not state.get("original_text"):
+        state["original_text"] = fallback_text
+    if not state.get("original_image_path"):
+        state["original_image_path"] = fallback_image_path
+    return state
+
+
+def _replace_story_editor_pages(
+    db: Session,
+    db_story: Story,
+    editor_update: schemas.StoryEditorUpdate,
+) -> None:
+    """Replace a story's page sequence using the editor payload order."""
+
+    existing_pages = {
+        page.id: page
+        for page in db.query(Page).filter(Page.story_id == db_story.id).all()
+    }
+    if not editor_update.pages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Editor page list cannot be empty.",
+        )
+
+    cover_page = next(
+        (page for page in existing_pages.values() if page.page_number == 0),
+        None,
+    )
+    first_page_id = editor_update.pages[0].id
+    if cover_page is not None and first_page_id != cover_page.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cover page must remain first.",
+        )
+
+    retained_page_ids = set()
+    for index, page_update in enumerate(editor_update.pages):
+        db_page = None
+        if page_update.id is not None:
+            db_page = existing_pages.get(page_update.id)
+            if db_page is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Page not found",
+                )
+            retained_page_ids.add(db_page.id)
+        else:
+            db_page = Page(story_id=db_story.id, page_number=index, text="")
+            db.add(db_page)
+
+        next_page_number = 0 if index == 0 else index
+        next_text = page_update.text if page_update.text is not None else db_page.text
+        next_image_description = (
+            page_update.image_description
+            if page_update.image_description is not None
+            else db_page.image_description
+        )
+        next_image_path = (
+            page_update.image_path
+            if page_update.image_path is not None
+            else db_page.image_path
+        )
+
+        db_page.page_number = next_page_number
+        db_page.text = next_text or ""
+        db_page.image_description = next_image_description
+        db_page.image_path = next_image_path
+        db_page.editor_state = _build_editor_state_for_page_update(
+            db_page if page_update.id is not None else None,
+            page_update,
+            fallback_text=db_page.text,
+            fallback_image_path=db_page.image_path,
+        )
+
+        if next_page_number == 0 and db_page.text.strip():
+            db_story.title = db_page.text.strip()
+
+    for page_id, db_page in existing_pages.items():
+        if page_id not in retained_page_ids:
+            db.delete(db_page)
+
+    db_story.num_pages = max(len(editor_update.pages) - 1, 0)
+
+
 def save_story_editor(
     db: Session,
     story_id: int,
@@ -431,12 +714,28 @@ def save_story_editor(
             title_page.text = db_story.title
             title_page.editor_state = get_page_editor_state(title_page)
 
+    if editor_update.cover_subtitle is not None:
+        db_story.cover_subtitle = editor_update.cover_subtitle.strip() or None
+
+    if editor_update.cover_author is not None:
+        db_story.cover_author = editor_update.cover_author.strip() or None
+
     if editor_update.editor_settings is not None:
         current_settings = get_story_editor_settings(db_story)
         current_settings.update(
             editor_update.editor_settings.model_dump(exclude_none=True)
         )
         db_story.editor_settings = current_settings
+
+    if editor_update.replace_pages:
+        _replace_story_editor_pages(
+            db=db,
+            db_story=db_story,
+            editor_update=editor_update,
+        )
+        db.commit()
+        db.refresh(db_story)
+        return db_story
 
     pages_by_id = {
         page.id: page
@@ -455,11 +754,12 @@ def save_story_editor(
             if db_page.page_number == 0:
                 db_story.title = page_update.text.strip() or db_story.title
 
-        state = get_page_editor_state(db_page)
-        if page_update.editor_state is not None:
-            state.update(
-                page_update.editor_state.model_dump(exclude_none=True))
-        db_page.editor_state = state
+        db_page.editor_state = _build_editor_state_for_page_update(
+            db_page,
+            page_update,
+            fallback_text=db_page.text,
+            fallback_image_path=db_page.image_path,
+        )
 
     db.commit()
     db.refresh(db_story)
@@ -600,7 +900,7 @@ def update_user_role_admin(db: Session, user_id: int, role: str) -> Optional[Use
     return None
 
 
-def soft_delete_user_admin(db: Session, user_id: int) -> bool:
+def soft_delete_user_admin(db: Session, user_id: int, *, commit: bool = True) -> bool:
     """Soft delete a user by setting is_deleted=True and deactivating the account.
 
     Returns True if updated, False if user does not exist or already deleted.
@@ -609,9 +909,11 @@ def soft_delete_user_admin(db: Session, user_id: int) -> bool:
                                     User.is_deleted == False).first()
     if not db_user:
         return False
-    db_user.is_deleted = True
-    db_user.is_active = False
-    db.commit()
+    _mark_user_soft_deleted(db_user)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return True
 
 
@@ -932,11 +1234,17 @@ def update_story_with_generated_content(db: Session, story_id: int, story_conten
     return db_story
 
 
-def create_story_generation_task(db: Session, story_id: int, user_id: int) -> Optional[schemas.StoryGenerationTask]:
+def create_story_generation_task(
+    db: Session,
+    story_id: int,
+    user_id: int,
+    reservation_id: int | None = None,
+) -> Optional[schemas.StoryGenerationTask]:
     new_task = StoryGenerationTask(
         id=str(uuid.uuid4()),
         story_id=story_id,
         user_id=user_id,
+        reservation_id=reservation_id,
         status=schemas.GenerationTaskStatus.PENDING.value,
         progress=0,
         current_step=schemas.GenerationTaskStep.INITIALIZING.value,
@@ -950,6 +1258,125 @@ def create_story_generation_task(db: Session, story_id: int, user_id: int) -> Op
 
 def get_story_generation_task(db: Session, task_id: str) -> Optional[StoryGenerationTask]:
     return db.query(StoryGenerationTask).filter(StoryGenerationTask.id == task_id).first()
+
+
+def claim_next_pending_story_generation_task(
+    db: Session,
+) -> Optional[StoryGenerationTask]:
+    """Claim the oldest pending story task for the single worker runtime."""
+
+    task = (
+        db.query(StoryGenerationTask)
+        .filter(
+            StoryGenerationTask.status == schemas.GenerationTaskStatus.PENDING.value,
+        )
+        .order_by(StoryGenerationTask.created_at.asc(), StoryGenerationTask.id.asc())
+        .first()
+    )
+    if task is None:
+        return None
+
+    task.status = schemas.GenerationTaskStatus.IN_PROGRESS.value
+    task.current_step = schemas.GenerationTaskStep.INITIALIZING.value
+    task.error_message = None
+    if task.started_at is None:
+        task.started_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def upsert_worker_heartbeat(
+    db: Session,
+    *,
+    runtime_id: str,
+    runtime_role: str = "worker",
+    hostname: str | None = None,
+    heartbeat_at: Optional[datetime] = None,
+) -> WorkerHeartbeat:
+    """Persist the latest heartbeat timestamp for a worker runtime."""
+
+    current_time = heartbeat_at or datetime.now(timezone.utc)
+    heartbeat = db.query(WorkerHeartbeat).filter(
+        WorkerHeartbeat.runtime_id == runtime_id,
+    ).first()
+
+    if heartbeat is None:
+        heartbeat = WorkerHeartbeat(
+            runtime_id=runtime_id,
+            runtime_role=runtime_role,
+            hostname=hostname,
+            last_heartbeat_at=current_time,
+        )
+    else:
+        heartbeat.runtime_role = runtime_role
+        heartbeat.hostname = hostname
+        heartbeat.last_heartbeat_at = current_time
+
+    db.add(heartbeat)
+    db.commit()
+    db.refresh(heartbeat)
+    return heartbeat
+
+
+def get_latest_worker_heartbeat(
+    db: Session,
+    *,
+    runtime_role: str = "worker",
+) -> Optional[WorkerHeartbeat]:
+    """Return the most recent worker heartbeat for the requested runtime role."""
+
+    return (
+        db.query(WorkerHeartbeat)
+        .filter(WorkerHeartbeat.runtime_role == runtime_role)
+        .order_by(
+            WorkerHeartbeat.last_heartbeat_at.desc(),
+            WorkerHeartbeat.runtime_id.asc(),
+        )
+        .first()
+    )
+
+
+def count_worker_heartbeats(
+    db: Session,
+    *,
+    runtime_role: str = "worker",
+) -> int:
+    """Return the number of registered worker heartbeat rows."""
+
+    return int(
+        db.query(func.count(WorkerHeartbeat.runtime_id))
+        .filter(WorkerHeartbeat.runtime_role == runtime_role)
+        .scalar()
+        or 0
+    )
+
+
+def get_story_generation_queue_counts(db: Session) -> Dict[str, int]:
+    """Return a compact queue snapshot for operational monitoring."""
+
+    pending_count = int(
+        db.query(func.count(StoryGenerationTask.id))
+        .filter(
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.PENDING.value,
+        )
+        .scalar()
+        or 0
+    )
+    in_progress_count = int(
+        db.query(func.count(StoryGenerationTask.id))
+        .filter(
+            StoryGenerationTask.status
+            == schemas.GenerationTaskStatus.IN_PROGRESS.value,
+        )
+        .scalar()
+        or 0
+    )
+    return {
+        "pending": pending_count,
+        "in_progress": in_progress_count,
+    }
 
 
 def update_story_generation_task_progress(
@@ -1225,7 +1652,8 @@ def repair_public_character_thumbnail(db: Session, character: Character) -> str:
 
         ext = os.path.splitext(source_abs)[1].lower() or ".png"
         dest_rel_dir = os.path.join(
-            "images", f"user_{character.user_id}", "characters", str(character.id)
+            "images", f"user_{character.user_id}", "characters", str(
+                character.id)
         )
         dest_rel_path = os.path.join(dest_rel_dir, f"{uuid.uuid4()}{ext}")
 

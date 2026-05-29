@@ -4,8 +4,10 @@ from typing import List, Optional
 
 from backend import crud, schemas, database
 from backend.auth import get_current_admin_user
+from backend.image_style_mapping import get_admin_image_style_mapping_state
 from backend.logging_config import app_logger, error_logger
 from backend.database import get_db
+from backend.settings import get_settings
 from sqlalchemy import func, and_
 from datetime import datetime, timedelta, timezone
 
@@ -108,7 +110,134 @@ def get_admin_stats(db: Session = Depends(get_db)):
         avg_attempts_last_24h=avg_attempts,
     )
 
+
+@admin_router.get(
+    "/broadcasts",
+    response_model=List[schemas.AdminBroadcast],
+)
+def list_admin_broadcasts(db: Session = Depends(get_db)):
+    """Return recent broadcast records for the admin dashboard."""
+
+    from backend.database import AdminBroadcast
+
+    return db.query(AdminBroadcast).order_by(AdminBroadcast.sent_at.desc()).all()
+
+
+@admin_router.post(
+    "/broadcasts",
+    response_model=schemas.AdminBroadcast,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_admin_broadcast(
+    broadcast: schemas.AdminBroadcastCreate,
+    db: Session = Depends(get_db),
+    current_admin_user=Depends(get_current_admin_user),
+):
+    """Persist a minimal broadcast record and mark it sent to active users."""
+
+    from backend.database import AdminBroadcast, User
+
+    recipient_count = db.query(func.count(User.id)).filter(
+        User.is_active == True,
+        User.is_deleted == False,
+    ).scalar() or 0
+
+    db_broadcast = AdminBroadcast(
+        title=broadcast.title,
+        message=broadcast.message,
+        target_scope="all_active_users",
+        status="sent",
+        recipient_count=recipient_count,
+        created_by_user_id=current_admin_user.id,
+        sent_at=datetime.now(timezone.utc),
+    )
+    db.add(db_broadcast)
+    db.commit()
+    db.refresh(db_broadcast)
+    return db_broadcast
+
+
+@admin_router.get(
+    "/analytics",
+    response_model=schemas.AdminAnalyticsSummary,
+)
+def get_admin_analytics(db: Session = Depends(get_db)):
+    """Return product-facing usage summaries for the admin dashboard."""
+
+    from backend.database import AdminBroadcast, Character, Story
+    from backend.database import StoryGenerationTask, User
+
+    now = datetime.now(timezone.utc)
+    since_7d = now - timedelta(days=7)
+    since_30d = now - timedelta(days=30)
+
+    users_registered_last_7d = db.query(func.count(User.id)).filter(
+        User.created_at >= since_7d,
+    ).scalar() or 0
+    stories_created_last_7d = db.query(func.count(Story.id)).filter(
+        Story.created_at >= since_7d,
+    ).scalar() or 0
+    stories_generated_last_7d = db.query(func.count(Story.id)).filter(
+        Story.generated_at >= since_7d,
+        Story.is_draft == False,
+    ).scalar() or 0
+    characters_created_last_7d = db.query(func.count(Character.id)).filter(
+        Character.created_at >= since_7d,
+    ).scalar() or 0
+    active_story_authors_last_7d = db.query(
+        func.count(func.distinct(Story.owner_id))
+    ).filter(Story.created_at >= since_7d).scalar() or 0
+
+    completed_tasks_last_7d = db.query(func.count(StoryGenerationTask.id)).filter(
+        StoryGenerationTask.created_at >= since_7d,
+        StoryGenerationTask.status == schemas.GenerationTaskStatus.COMPLETED.value,
+    ).scalar() or 0
+    failed_tasks_last_7d = db.query(func.count(StoryGenerationTask.id)).filter(
+        StoryGenerationTask.created_at >= since_7d,
+        StoryGenerationTask.status == schemas.GenerationTaskStatus.FAILED.value,
+    ).scalar() or 0
+
+    generation_success_rate_last_7d = None
+    if completed_tasks_last_7d + failed_tasks_last_7d > 0:
+        generation_success_rate_last_7d = completed_tasks_last_7d / (
+            completed_tasks_last_7d + failed_tasks_last_7d
+        )
+
+    broadcasts_sent_last_30d = db.query(func.count(AdminBroadcast.id)).filter(
+        AdminBroadcast.sent_at >= since_30d,
+    ).scalar() or 0
+    broadcast_recipients_last_30d = db.query(
+        func.coalesce(func.sum(AdminBroadcast.recipient_count), 0)
+    ).filter(AdminBroadcast.sent_at >= since_30d).scalar() or 0
+
+    return schemas.AdminAnalyticsSummary(
+        users_registered_last_7d=users_registered_last_7d,
+        stories_created_last_7d=stories_created_last_7d,
+        stories_generated_last_7d=stories_generated_last_7d,
+        characters_created_last_7d=characters_created_last_7d,
+        active_story_authors_last_7d=active_story_authors_last_7d,
+        generation_success_rate_last_7d=generation_success_rate_last_7d,
+        broadcasts_sent_last_30d=broadcasts_sent_last_30d,
+        broadcast_recipients_last_30d=broadcast_recipients_last_30d,
+    )
+
 # DynamicList Endpoints
+
+
+@admin_router.get(
+    "/image-style-mappings",
+    response_model=schemas.AdminImageStyleMappingState,
+)
+def read_image_style_mapping_state_endpoint(
+    db: Session = Depends(get_db),
+):
+    """Return the effective image style mapping state for admin tooling."""
+
+    settings = get_settings()
+    return get_admin_image_style_mapping_state(
+        db=db,
+        mapping_enabled=getattr(settings, "enable_image_style_mapping", False),
+    )
 
 
 @admin_router.post("/dynamic-lists/", response_model=schemas.DynamicList, status_code=status.HTTP_201_CREATED)
@@ -399,6 +528,17 @@ def admin_update_user_endpoint(user_id: int, user_update: schemas.AdminUserUpdat
 
     app_logger.info(
         f"User ID {user_id} details updated by admin {current_admin.username}. New details: {updated_user}")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="user_update",
+        target_type="user",
+        target_id=updated_user.id,
+        metadata_json={
+            "user_id": updated_user.id,
+            "changed_fields": sorted(user_update.model_dump(exclude_unset=True).keys()),
+        },
+    )
     return updated_user
 
 
@@ -438,7 +578,78 @@ def admin_soft_delete_user_endpoint(user_id: int, db: Session = Depends(get_db),
         # Could be already deleted
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"User with ID {user_id} not found or already deleted")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="user_soft_delete",
+        target_type="user",
+        target_id=user_id,
+        metadata_json={
+            "user_id": user_id,
+            "changed_fields": ["is_active", "is_deleted"],
+        },
+    )
     return
+
+
+@admin_router.get("/privacy-requests", response_model=List[schemas.PrivacyRequest])
+def admin_list_privacy_requests(
+    db: Session = Depends(get_db),
+):
+    """List privacy requests for manual admin review."""
+
+    return crud.get_privacy_requests_admin(db)
+
+
+@admin_router.patch(
+    "/privacy-requests/{request_id}",
+    response_model=schemas.PrivacyRequest,
+)
+def admin_update_privacy_request(
+    request_id: int,
+    payload: schemas.PrivacyRequestUpdate,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
+    """Update a privacy request's manual workflow status."""
+
+    privacy_request = crud.get_privacy_request(db, request_id=request_id)
+    if privacy_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Privacy request with ID {request_id} not found",
+        )
+
+    previous_status = privacy_request.status
+    updated_request = crud.update_privacy_request_status(
+        db,
+        request_id=request_id,
+        status_value=payload.status,
+        admin_user_id=current_admin.id,
+    )
+    if updated_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Privacy request with ID {request_id} not found",
+        )
+
+    if previous_status != updated_request.status:
+        crud.create_admin_audit_event(
+            db,
+            admin_user_id=current_admin.id,
+            event_type="privacy_request_status_change",
+            target_type="privacy_request",
+            target_id=updated_request.id,
+            metadata_json={
+                "privacy_request_id": updated_request.id,
+                "user_id": updated_request.user_id,
+                "request_type": updated_request.request_type,
+                "old_status": previous_status,
+                "new_status": updated_request.status,
+            },
+        )
+
+    return updated_request
 
 
 # --- Admin Content Moderation ---
@@ -496,12 +707,28 @@ class HideStoryRequest(schemas.BaseModel):  # lightweight inline schema
 
 
 @admin_router.patch("/moderation/stories/{story_id}/hide", response_model=schemas.Story)
-def admin_hide_story(story_id: int, payload: HideStoryRequest, db: Session = Depends(get_db)):
+def admin_hide_story(
+    story_id: int,
+    payload: HideStoryRequest,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
     story = crud.set_story_hidden_admin(
         db, story_id=story_id, is_hidden=payload.is_hidden)
     if not story:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Story with ID {story_id} not found")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="story_visibility_change",
+        target_type="story",
+        target_id=story.id,
+        metadata_json={
+            "story_id": story.id,
+            "changed_fields": ["is_hidden"],
+        },
+    )
     # Normalize legacy enum values before response
     try:
         legacy_text_density_map = {
@@ -518,11 +745,26 @@ def admin_hide_story(story_id: int, payload: HideStoryRequest, db: Session = Dep
 
 
 @admin_router.delete("/moderation/stories/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
-def admin_soft_delete_story(story_id: int, db: Session = Depends(get_db)):
+def admin_soft_delete_story(
+    story_id: int,
+    db: Session = Depends(get_db),
+    current_admin: schemas.User = Depends(get_current_admin_user),
+):
     ok = crud.soft_delete_story_admin(db, story_id=story_id)
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Story with ID {story_id} not found")
+    crud.create_admin_audit_event(
+        db,
+        admin_user_id=current_admin.id,
+        event_type="story_soft_delete",
+        target_type="story",
+        target_id=story_id,
+        metadata_json={
+            "story_id": story_id,
+            "changed_fields": ["is_deleted"],
+        },
+    )
     return
 
 # You will need to include admin_user_router in your main FastAPI app (e.g., in main.py)

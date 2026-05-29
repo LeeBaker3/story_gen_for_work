@@ -91,8 +91,10 @@ def test_seed_database_on_non_empty_db(db_session: Session):
     assert db_session.query(DynamicList).filter_by(
         list_name="existing_list"
     ).count() == 1
-    assert db_session.query(DynamicList).filter_by(list_name="genres").count() == 1
-    assert db_session.query(DynamicListItem).filter_by(list_name="genres").count() > 0
+    assert db_session.query(DynamicList).filter_by(
+        list_name="genres").count() == 1
+    assert db_session.query(DynamicListItem).filter_by(
+        list_name="genres").count() > 0
 
 
 def test_seed_database_backfills_partial_existing_data(db_session: Session):
@@ -140,8 +142,10 @@ def test_seed_database_backfills_partial_existing_data(db_session: Session):
         item_value="top-left",
     ).one()
 
-    assert db_session.query(DynamicList).filter_by(list_name="genres").count() == 1
-    assert db_session.query(DynamicListItem).filter_by(list_name="genres").count() == 10
+    assert db_session.query(DynamicList).filter_by(
+        list_name="genres").count() == 1
+    assert db_session.query(DynamicListItem).filter_by(
+        list_name="genres").count() == 10
     assert db_session.query(DynamicListItem).filter_by(
         list_name="text_positions"
     ).count() == 9
@@ -192,7 +196,8 @@ def test_seed_database_rolls_back_when_reseeding_fails_mid_run(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Test that a mid-run failure rolls back pending default inserts."""
-    db_session.add(DynamicList(list_name="existing_list", list_label="Existing List"))
+    db_session.add(DynamicList(list_name="existing_list",
+                   list_label="Existing List"))
     db_session.commit()
 
     original_add = db_session.add
@@ -214,7 +219,8 @@ def test_seed_database_rolls_back_when_reseeding_fails_mid_run(
     assert db_session.query(DynamicList).filter_by(
         list_name="existing_list"
     ).count() == 1
-    assert db_session.query(DynamicList).filter_by(list_name="genres").count() == 0
+    assert db_session.query(DynamicList).filter_by(
+        list_name="genres").count() == 0
     assert db_session.query(DynamicListItem).count() == 0
 
 
@@ -227,8 +233,10 @@ def test_seed_database_on_empty_db_without_sql_script(
 
     seed_database(db=db_session)
 
-    assert db_session.query(DynamicList).filter_by(list_name="genres").count() == 1
-    assert db_session.query(DynamicListItem).filter_by(list_name="genres").count() > 0
+    assert db_session.query(DynamicList).filter_by(
+        list_name="genres").count() == 1
+    assert db_session.query(DynamicListItem).filter_by(
+        list_name="genres").count() > 0
     assert db_session.query(DynamicList).filter_by(
         list_name="text_positions"
     ).count() == 1

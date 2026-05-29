@@ -1,5 +1,12 @@
 # Issue: Frontend testing strategy is missing
 
+> Historical issue note
+>
+> This document records an earlier gap analysis and proposal. It is preserved as
+> historical issue material, not as the current source of truth. Use the
+> repo-root README, repo-root CONFIG guide, the PRD, and the current test and
+> CI files for the shipped testing posture.
+
 Summary
 - There is no documented or implemented test strategy for the frontend (vanilla JS, HTML/CSS) part of the project. This increases risk of regressions across core flows (wizard, Characters library, modals, inline status, admin monitoring UI) and slows refactoring.
 

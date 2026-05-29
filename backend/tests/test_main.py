@@ -87,7 +87,9 @@ def test_non_admin_cannot_update_user_role(client, mock_normal_user):
     This test relies on the `get_current_admin_user` dependency to correctly
     raise a 403 Forbidden error for users without the 'admin' role.
     """
-    app.dependency_overrides[auth.get_current_user] = lambda: mock_normal_user
+    app.dependency_overrides[auth.get_current_active_user] = (
+        lambda: mock_normal_user
+    )
 
     response = client.put(
         f"/api/v1/admin/management/users/{mock_normal_user.id}",
@@ -98,7 +100,7 @@ def test_non_admin_cannot_update_user_role(client, mock_normal_user):
     assert response.json() == {"detail": "Admin access required"}
 
     # Clean up dependency override
-    del app.dependency_overrides[auth.get_current_user]
+    del app.dependency_overrides[auth.get_current_active_user]
 
 
 def test_cors_middleware_registered():
@@ -178,6 +180,52 @@ def test_recover_stuck_generation_tasks_marks_tasks_failed(db_session):
     assert pending_task.error_message == "Server restarted during generation"
     assert in_progress_task.error_message == "Server restarted during generation"
     assert completed_task.status == schemas.GenerationTaskStatus.COMPLETED.value
+
+
+def test_recover_stuck_generation_tasks_skips_api_only_runtime(db_session, monkeypatch):
+    """API-only runtime should not fail queued tasks during startup."""
+
+    owner = db_session.query(database.User).filter(
+        database.User.username == "user@example.com"
+    ).first()
+    assert owner is not None
+
+    story = database.Story(
+        title="API Split Recovery Story",
+        story_outline="Outline",
+        genre="fantasy",
+        main_characters=[],
+        num_pages=1,
+        owner_id=owner.id,
+        is_draft=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    pending_task = database.StoryGenerationTask(
+        id="api-only-pending-task",
+        story_id=story.id,
+        user_id=owner.id,
+        status=schemas.GenerationTaskStatus.PENDING.value,
+        progress=0,
+    )
+    db_session.add(pending_task)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        main_module.settings,
+        "story_generation_runtime_role",
+        "api",
+    )
+
+    recovered_count = main_module._recover_stuck_generation_tasks(db_session)
+
+    assert recovered_count == 0
+    db_session.refresh(pending_task)
+    assert pending_task.status == schemas.GenerationTaskStatus.PENDING.value
 
 
 def test_secure_secret_key_guard_raises_outside_testing(monkeypatch):
@@ -279,7 +327,8 @@ def test_create_story_draft_logs_only_metadata(
         lambda: mock_normal_user
     )
     app.dependency_overrides[main_module.get_db] = lambda: None
-    monkeypatch.setattr(main_module.crud, "create_story_draft", lambda **kwargs: draft)
+    monkeypatch.setattr(
+        main_module.crud, "create_story_draft", lambda **kwargs: draft)
 
     try:
         with patch.object(main_module.app_logger, "info") as mock_info:

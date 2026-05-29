@@ -3,12 +3,21 @@
 ## Unreleased
 
 ### Added
-- Prometheus metrics for OpenAI text generation (Responses vs Chat Completions), latency, and errors.
+- Billing and entitlement backend surfaces, including Stripe-backed checkout,
+	portal, and entitlement synchronization support.
+- Runtime and monitoring support for split API/worker deployments, dedicated
+	ops metrics, shared worker heartbeats, and high-severity runtime alerting.
+- Admin/support backend surfaces used by the current branch, including safe
+	config diagnostics/editing, broadcasts, analytics, and legal/trust content
+	delivery.
 
 ### Changed
-- Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
+- Default OpenAI models: `TEXT_MODEL=gpt-5.4-mini`,
+	`IMAGE_MODEL=gpt-image-2`.
 - Optional Responses API pathway for story text (`USE_OPENAI_RESPONSES_API`).
 - Optional fallback between text paths (`OPENAI_TEXT_ENABLE_FALLBACK`).
+- Backend configuration/docs now reflect the current staging baseline:
+	migrations in prod-like environments plus S3-compatible asset storage.
 
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/backend-v0.5.0...backend-v0.6.0) (2026-01-05)
 

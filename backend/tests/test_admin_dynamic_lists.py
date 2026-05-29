@@ -7,6 +7,7 @@ from backend.main import app
 from backend.database import SessionLocal, Base, engine
 # Ensure all necessary modules are imported
 from backend import database, crud, schemas
+from backend.image_style_mapping import get_openai_image_style
 
 # Test client fixture (if not already in conftest.py and scoped appropriately)
 # @pytest.fixture(scope="module")
@@ -510,19 +511,24 @@ def test_admin_check_item_in_use(client: TestClient, admin_token: str, db_sessio
     ensure_dynamic_list_exists(client, list_name, admin_token)
 
     # Find or create the item
-    get_items_response = client.get(f"/api/v1/admin/dynamic-lists/{list_name}/items", headers={"Authorization": f"Bearer {admin_token}"})
-    item = next((i for i in get_items_response.json() if i['item_value'] == item_value_in_use), None)
+    get_items_response = client.get(
+        f"/api/v1/admin/dynamic-lists/{list_name}/items", headers={"Authorization": f"Bearer {admin_token}"})
+    item = next((i for i in get_items_response.json()
+                if i['item_value'] == item_value_in_use), None)
 
     if not item:
-        create_payload = {"list_name": list_name, "item_value": item_value_in_use, "item_label": "Sci-Fi"}
-        create_response = client.post(f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload, headers={"Authorization": f"Bearer {admin_token}"})
+        create_payload = {"list_name": list_name,
+                          "item_value": item_value_in_use, "item_label": "Sci-Fi"}
+        create_response = client.post(
+            f"/api/v1/admin/dynamic-lists/{list_name}/items", json=create_payload, headers={"Authorization": f"Bearer {admin_token}"})
         assert create_response.status_code == 201
         item_id = create_response.json()["id"]
     else:
         item_id = item['id']
 
     # Check when not in use
-    in_use_response_false = client.get(f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+    in_use_response_false = client.get(
+        f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert in_use_response_false.status_code == 200
     response_data_false = in_use_response_false.json()
     assert response_data_false["is_in_use"] is False
@@ -544,10 +550,12 @@ def test_admin_check_item_in_use(client: TestClient, admin_token: str, db_sessio
         word_to_picture_ratio=schemas.WordToPictureRatio.PER_PAGE,
         text_density=schemas.TextDensity.CONCISE,
     )
-    story = crud.create_story_db_entry(db_session, story_data, admin_user.id, title=story_data.title)
+    story = crud.create_story_db_entry(
+        db_session, story_data, admin_user.id, title=story_data.title)
 
     # Check again when in use
-    in_use_response_true = client.get(f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
+    in_use_response_true = client.get(
+        f"/api/v1/admin/dynamic-lists/items/{item_id}/in-use", headers={"Authorization": f"Bearer {admin_token}"})
     assert in_use_response_true.status_code == 200
     response_data_true = in_use_response_true.json()
     assert response_data_true["is_in_use"] is True
@@ -963,3 +971,107 @@ def test_non_admin_cannot_manage_dynamic_lists(client: TestClient, regular_user_
     response_get_all = client.get(
         "/api/v1/admin/dynamic-lists/", headers={"Authorization": f"Bearer {regular_user_token}"})
     assert response_get_all.status_code == 403
+
+
+def test_image_style_mapping_summary_requires_admin(
+    client: TestClient,
+    admin_token: str,
+    regular_user_token: str,
+):
+    """Only admins should be able to inspect image style mapping state."""
+
+    admin_response = client.get(
+        "/api/v1/admin/image-style-mappings",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert admin_response.status_code == 200
+    assert "mapping_feature_enabled" in admin_response.json()
+
+    user_response = client.get(
+        "/api/v1/admin/image-style-mappings",
+        headers={"Authorization": f"Bearer {regular_user_token}"},
+    )
+    assert user_response.status_code == 403
+
+
+def test_image_style_mapping_updates_change_future_resolution_only(
+    client: TestClient,
+    admin_token: str,
+    db_session: Session,
+):
+    """Updating a mapping rule should change future style resolution."""
+
+    ensure_dynamic_list_exists(
+        client,
+        "image_styles",
+        admin_token,
+        list_label="Image Styles",
+    )
+    ensure_dynamic_list_exists(
+        client,
+        "image_style_mappings",
+        admin_token,
+        list_label="Image Style Mappings",
+    )
+
+    image_style_response = client.post(
+        "/api/v1/admin/dynamic-lists/image_styles/items",
+        json={
+            "list_name": "image_styles",
+            "item_value": "Fantasy",
+            "item_label": "Fantasy",
+            "is_active": True,
+            "sort_order": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert image_style_response.status_code == 201
+
+    mapping_response = client.post(
+        "/api/v1/admin/dynamic-lists/image_style_mappings/items",
+        json={
+            "list_name": "image_style_mappings",
+            "item_value": "Fantasy",
+            "item_label": "Fantasy -> Natural",
+            "is_active": True,
+            "sort_order": 1,
+            "additional_config": {"openai_style": "natural"},
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert mapping_response.status_code == 201
+    mapping_item_id = mapping_response.json()["id"]
+
+    assert get_openai_image_style(
+        db=db_session,
+        business_style="Fantasy",
+    ) == "natural"
+
+    update_response = client.put(
+        f"/api/v1/admin/dynamic-lists/items/{mapping_item_id}",
+        json={
+            "is_active": False,
+            "additional_config": {"openai_style": "natural"},
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert update_response.status_code == 200
+
+    assert get_openai_image_style(
+        db=db_session,
+        business_style="Fantasy",
+    ) == "vivid"
+
+    summary_response = client.get(
+        "/api/v1/admin/image-style-mappings",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert summary_response.status_code == 200
+    rules = summary_response.json()["rules"]
+    fantasy_rule = next(
+        rule for rule in rules if rule["business_style"] == "Fantasy"
+    )
+    assert fantasy_rule["mapping_item_id"] == mapping_item_id
+    assert fantasy_rule["mapping_item_active"] is False
+    assert fantasy_rule["effective_openai_style"] == "vivid"
+    assert fantasy_rule["source"] == "default"

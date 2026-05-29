@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from backend import crud
+from backend.database import AdminAuditEvent
 
 
 def get_token(client: TestClient, username, password):
@@ -35,6 +36,15 @@ def test_admin_can_update_user_details(client: TestClient, db_session: Session):
     assert response_json["email"] == updated_details["email"]
     assert response_json["role"] == updated_details["role"]
     assert response_json["is_active"] == updated_details["is_active"]
+
+    audit_event = db_session.query(AdminAuditEvent).filter(
+        AdminAuditEvent.event_type == "user_update",
+        AdminAuditEvent.target_id == user_id,
+    ).one()
+    assert audit_event.metadata_json == {
+        "user_id": user_id,
+        "changed_fields": ["email", "is_active", "role", "username"],
+    }
 
 
 def test_update_nonexistent_user_details_returns_404(client: TestClient):

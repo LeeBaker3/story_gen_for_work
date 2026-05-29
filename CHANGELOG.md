@@ -5,14 +5,25 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
-- PRD scope for a user-friendly story editor and basic desktop publishing controls, including MVP boundaries and wizard vs post-generation responsibilities.
+- Browser-facing legal/trust surfaces, account hub messaging, and rendered legal routes for privacy, terms, support, refund, status, and AI-processing disclosures.
+- Entitlement/quota support for trial and paid account states, including account balance/status APIs and privacy-request workflow surfaces.
+- Hardened browser auth with HttpOnly auth cookies, logout, forgot-password/reset-password flows, dedicated signup/reset rate limits, and reset-token preview gating for tests/dev.
+- Stripe backend support for checkout, customer portal, and entitlement synchronization.
+- Split API/worker runtime posture, dedicated ops Prometheus scrape support at `/api/v1/ops/metrics`, shared-DB worker heartbeats, queue visibility, and a minimal high-severity runtime alert webhook.
+- Editor, wizard, and admin enhancements now shipped on this branch: writing style/image framing/cover title/readability wizard controls; PDF preview; single-page text regeneration; structural page editing with bounded undo/redo; broadcasts, analytics, safe-subset config editing, and image style mapping management entry points.
 - Prometheus metrics for OpenAI text generation path usage, latency, and error rates.
+- Source-of-truth copy spec for launch trust, support availability, ownership/licensing, and degraded-mode outage messaging.
+- Frontend UI/UX review notes for the preview/editor cleanup pass now live in `docs/reviews/UI_UX_review.md`.
 
 ### Changed
-- Default OpenAI models: `TEXT_MODEL=gpt-5-mini`, `IMAGE_MODEL=gpt-image-1.5`.
+- Default OpenAI models: `TEXT_MODEL=gpt-5.4-mini`, `IMAGE_MODEL=gpt-image-2`.
 - Story text generation can use the Responses API via `USE_OPENAI_RESPONSES_API`.
 - Optional resilience: `OPENAI_TEXT_ENABLE_FALLBACK` falls back to the other text path on error.
-- Stories now persist optional `writing_style` when supplied through API, import, or template flows; the wizard still does not expose that input on this branch.
+- Stories persist writing style and editor defaults across wizard, preview, editor, and PDF export flows.
+- Staging/runtime posture now documents Neon Postgres plus S3-compatible storage expectations, migration-managed schema, split-runtime deploy/rollback, provider outage handling, and runtime restore guidance.
+
+### Fixed
+- Documentation now matches the shipped auth posture, current model defaults, frontend Jest workflow, browser cookie behavior, and shipped wizard/editor/admin capabilities.
 
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/v0.5.0...v0.6.0) (2026-01-05)
 

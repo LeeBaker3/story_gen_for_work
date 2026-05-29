@@ -378,14 +378,56 @@ button:hover,
 }
 
 footer {
-    /* Assuming a footer might be added, styled like main app */
-    text-align: center;
-    padding: 1.5rem 1rem;
     background-color: #1F1F1F;
     color: #B0B0B0;
-    /* Lighter grey for footer text */
     margin-top: 2rem;
     border-top: 1px solid #333;
+}
+
+.app-footer__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.app-footer__brand {
+    margin: 0;
+    color: #B0B0B0;
+}
+
+.app-footer__nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem 1.25rem;
+}
+
+.app-footer__nav a {
+    color: #8fd6ff;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.app-footer__nav a:hover,
+.app-footer__nav a:focus {
+    color: #d7efff;
+    text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+    .app-footer__content {
+        padding: 1.25rem 0.75rem;
+    }
+
+    .app-footer__nav {
+        gap: 0.65rem 1rem;
+    }
 }
 
 /* Logs viewer tweaks */
@@ -509,6 +551,52 @@ footer {
     /* Remove bottom margin for inline label */
     font-weight: normal;
     /* Standard weight for checkbox labels */
+}
+
+.app-config-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+.app-config-card {
+    background: #1F1F1F;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.25rem;
+}
+
+.app-config-card h3 {
+    margin-top: 0;
+}
+
+.app-config-notes ul {
+    padding-left: 1.25rem;
+}
+
+.app-config-field {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 1rem;
+}
+
+.app-config-field:last-of-type {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.app-config-help {
+    margin: 0.35rem 0 0;
+    color: #B0B0B0;
+    font-size: 0.92rem;
+}
+
+.app-config-checkbox-row {
+    gap: 0.5rem;
+}
+
+.app-config-actions {
+    justify-content: flex-start;
+    gap: 0.75rem;
 }
 
 

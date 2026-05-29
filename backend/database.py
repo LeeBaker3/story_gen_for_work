@@ -4,12 +4,13 @@ from sqlalchemy import CheckConstraint, create_engine, Column, Integer, String, 
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
 from dotenv import load_dotenv
+from backend.settings import get_settings
 
 # Load .env for local development (harmless in prod/CI)
 load_dotenv()
 
 # DATABASE_URL can be provided via environment; default to local SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./story_generator.db")
+DATABASE_URL = get_settings().database_url
 
 # For SQLite, we must pass check_same_thread=False for SQLAlchemy in multi-threaded apps
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith(
@@ -40,11 +41,106 @@ class User(Base):
     # Soft delete flag for admin-controlled deletions
     is_deleted = Column(Boolean, default=False)
     role = Column(String, default="user")  # New field (e.g., "user", "admin")
+    password_reset_token_hash = Column(String, nullable=True, index=True)
+    password_reset_token_expires_at = Column(
+        DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True),
                         server_default=func.now(), onupdate=func.now())
 
     stories = relationship("Story", back_populates="owner")
+    entitlement = relationship(
+        "AccountEntitlement",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    usage_ledger_entries = relationship(
+        "UsageLedgerEntry",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    privacy_requests = relationship(
+        "PrivacyRequest",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="PrivacyRequest.user_id",
+    )
+    admin_audit_events_created = relationship(
+        "AdminAuditEvent",
+        back_populates="admin_user",
+        foreign_keys="AdminAuditEvent.admin_user_id",
+    )
+
+
+class AccountEntitlement(Base):
+    __tablename__ = "account_entitlements"
+    __table_args__ = (
+        CheckConstraint(
+            "access_state IN ('trial', 'paid-active', 'grace', 'suspended')",
+            name="ck_account_entitlements_access_state",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False,
+                     unique=True, index=True)
+    access_state = Column(String, nullable=False, default="trial")
+    story_credits_total = Column(Integer, nullable=False, default=0)
+    image_credits_total = Column(Integer, nullable=False, default=0)
+    stripe_customer_id = Column(String, nullable=True, index=True)
+    stripe_subscription_id = Column(String, nullable=True, index=True)
+    current_period_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_expires_at = Column(DateTime(timezone=True), nullable=True)
+    renews_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="entitlement")
+    usage_ledger_entries = relationship(
+        "UsageLedgerEntry",
+        back_populates="entitlement",
+        cascade="all, delete-orphan",
+    )
+
+
+class UsageLedgerEntry(Base):
+    __tablename__ = "usage_ledger_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "credit_bucket IN ('story', 'image')",
+            name="ck_usage_ledger_entries_credit_bucket",
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'consumed', 'released')",
+            name="ck_usage_ledger_entries_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False,
+                     index=True)
+    entitlement_id = Column(Integer, ForeignKey("account_entitlements.id"),
+                            nullable=False, index=True)
+    action_type = Column(String, nullable=False, index=True)
+    credit_bucket = Column(String, nullable=False, index=True)
+    credits = Column(Integer, nullable=False, default=1)
+    status = Column(String, nullable=False, default="reserved", index=True)
+    billing_period_start = Column(DateTime(timezone=True), nullable=True)
+    finalized_at = Column(DateTime(timezone=True), nullable=True)
+    release_reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True),
+                        server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="usage_ledger_entries")
+    entitlement = relationship(
+        "AccountEntitlement",
+        back_populates="usage_ledger_entries",
+    )
 
 
 class Story(Base):
@@ -52,6 +148,8 @@ class Story(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)
+    cover_subtitle = Column(String, nullable=True)
+    cover_author = Column(String, nullable=True)
     story_outline = Column(Text, nullable=True)  # Changed from outline
     genre = Column(String, nullable=False)
     main_characters = Column(JSON, nullable=True)
@@ -154,8 +252,11 @@ class StoryGenerationTask(Base):
     )
 
     id = Column(String, primary_key=True, index=True)
-    story_id = Column(Integer, ForeignKey('stories.id'), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    story_id = Column(Integer, ForeignKey('stories.id'),
+                      nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'),
+                     nullable=False, index=True)
+    reservation_id = Column(Integer, nullable=True, index=True)
     status = Column(String, nullable=False, default='pending', index=True)
     progress = Column(Integer, default=0)
     current_step = Column(String, nullable=True)
@@ -180,6 +281,87 @@ class StoryGenerationTask(Base):
 
     story = relationship("Story")
     user = relationship("User")
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeats"
+
+    runtime_id = Column(String, primary_key=True, index=True)
+    runtime_role = Column(String, nullable=False, default="worker", index=True)
+    hostname = Column(String, nullable=True)
+    last_heartbeat_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        server_default=func.now(),
+    )
+
+
+class AdminBroadcast(Base):
+    __tablename__ = "admin_broadcasts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    target_scope = Column(String, nullable=False, default="all_active_users")
+    status = Column(String, nullable=False, default="sent")
+    recipient_count = Column(Integer, nullable=False, default=0)
+    created_by_user_id = Column(
+        Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sent_at = Column(DateTime(timezone=True), nullable=False,
+                     server_default=func.now())
+
+    created_by = relationship("User")
+
+
+class PrivacyRequest(Base):
+    __tablename__ = "privacy_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "request_type IN ('account_export', 'account_delete')",
+            name="ck_privacy_requests_request_type",
+        ),
+        CheckConstraint(
+            "status IN ('submitted', 'in_review', 'completed', 'rejected')",
+            name="ck_privacy_requests_status",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_type = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="submitted", index=True)
+    reviewed_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    user = relationship("User", back_populates="privacy_requests", foreign_keys=[user_id])
+    reviewed_by_admin = relationship("User", foreign_keys=[reviewed_by_admin_id])
+
+
+class AdminAuditEvent(Base):
+    __tablename__ = "admin_audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=False)
+    target_id = Column(Integer, nullable=True, index=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    admin_user = relationship(
+        "User",
+        back_populates="admin_audit_events_created",
+        foreign_keys=[admin_user_id],
+    )
 
 
 # --- Characters Domain (Phase 2) ---
@@ -252,12 +434,32 @@ class CharacterImage(Base):
     )
 
 
+class ProcessedStripeEvent(Base):
+    __tablename__ = "processed_stripe_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String, nullable=False, unique=True, index=True)
+    event_type = Column(String, nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=False,
+                          server_default=func.now())
+
+
 def create_db_and_tables():
+    """Apply runtime schema bootstrap only in local dev/test posture."""
+
+    settings = get_settings()
+    if not settings.runtime_schema_bootstrap_enabled:
+        return False
+
     Base.metadata.create_all(bind=engine)
-    _ensure_story_generation_task_new_columns()
-    _ensure_soft_delete_and_moderation_columns()
-    _ensure_story_metadata_columns()
-    _ensure_story_editor_columns()
+    if settings.database_scheme == "sqlite":
+        _ensure_story_generation_task_new_columns()
+        _ensure_soft_delete_and_moderation_columns()
+        _ensure_story_metadata_columns()
+        _ensure_story_editor_columns()
+        _ensure_user_password_reset_columns()
+        _ensure_billing_columns()
+    return True
 
 
 def _ensure_story_generation_task_new_columns():
@@ -269,6 +471,7 @@ def _ensure_story_generation_task_new_columns():
     if not DATABASE_URL.startswith("sqlite"):
         return
     required_columns = {
+        "reservation_id": "INTEGER NULL",
         "attempts": "INTEGER DEFAULT 0",
         "started_at": "TIMESTAMP NULL",
         "completed_at": "TIMESTAMP NULL",
@@ -345,6 +548,8 @@ def _ensure_story_metadata_columns():
     tables_required_cols = {
         "stories": {
             "writing_style": "TEXT NULL",
+            "cover_subtitle": "TEXT NULL",
+            "cover_author": "TEXT NULL",
         },
     }
 
@@ -395,6 +600,70 @@ def _ensure_story_editor_columns():
                             conn.execute(
                                 text(
                                     f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+
+def _ensure_user_password_reset_columns():
+    """Idempotently add password reset columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    required_columns = {
+        "password_reset_token_hash": "TEXT NULL",
+        "password_reset_token_expires_at": "TIMESTAMP NULL",
+    }
+
+    with engine.connect() as conn:
+        try:
+            existing = set()
+            for row in conn.execute(text("PRAGMA table_info(users)")):
+                existing.add(row[1])
+            for col, ddl in required_columns.items():
+                if col not in existing:
+                    try:
+                        conn.execute(
+                            text(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
+def _ensure_billing_columns():
+    """Idempotently add billing-related columns for SQLite dev/test use."""
+
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    tables_required_cols = {
+        "account_entitlements": {
+            "stripe_customer_id": "TEXT NULL",
+            "stripe_subscription_id": "TEXT NULL",
+            "current_period_started_at": "TIMESTAMP NULL",
+            "cancel_at_period_end": "BOOLEAN DEFAULT 0 NOT NULL",
+        },
+        "usage_ledger_entries": {
+            "billing_period_start": "TIMESTAMP NULL",
+        },
+    }
+
+    with engine.connect() as conn:
+        for table_name, cols in tables_required_cols.items():
+            try:
+                existing = set()
+                for row in conn.execute(text(f"PRAGMA table_info({table_name})")):
+                    existing.add(row[1])
+                for col, ddl in cols.items():
+                    if col not in existing:
+                        try:
+                            conn.execute(
+                                text(f"ALTER TABLE {table_name} ADD COLUMN {col} {ddl}")
                             )
                         except Exception:
                             pass

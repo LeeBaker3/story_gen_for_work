@@ -210,11 +210,14 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
         user_id=test_user.id,
         editor_update=schemas.StoryEditorUpdate(
             title="Edited Story",
+            cover_subtitle="An even better bedtime",
+            cover_author="Lee Tester",
             editor_settings=schemas.StoryEditorSettings(
                 font_family="classic",
                 font_size=30,
                 font_color="#ffeeaa",
                 text_position="top",
+                text_alignment="right",
                 text_box_opacity=0.4,
             ),
             pages=[
@@ -223,6 +226,7 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
                     text="Edited page text",
                     editor_state=schemas.PageEditorState(
                         text_position="left",
+                        text_alignment="center",
                         font_family="handwritten",
                         font_size=22,
                         font_color="#112233",
@@ -235,16 +239,23 @@ def test_save_story_editor_persists_defaults_and_page_overrides(
 
     assert updated_story is not None
     assert updated_story.title == "Edited Story"
+    assert updated_story.cover_subtitle == "An even better bedtime"
+    assert updated_story.cover_author == "Lee Tester"
     assert updated_story.editor_settings["font_family"] == "classic"
+    assert updated_story.editor_settings["text_alignment"] == "right"
     db_session.refresh(page)
     assert page.text == "Edited page text"
     assert page.editor_state["text_position"] == "left"
+    assert page.editor_state["text_alignment"] == "center"
     assert page.editor_state["font_family"] == "handwritten"
     assert page.editor_state["font_color"] == "#112233"
     assert page.editor_state["text_box_opacity"] == 0.35
     assert page.editor_state["original_text"] == "Original page text"
-    effective_settings = crud.get_effective_page_editor_settings(updated_story, page)
+    effective_settings = crud.get_effective_page_editor_settings(
+        updated_story, page)
     assert effective_settings["font_family"] == "handwritten"
+    assert effective_settings["text_alignment"] == "center"
+    assert effective_settings["text_box_opacity"] == 0.35
 
 
 def test_restore_page_text_uses_original_generated_text(
@@ -291,6 +302,103 @@ def test_restore_page_text_uses_original_generated_text(
 
     assert restored is not None
     assert restored.text == "Generated text"
+
+
+def test_save_story_editor_replace_pages_reorders_and_replaces_pages(
+    db_session: Session,
+    test_user: User,
+):
+    story_data = schemas.StoryBase(
+        title="Reorder Story",
+        genre=schemas.StoryGenre.FANTASY,
+        story_outline="Reorder outline",
+        main_characters=[],
+        num_pages=2,
+    )
+    story = crud.create_story_db_entry(
+        db=db_session,
+        story_data=story_data,
+        user_id=test_user.id,
+        title="Reorder Story",
+        is_draft=False,
+    )
+    crud.update_story_with_generated_content(
+        db_session,
+        story.id,
+        {
+            "Title": "Reorder Story",
+            "Pages": [
+                {"Page_number": 0, "Text": "Reorder Story", "Image_description": "cover",
+                    "image_url": "images/user_1/story_1/cover.png"},
+                {"Page_number": 1, "Text": "First generated page", "Image_description": "page one",
+                    "image_url": "images/user_1/story_1/page1.png"},
+                {"Page_number": 2, "Text": "Second generated page", "Image_description": "page two",
+                    "image_url": "images/user_1/story_1/page2.png"},
+            ],
+        },
+    )
+    db_session.refresh(story)
+    cover_page = next(page for page in story.pages if page.page_number == 0)
+    first_page = next(page for page in story.pages if page.page_number == 1)
+    second_page = next(page for page in story.pages if page.page_number == 2)
+
+    updated_story = crud.save_story_editor(
+        db=db_session,
+        story_id=story.id,
+        user_id=test_user.id,
+        editor_update=schemas.StoryEditorUpdate(
+            replace_pages=True,
+            pages=[
+                schemas.StoryEditorPageUpdate(
+                    id=cover_page.id,
+                    page_number=0,
+                    text="Reorder Story",
+                    image_description=cover_page.image_description,
+                    image_path=cover_page.image_path,
+                    editor_state=schemas.PageEditorState(
+                        original_text="Reorder Story",
+                        original_image_path=cover_page.image_path,
+                    ),
+                ),
+                schemas.StoryEditorPageUpdate(
+                    id=second_page.id,
+                    page_number=1,
+                    text="Moved to first slot",
+                    image_description=second_page.image_description,
+                    image_path=second_page.image_path,
+                    editor_state=schemas.PageEditorState(
+                        original_text="Second generated page",
+                        original_image_path=second_page.image_path,
+                    ),
+                ),
+                schemas.StoryEditorPageUpdate(
+                    page_number=2,
+                    text="Inserted page",
+                    image_description="inserted art",
+                    image_path=None,
+                    editor_state=schemas.PageEditorState(
+                        original_text="Inserted page",
+                        original_image_path=None,
+                    ),
+                ),
+            ],
+        ),
+    )
+
+    assert updated_story is not None
+    db_session.refresh(updated_story)
+    ordered_pages = sorted(updated_story.pages,
+                           key=lambda page: page.page_number)
+    assert [page.page_number for page in ordered_pages] == [0, 1, 2]
+    assert [page.text for page in ordered_pages] == [
+        "Reorder Story",
+        "Moved to first slot",
+        "Inserted page",
+    ]
+    assert updated_story.num_pages == 2
+    assert all(page.id != first_page.id for page in ordered_pages)
+    assert ordered_pages[1].editor_state["original_text"] == "Second generated page"
+    assert ordered_pages[2].editor_state["original_text"] == "Inserted page"
 
 
 def test_update_story_title_non_existent(db_session: Session):

@@ -107,7 +107,7 @@ function clickModerationNav() {
 }
 
 test('renders moderation stories table with rows', async () => {
-  installApiMock({ stories: [ { id: 1, title: 'Alpha', is_draft: false }, { id: 2, title: 'Draft S', is_draft: true } ] });
+  installApiMock({ stories: [{ id: 1, title: 'Alpha', is_draft: false }, { id: 2, title: 'Draft S', is_draft: true }] });
   await loadAdminScript();
   clickModerationNav();
 
@@ -124,7 +124,7 @@ test('renders moderation stories table with rows', async () => {
 });
 
 test('hide toggle updates on success and rolls back on failure', async () => {
-  installApiMock({ stories: [ { id: 5, title: 'HideMe', is_hidden: false } ] });
+  installApiMock({ stories: [{ id: 5, title: 'HideMe', is_hidden: false }] });
   await loadAdminScript();
   clickModerationNav();
 
@@ -139,7 +139,7 @@ test('hide toggle updates on success and rolls back on failure', async () => {
 
   // Re-import script with failing hide to test rollback (simulate failure now)
   jest.resetModules();
-  installApiMock({ stories: [ { id: 6, title: 'WillFail', is_hidden: false } ], hideFail: true });
+  installApiMock({ stories: [{ id: 6, title: 'WillFail', is_hidden: false }], hideFail: true });
   await loadAdminScript();
   clickModerationNav();
   await waitFor(() => expect(document.querySelector('.story-hide-toggle')).toBeTruthy());
@@ -153,7 +153,7 @@ test('hide toggle updates on success and rolls back on failure', async () => {
 
 test('delete story removes row after confirmation', async () => {
   const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
-  installApiMock({ stories: [ { id: 11, title: 'ToDelete' }, { id: 12, title: 'Stay' } ] });
+  installApiMock({ stories: [{ id: 11, title: 'ToDelete' }, { id: 12, title: 'Stay' }] });
   await loadAdminScript();
   clickModerationNav();
   await waitFor(() => expect(document.querySelector('.story-delete-btn')).toBeTruthy());

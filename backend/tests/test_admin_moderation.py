@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List
-from backend.database import Story, User
+from backend.database import AdminAuditEvent, Story, User
 from backend.schemas import StoryGenre
 
 
@@ -57,6 +57,14 @@ def test_moderation_list_hide_delete_flow(client, db_session, admin_auth_headers
         f"/api/v1/admin/moderation/stories/{s1.id}/hide", headers=admin_auth_headers, json={"is_hidden": True})
     assert resp.status_code == 200
     assert resp.json()["is_hidden"] is True
+    hide_audit = db_session.query(AdminAuditEvent).filter(
+        AdminAuditEvent.event_type == "story_visibility_change",
+        AdminAuditEvent.target_id == s1.id,
+    ).one()
+    assert hide_audit.metadata_json == {
+        "story_id": s1.id,
+        "changed_fields": ["is_hidden"],
+    }
 
     # Now list without include_hidden should exclude s1
     resp = client.get("/api/v1/admin/moderation/stories",
@@ -76,6 +84,14 @@ def test_moderation_list_hide_delete_flow(client, db_session, admin_auth_headers
     resp = client.delete(
         f"/api/v1/admin/moderation/stories/{s2.id}", headers=admin_auth_headers)
     assert resp.status_code == 204
+    delete_audit = db_session.query(AdminAuditEvent).filter(
+        AdminAuditEvent.event_type == "story_soft_delete",
+        AdminAuditEvent.target_id == s2.id,
+    ).one()
+    assert delete_audit.metadata_json == {
+        "story_id": s2.id,
+        "changed_fields": ["is_deleted"],
+    }
 
     # Listing without include_deleted should exclude s2
     resp = client.get("/api/v1/admin/moderation/stories",
@@ -109,6 +125,14 @@ def test_admin_soft_delete_user_endpoint(client, db_session, admin_auth_headers)
     resp = client.delete(
         f"/api/v1/admin/management/users/{u.id}", headers=admin_auth_headers)
     assert resp.status_code == 204
+    audit_event = db_session.query(AdminAuditEvent).filter(
+        AdminAuditEvent.event_type == "user_soft_delete",
+        AdminAuditEvent.target_id == u.id,
+    ).one()
+    assert audit_event.metadata_json == {
+        "user_id": u.id,
+        "changed_fields": ["is_active", "is_deleted"],
+    }
 
     # Verify hidden from admin list by default
     resp = client.get("/api/v1/admin/management/users/",

@@ -3,13 +3,13 @@
 Track compatibility between frontend and backend versions and API versions.
 
 - API URL version is independent from package versions. Only bump `/api/v1` → `/api/v2` for breaking API changes.
-- Backend responses include `X-API-Version: v1` (recommended addition) to make version explicit.
+- The current contract is the `/api/v1` path prefix. No `X-API-Version` response header is currently guaranteed.
 
 ## Matrix
 
 | Frontend | Requires Backend | API Version |
 |---------:|------------------:|:-----------|
-| >=0.4.4  | >=0.4.4           | v1         |
+| >=0.6.0  | >=0.6.0           | v1         |
 
 ## Policy
 - Breaking API changes: mark commits with `feat!: ...`, plan deprecation, and update this matrix.

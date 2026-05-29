@@ -1,6 +1,6 @@
 # Story Generator API ![coverage](coverage_badge.svg) [![Release](https://img.shields.io/github/v/release/LeeBaker3/story_gen_for_work?display_name=tag&sort=semver)](https://github.com/LeeBaker3/story_gen_for_work/releases/latest)
 
-FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, inline status feedback, and static content served by the API when enabled.
+FastAPI backend that generates illustrated stories using OpenAI. It handles authentication, story creation, character reference images, per‑page image generation, browsing, and PDF export. A modern frontend lives under `frontend/` with a wizard, Characters library, forgot-password and account flows, PDF preview, legal/trust pages, inline status feedback, and static content served by the API when enabled.
 
 ## Releases
 - Automated with Release Please (manifest mode) covering three components:
@@ -12,8 +12,8 @@ FastAPI backend that generates illustrated stories using OpenAI. It handles auth
 
 Latest releases
 - Root: https://github.com/LeeBaker3/story_gen_for_work/releases/latest
-- Backend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/backend-v0.5.0
-- Frontend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/frontend-v0.5.0
+- Backend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/backend-v0.6.0
+- Frontend: https://github.com/LeeBaker3/story_gen_for_work/releases/tag/frontend-v0.6.0
 
 ## Quick start
 
@@ -30,11 +30,17 @@ Run (dev)
 - uvicorn backend.main:app --reload
 - Open http://127.0.0.1:8000/docs for API docs
 
+Run split API + worker locally
+- API: `STORY_GENERATION_RUNTIME_ROLE=api uvicorn backend.main:app --reload`
+- Worker: `STORY_GENERATION_RUNTIME_ROLE=worker python -m backend.story_worker`
+- Default local behavior remains `combined`, which keeps in-process execution for story generation.
+- Ops scrape: set `OPS_METRICS_BEARER_TOKEN` in the shared environment, then scrape `GET /api/v1/ops/metrics` with `Authorization: Bearer <token>`.
+
 ## API shape and routes
 - API prefix: default /api/v1 (configurable)
 - Auth: POST /api/v1/token (OAuth2 password) returns bearer token
 - Public story flow:
-    - POST /api/v1/stories/ to create and start generation (202)
+    - POST /api/v1/stories/ to create and enqueue generation (202)
     - GET /api/v1/stories/ to list user stories
     - GET /api/v1/stories/{id} to fetch a story
     - GET /api/v1/stories/generation-status/{task_id} to check background progress
@@ -45,6 +51,9 @@ Run (dev)
     - GET /api/v1/admin/monitoring/logs/{file}/download (download full log)
     - GET /api/v1/admin/monitoring/stats (basic system stats)
     - GET /api/v1/admin/monitoring/metrics (Prometheus exposition)
+- Ops monitoring (dedicated bearer token required):
+    - GET /api/v1/ops/metrics (Prometheus exposition for machine scrapes)
+    - Includes queue backlog, in-progress task count, registered worker heartbeat rows, latest heartbeat age, and worker healthy/stale state.
 
 Admin monitoring UI highlights
 - Persisted preferences: selected log file, tail length, auto‑refresh, and filters are saved to localStorage.
@@ -74,13 +83,14 @@ Notes
 Static content
 - Frontend static (if mounted): GET /static/* serves files from frontend/
 - User data (if mounted): GET /static_content/* serves files from DATA_DIR
-- Image paths stored in DB are relative to DATA_DIR (e.g., images/user_1/story_2/...)
+- Local image paths stored in DB remain relative to DATA_DIR (e.g., images/user_1/story_2/...)
+- Staging/prod baseline switches asset posture to S3-compatible storage keys using `ASSET_STORAGE_PUBLIC_PREFIX/...` and `ASSET_STORAGE_PRIVATE_PREFIX/...`; the app still accepts legacy relative paths where needed for local compatibility.
 
 ## Configuration
 All configuration is centralized in backend/settings.py and read from environment variables. Sensible defaults are provided. Use a single root-level `.env`. See CONFIG.md for a full guide and .env usage.
 
 Core
-- RUN_ENV: dev|test|prod (default: dev). Test disables static mounts unless overridden.
+- RUN_ENV: dev|test|staging|prod (default: dev). Test disables static mounts unless overridden.
 - API_PREFIX: API base path (default: /api/v1)
 - SECRET_KEY: JWT signing key (required in production)
 
@@ -88,7 +98,9 @@ Static & storage
 - FRONTEND_DIR: directory for frontend static (default: frontend)
 - DATA_DIR: base directory for generated data (default: data)
 - MOUNT_FRONTEND_STATIC: 1/true to mount /static (default: true unless RUN_ENV=test)
-- MOUNT_DATA_STATIC: 1/true to mount /static_content (default: true unless RUN_ENV=test)
+- MOUNT_DATA_STATIC: 1/true to mount /static_content (default: true unless RUN_ENV=test; forced off for object-storage posture)
+- ASSET_STORAGE_BACKEND: filesystem in dev/test, S3-compatible in staging/prod
+- ASSET_STORAGE_PUBLIC_PREFIX / ASSET_STORAGE_PRIVATE_PREFIX: public/private object key roots
 
 Logging
 - LOGS_DIR: directory for logs (default: DATA_DIR/logs)
@@ -98,8 +110,8 @@ Logging
 
 OpenAI models and retries
 - OPENAI_API_KEY: key for OpenAI
-- TEXT_MODEL: default gpt-5-mini
-- IMAGE_MODEL: default gpt-image-1.5
+- TEXT_MODEL: default gpt-5.4-mini
+- IMAGE_MODEL: default gpt-image-2
 - USE_OPENAI_RESPONSES_API: 1/true to use Responses API for story text (default: false)
 - OPENAI_TEXT_ENABLE_FALLBACK: 1/true to fall back to the other text path if the primary fails (default: false)
 - RETRY_MAX_ATTEMPTS: default 3
@@ -111,13 +123,24 @@ CORS
 Database
 - DATABASE_URL: database connection string (default sqlite:///./story_generator.db)
 - SQLite is supported out of the box; for Postgres, install a suitable driver (e.g., psycopg)
-- Tables auto-created on startup; seed data is applied during app startup lifespan
- - In dev/test, startup helpers idempotently add new columns (task tracking, soft-delete/moderation). Use proper migrations (e.g., Alembic) for production.
+- DB_BOOTSTRAP_MODE: runtime in dev/test, migrations in staging/prod
+- Runtime schema bootstrap is dev/test-only; staging/prod fail fast on SQLite or filesystem asset posture and expect Alembic-managed schema.
+
+Story generation runtime
+- STORY_GENERATION_RUNTIME_ROLE: `combined` keeps API-side execution for local dev; `api` enqueues only; `worker` runs the standalone single-worker poller.
+- STORY_GENERATION_WORKER_POLL_INTERVAL_SECONDS: worker polling interval for queued tasks.
+- STORY_GENERATION_STALE_TASK_TIMEOUT_SECONDS: conservative timeout for failing stale `in_progress` tasks during worker recovery.
+- STORY_WORKER_RUNTIME_ID: stable identifier written into the worker heartbeat row. Defaults to the host name.
+- WORKER_HEARTBEAT_STALE_AFTER_SECONDS: heartbeat age threshold used by `/api/v1/ops/metrics` to mark the worker healthy or stale.
+- OPS_METRICS_BEARER_TOKEN: dedicated bearer token for the machine-facing scrape path.
+- RUNTIME_ALERT_WEBHOOK_URL: optional generic outbound webhook for high-severity unhandled API and worker runtime failures.
+- RUNTIME_ALERT_WEBHOOK_TIMEOUT_SECONDS: short best-effort delivery timeout for the runtime alert webhook.
 
 Schema migrations
 - Alembic bootstrap files live under `alembic/` with config in `alembic.ini`.
 - The Alembic environment imports `backend.database.Base.metadata` and uses `DATABASE_URL`, so migration autogeneration targets the same models as the app.
-- Runtime startup behavior is unchanged on this branch: the app still uses `create_all` plus SQLite `_ensure_*` helpers for local/dev/test bootstrap.
+- Runtime startup still uses `create_all` plus SQLite `_ensure_*` helpers for local dev/test bootstrap only.
+- Staging/prod should target Neon Postgres and run Alembic before app startup.
 - Create a revision: `./.venv/bin/python -m alembic -c alembic.ini revision --autogenerate -m "describe change"`
 - Inspect the generated file under `alembic/versions/`, then apply it with `./.venv/bin/python -m alembic -c alembic.ini upgrade head`
 
@@ -128,17 +151,24 @@ Dev server
 
 Static mounts
 - By default, static mounts are enabled unless RUN_ENV=test.
-- To force in any environment: set MOUNT_FRONTEND_STATIC=true and/or MOUNT_DATA_STATIC=true.
+- To force in any environment: set MOUNT_FRONTEND_STATIC=true. `MOUNT_DATA_STATIC` only applies when `ASSET_STORAGE_BACKEND=filesystem`.
 
 Docs
 - Swagger UI: /docs
 - ReDoc: /redoc
  - Configuration Guide: CONFIG.md (env, logging, monitoring endpoints/UI)
  - API Contracts: see docs/PRODUCT_REQUIREMENTS_DOCUMENT.md (Section 6)
+ - Legal and support pack: docs/legal/README.md
+ - Split runtime deploy runbook: docs/split_runtime_deploy_runbook.md
+ - Split runtime rollback runbook: docs/split_runtime_rollback_runbook.md
+ - Provider outage runbook: docs/provider_outage_runbook.md
+ - Staging restore runbook: docs/staging_restore_runbook.md
 
 ## Authentication
 - OAuth2 Password Bearer; obtain token via POST /api/v1/token.
-- Use Authorization: Bearer <token> for subsequent requests.
+- Login still returns a bearer token for API clients.
+- Browser flows also receive an HttpOnly auth cookie and the frontend sends credentials with same-origin requests, so browser sessions can rely on cookie auth as well as explicit bearer headers.
+- Use Authorization: Bearer <token> for non-browser clients or direct API calls.
 - Admin-only endpoints require a user with role=admin.
 - A helper script `create_admin.py` exists to create an admin user if needed.
 
@@ -161,6 +191,13 @@ Notes
 - Some tests rely on /static_content being mounted. If RUN_ENV=test is set, also set MOUNT_DATA_STATIC=true to enable static serving in tests.
  - Integration tests mock OpenAI calls and write small fake image/prompt files under DATA_DIR.
 
+UI E2E (real app + Playwright)
+- The browser harness lives under `backend/tests/e2e` and starts the real FastAPI app with `/static` mounted from `frontend/`.
+- Each run uses a temporary file-backed SQLite database plus temp data/private-data directories.
+- Seeded state includes one admin user, one regular user, and one completed story for deterministic library and admin checks.
+- Image generation is disabled in the E2E environment.
+- Run locally with `bash scripts/run-e2e-tests.sh`.
+
 ### OpenAI smoke test (manual)
 Use the real-API smoke test to validate your API key, text generation, and image endpoints:
 - Run: `python scripts/smoke_test_openai.py`
@@ -177,10 +214,13 @@ Use the real-API smoke test to validate your API key, text generation, and image
 nvm use
 
 # Install dependencies (first time or after updates)
+npm install
 
+# Run the frontend Jest suite
+npm run test:frontend
 
-# Run only frontend tests (serial to reduce flake)
-## Storage paths
+# CI-style frontend run with junit output
+npm run test:frontend:ci
 
 # Watch mode for development
 npm run test:frontend:watch
@@ -189,8 +229,12 @@ npm run test:frontend:watch
 npm run test:backend
 
 # Run all (frontend then backend)
-- Images are stored under DATA_DIR/images/user_{id}/story_{id}/...
+npm run test:all
 ```
+
+Notes
+- `npm test` maps to `npm run test:frontend`.
+- The frontend test script runs Jest serially with coverage enabled.
 
 #### Node version management
 - The file `.nvmrc` (currently `22`) specifies the expected Node major.
@@ -411,14 +455,16 @@ If you see 401 responses when generating content:
 
 ## Deployment
 Minimal
-- Set RUN_ENV=prod, provide SECRET_KEY and OPENAI_API_KEY, and point DATA_DIR/LOGS_DIR to writable paths.
+- Set RUN_ENV=prod, provide SECRET_KEY and OPENAI_API_KEY, point DATABASE_URL at Neon Postgres, set DB_BOOTSTRAP_MODE=migrations, and configure S3-compatible asset storage.
 - Start with uvicorn:
     - uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 With a process manager/proxy
 - Use systemd, Docker, or a supervisor to run uvicorn/gunicorn.
 - Put a reverse proxy (e.g., Nginx) in front for TLS and caching static files.
-- Ensure DATA_DIR and LOGS_DIR are persisted (volumes).
+- Ensure logs remain persisted, but do not rely on local DATA_DIR as the staging/prod asset baseline.
+- Baseline backup retention: keep at least 14 days of Neon restorable backups and 14 days of object-storage backup history.
+- Initial restore procedure: see `docs/staging_restore_runbook.md`.
 
 ## Project structure (high level)
 - backend/

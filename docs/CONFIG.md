@@ -1,9 +1,9 @@
 # Configuration Guide
 
-The canonical configuration documentation lives at the repo root: `CONFIG.md`.
+The canonical configuration documentation lives at the repo root in
+`CONFIG.md`.
 
-This file exists to avoid broken links from older references.
+This file is only a redirect stub kept to preserve older links.
 
 Go to:
 - `CONFIG.md`
-# Configuration Guide

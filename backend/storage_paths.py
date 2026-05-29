@@ -16,10 +16,19 @@ def _private_dir() -> str:
     return get_settings().private_data_dir
 
 
+def _public_storage_prefix() -> str:
+    return get_settings().asset_storage_public_prefix
+
+
+def _private_storage_prefix() -> str:
+    return get_settings().asset_storage_private_prefix
+
+
 def normalize_data_relative_path(path: str) -> str:
     """Return a safe normalized path relative to the data directory."""
 
-    normalized = os.path.normpath(str(path or "").replace("\\", "/").lstrip("/"))
+    normalized = os.path.normpath(
+        str(path or "").replace("\\", "/").lstrip("/"))
     if normalized in ("", "."):
         raise ValueError("Data-relative path is required")
     if normalized.startswith(".."):
@@ -27,10 +36,50 @@ def normalize_data_relative_path(path: str) -> str:
     return normalized
 
 
+def _strip_storage_prefix(path: str, prefix: str) -> str:
+    """Strip a configured object-storage prefix when present."""
+
+    normalized = normalize_data_relative_path(path)
+    unix_style = normalized.replace(os.sep, "/")
+    normalized_prefix = prefix.strip("/")
+    if unix_style == normalized_prefix:
+        raise ValueError("Storage key must include a path after the prefix")
+    prefix_with_slash = normalized_prefix + "/"
+    if unix_style.startswith(prefix_with_slash):
+        return normalize_data_relative_path(unix_style[len(prefix_with_slash):])
+    return normalized
+
+
+def normalize_public_asset_path(path: str) -> str:
+    """Return a legacy-relative public asset path from a legacy or keyed input."""
+
+    return _strip_storage_prefix(path, _public_storage_prefix())
+
+
+def normalize_private_asset_path(path: str) -> str:
+    """Return a legacy-relative private asset path from a legacy or keyed input."""
+
+    return _strip_storage_prefix(path, _private_storage_prefix())
+
+
+def public_storage_key(path: str) -> str:
+    """Return the configured public object key for a relative asset path."""
+
+    normalized = normalize_data_relative_path(path)
+    return "/".join([_public_storage_prefix(), normalized.replace(os.sep, "/")])
+
+
+def private_storage_key(path: str) -> str:
+    """Return the configured private object key for a relative asset path."""
+
+    normalized = normalize_data_relative_path(path)
+    return "/".join([_private_storage_prefix(), normalized.replace(os.sep, "/")])
+
+
 def resolve_data_path(path: str) -> str:
     """Resolve a data-relative path to an absolute path within DATA_DIR."""
 
-    normalized = normalize_data_relative_path(path)
+    normalized = normalize_public_asset_path(path)
     data_dir = os.path.realpath(_data_dir())
     resolved = os.path.realpath(os.path.join(data_dir, normalized))
     if resolved != data_dir and not resolved.startswith(data_dir + os.sep):
@@ -41,7 +90,7 @@ def resolve_data_path(path: str) -> str:
 def is_private_story_asset_path(path: str) -> bool:
     """Return whether a data-relative path points into a story asset folder."""
 
-    normalized = normalize_data_relative_path(path)
+    normalized = normalize_public_asset_path(path)
     unix_style = normalized.replace(os.sep, "/")
     return bool(_PRIVATE_STORY_ASSET_RE.match(unix_style))
 

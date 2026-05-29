@@ -5,180 +5,222 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 function mountRealAppDom() {
-  const htmlPath = path.resolve(process.cwd(), 'frontend/index.html');
-  const html = fs.readFileSync(htmlPath, 'utf8');
-  document.documentElement.innerHTML = html;
+    const htmlPath = path.resolve(process.cwd(), 'frontend/index.html');
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    document.documentElement.innerHTML = html;
 }
 
 function buildJsonResponse(payload, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => payload,
-    headers: { get: () => 'application/json' },
-  };
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => payload,
+        headers: { get: () => 'application/json' },
+    };
 }
 
 describe('auth form flows', () => {
-  beforeEach(async () => {
-    jest.resetModules();
-    window.localStorage.clear();
-    mountRealAppDom();
+    beforeEach(async () => {
+        jest.resetModules();
+        window.localStorage.clear();
+        mountRealAppDom();
 
-    global.fetch = jest.fn(async (url, options = {}) => {
-      const value = String(url);
-      const method = String(options.method || 'GET').toUpperCase();
+        global.fetch = jest.fn(async (url, options = {}) => {
+            const value = String(url);
+            const method = String(options.method || 'GET').toUpperCase();
 
-      if (value.includes('/api/v1/users/me') && method === 'GET') {
-        return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
-      }
+            if (value.includes('/api/v1/users/me') && method === 'GET') {
+                return {
+                    ok: false,
+                    status: 401,
+                    json: async () => ({ detail: 'Could not validate credentials' }),
+                    headers: { get: () => 'application/json' },
+                };
+            }
 
-      if (value.includes('/api/v1/users/') && method === 'POST') {
-        return buildJsonResponse({ id: 12, username: 'new-reader' }, 201);
-      }
+            if (value.includes('/api/v1/users/') && method === 'POST') {
+                return buildJsonResponse({ id: 12, username: 'new-reader' }, 201);
+            }
 
-      if (value.includes('/api/v1/stories/') || value.includes('/api/v1/dynamic-lists/')) {
-        return buildJsonResponse([]);
-      }
+            if (value.includes('/api/v1/stories/') || value.includes('/api/v1/dynamic-lists/')) {
+                return buildJsonResponse([]);
+            }
 
-      return buildJsonResponse({});
+            return buildJsonResponse({});
+        });
+
+        await import('../../frontend/script.js');
+        document.dispatchEvent(new Event('DOMContentLoaded'));
     });
 
-    await import('../../frontend/script.js');
-    document.dispatchEvent(new Event('DOMContentLoaded'));
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  test('login posts token form data, persists auth token, and initializes logged-in nav state', async () => {
-    global.fetch.mockImplementation(async (url, options = {}) => {
-      const value = String(url);
-      const method = String(options.method || 'GET').toUpperCase();
-
-      if (value.includes('/api/v1/token') && method === 'POST') {
-        return buildJsonResponse({ access_token: 'token-123', token_type: 'bearer' });
-      }
-
-      if (value.includes('/api/v1/users/me') && method === 'GET') {
-        return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
-      }
-
-      if (value.includes('/api/v1/stories/') || value.includes('/api/v1/dynamic-lists/')) {
-        return buildJsonResponse([]);
-      }
-
-      return buildJsonResponse({});
+    afterEach(() => {
+        jest.restoreAllMocks();
     });
 
-    document.getElementById('login-username').value = 'reader@example.com';
-    document.getElementById('login-password').value = 'secret-pass';
+    test('login posts token form data, avoids localStorage persistence, and initializes logged-in nav state', async () => {
+        let isLoggedIn = false;
 
-    fireEvent.submit(document.getElementById('login-form'));
+        global.fetch.mockImplementation(async (url, options = {}) => {
+            const value = String(url);
+            const method = String(options.method || 'GET').toUpperCase();
 
-    await waitFor(() => {
-      expect(window.localStorage.getItem('authToken')).toBe('token-123');
+            if (value.includes('/api/v1/token') && method === 'POST') {
+                isLoggedIn = true;
+                return buildJsonResponse({ access_token: 'token-123', token_type: 'bearer' });
+            }
+
+            if (value.includes('/api/v1/users/me') && method === 'GET') {
+                if (isLoggedIn) {
+                    return buildJsonResponse({ id: 7, username: 'reader', role: 'admin' });
+                }
+                return {
+                    ok: false,
+                    status: 401,
+                    json: async () => ({ detail: 'Could not validate credentials' }),
+                    headers: { get: () => 'application/json' },
+                };
+            }
+
+            if (value.includes('/api/v1/stories/') || value.includes('/api/v1/dynamic-lists/')) {
+                return buildJsonResponse([]);
+            }
+
+            return buildJsonResponse({});
+        });
+
+        document.getElementById('login-username').value = 'reader@example.com';
+        document.getElementById('login-password').value = 'secret-pass';
+
+        fireEvent.submit(document.getElementById('login-form'));
+
+        await waitFor(() => {
+            expect(document.getElementById('nav-login-signup').style.display).toBe('none');
+            expect(window.localStorage.getItem('authToken')).toBeNull();
+        });
+
+        const [, requestOptions] = global.fetch.mock.calls.find(
+            ([url, options]) => String(url).includes('/api/v1/token') && String(options?.method || 'GET').toUpperCase() === 'POST'
+        );
+
+        expect(requestOptions.headers).toEqual(
+            expect.objectContaining({ 'Content-Type': 'application/x-www-form-urlencoded' })
+        );
+        expect(requestOptions.body).toBeInstanceOf(URLSearchParams);
+        expect(requestOptions.body.get('username')).toBe('reader@example.com');
+        expect(requestOptions.body.get('password')).toBe('secret-pass');
+        expect(requestOptions.credentials).toBe('include');
+        expect(document.getElementById('nav-create-story').style.display).toBe('inline-block');
+        expect(document.getElementById('nav-account').style.display).toBe('inline-block');
+        expect(document.getElementById('story-creation-section').style.display).toBe('block');
+        await waitFor(() => {
+            expect(document.getElementById('nav-admin-panel').style.display).toBe('inline-block');
+        });
     });
 
-    const [, requestOptions] = global.fetch.mock.calls.find(
-      ([url, options]) => String(url).includes('/api/v1/token') && String(options?.method || 'GET').toUpperCase() === 'POST'
-    );
+    test('failed malformed login response leaves auth state untouched and shows fallback error', async () => {
+        global.fetch.mockImplementation(async (url, options = {}) => {
+            const value = String(url);
+            const method = String(options.method || 'GET').toUpperCase();
 
-    expect(requestOptions.headers).toEqual(
-      expect.objectContaining({ 'Content-Type': 'application/x-www-form-urlencoded' })
-    );
-    expect(requestOptions.body).toBeInstanceOf(URLSearchParams);
-    expect(requestOptions.body.get('username')).toBe('reader@example.com');
-    expect(requestOptions.body.get('password')).toBe('secret-pass');
-    expect(document.getElementById('nav-login-signup').style.display).toBe('none');
-    expect(document.getElementById('nav-create-story').style.display).toBe('inline-block');
-    expect(document.getElementById('story-creation-section').style.display).toBe('block');
-    await waitFor(() => {
-      expect(document.getElementById('nav-admin-panel').style.display).toBe('inline-block');
-    });
-  });
+            if (value.includes('/api/v1/token') && method === 'POST') {
+                return {
+                    ok: false,
+                    status: 401,
+                    json: async () => {
+                        throw new Error('bad json');
+                    },
+                    headers: { get: () => 'application/json' },
+                };
+            }
 
-  test('failed malformed login response leaves auth state untouched and shows fallback error', async () => {
-    global.fetch.mockImplementation(async (url, options = {}) => {
-      const value = String(url);
-      const method = String(options.method || 'GET').toUpperCase();
+            return buildJsonResponse({});
+        });
 
-      if (value.includes('/api/v1/token') && method === 'POST') {
-        return {
-          ok: false,
-          status: 401,
-          json: async () => {
-            throw new Error('bad json');
-          },
-          headers: { get: () => 'application/json' },
-        };
-      }
+        document.getElementById('login-username').value = 'reader@example.com';
+        document.getElementById('login-password').value = 'wrong-pass';
 
-      return buildJsonResponse({});
+        fireEvent.submit(document.getElementById('login-form'));
+
+        await waitFor(() => {
+            expect(document.getElementById('api-message').textContent).toBe('Login failed');
+        });
+
+        expect(window.localStorage.getItem('authToken')).toBeNull();
+        expect(document.getElementById('nav-login-signup').style.display).not.toBe('none');
+        expect(document.getElementById('auth-section').style.display).toBe('block');
     });
 
-    document.getElementById('login-username').value = 'reader@example.com';
-    document.getElementById('login-password').value = 'wrong-pass';
+    test('signup success posts JSON payload then returns to login view', async () => {
+        fireEvent.click(document.getElementById('show-signup-link'));
 
-    fireEvent.submit(document.getElementById('login-form'));
+        const signupDisclosure = document.getElementById('signup-disclosure');
+        expect(signupDisclosure).not.toBeNull();
+        expect(signupDisclosure.textContent).toContain('AI processors');
+        expect(
+            Array.from(signupDisclosure.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'))
+        ).toEqual([
+            '/legal/privacy-policy',
+            '/legal/terms-of-service',
+            '/legal/ai-processing-disclosure',
+        ]);
 
-    await waitFor(() => {
-      expect(document.getElementById('api-message').textContent).toBe('Login failed');
+        document.getElementById('signup-username').value = 'new-reader';
+        document.getElementById('signup-email').value = 'new@example.com';
+        document.getElementById('signup-password').value = 'secret-pass';
+        document.getElementById('signup-password-confirm').value = 'secret-pass';
+
+        fireEvent.submit(document.getElementById('signup-form'));
+
+        await waitFor(() => {
+            expect(document.getElementById('api-message').textContent).toBe('Signup successful! Please login.');
+        });
+
+        const [, requestOptions] = global.fetch.mock.calls.find(
+            ([url, options]) => String(url).includes('/api/v1/users/') && String(options?.method || 'GET').toUpperCase() === 'POST'
+        );
+        expect(JSON.parse(requestOptions.body)).toEqual({
+            username: 'new-reader',
+            email: 'new@example.com',
+            password: 'secret-pass',
+        });
+        expect(document.getElementById('signup-form').style.display).toBe('none');
+        expect(document.getElementById('login-form').style.display).toBe('block');
+        expect(document.getElementById('signup-username').value).toBe('');
     });
 
-    expect(window.localStorage.getItem('authToken')).toBeNull();
-    expect(document.getElementById('nav-login-signup').style.display).not.toBe('none');
-    expect(document.getElementById('auth-section').style.display).toBe('block');
-  });
+    test('generation review surface includes AI and privacy disclosure links', () => {
+        const generationDisclosure = document.getElementById('generation-disclosure');
 
-  test('signup success posts JSON payload then returns to login view', async () => {
-    fireEvent.click(document.getElementById('show-signup-link'));
-
-    document.getElementById('signup-username').value = 'new-reader';
-    document.getElementById('signup-email').value = 'new@example.com';
-    document.getElementById('signup-password').value = 'secret-pass';
-    document.getElementById('signup-password-confirm').value = 'secret-pass';
-
-    fireEvent.submit(document.getElementById('signup-form'));
-
-    await waitFor(() => {
-      expect(document.getElementById('api-message').textContent).toBe('Signup successful! Please login.');
+        expect(generationDisclosure).not.toBeNull();
+        expect(generationDisclosure.textContent).toContain('uploaded reference images');
+        expect(
+            Array.from(generationDisclosure.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'))
+        ).toEqual([
+            '/legal/ai-processing-disclosure',
+            '/legal/privacy-operations',
+        ]);
     });
 
-    const [, requestOptions] = global.fetch.mock.calls.find(
-      ([url, options]) => String(url).includes('/api/v1/users/') && String(options?.method || 'GET').toUpperCase() === 'POST'
-    );
-    expect(JSON.parse(requestOptions.body)).toEqual({
-      username: 'new-reader',
-      email: 'new@example.com',
-      password: 'secret-pass',
+    test('signup password mismatch is blocked before request and keeps signup form visible', async () => {
+        fireEvent.click(document.getElementById('show-signup-link'));
+
+        document.getElementById('signup-username').value = 'new-reader';
+        document.getElementById('signup-email').value = 'new@example.com';
+        document.getElementById('signup-password').value = 'secret-pass';
+        document.getElementById('signup-password-confirm').value = 'different-pass';
+
+        fireEvent.submit(document.getElementById('signup-form'));
+
+        await waitFor(() => {
+            expect(document.getElementById('api-message').textContent).toBe('Passwords do not match. Please re-enter.');
+        });
+
+        expect(
+            global.fetch.mock.calls.some(
+                ([url, options]) => String(url).includes('/api/v1/users/') && String(options?.method || 'GET').toUpperCase() === 'POST'
+            )
+        ).toBe(false);
+        expect(document.getElementById('signup-form').style.display).toBe('block');
+        expect(document.getElementById('login-form').style.display).toBe('none');
     });
-    expect(document.getElementById('signup-form').style.display).toBe('none');
-    expect(document.getElementById('login-form').style.display).toBe('block');
-    expect(document.getElementById('signup-username').value).toBe('');
-  });
-
-  test('signup password mismatch is blocked before request and keeps signup form visible', async () => {
-    fireEvent.click(document.getElementById('show-signup-link'));
-
-    document.getElementById('signup-username').value = 'new-reader';
-    document.getElementById('signup-email').value = 'new@example.com';
-    document.getElementById('signup-password').value = 'secret-pass';
-    document.getElementById('signup-password-confirm').value = 'different-pass';
-
-    fireEvent.submit(document.getElementById('signup-form'));
-
-    await waitFor(() => {
-      expect(document.getElementById('api-message').textContent).toBe('Passwords do not match. Please re-enter.');
-    });
-
-    expect(
-      global.fetch.mock.calls.some(
-        ([url, options]) => String(url).includes('/api/v1/users/') && String(options?.method || 'GET').toUpperCase() === 'POST'
-      )
-    ).toBe(false);
-    expect(document.getElementById('signup-form').style.display).toBe('block');
-    expect(document.getElementById('login-form').style.display).toBe('none');
-  });
 });

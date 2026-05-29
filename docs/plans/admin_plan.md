@@ -1,3 +1,9 @@
+> Historical planning note
+>
+> This document is retained as implementation planning history. It is not the
+> current source of truth for shipped admin behavior. Use the repo-root README,
+> repo-root CONFIG guide, the PRD, and the code for current behavior.
+
 Okay, the PRD updates look good and the strategy for handling dynamic list item changes is much clearer now.
 
 Here's a refined implementation plan for the admin functionality, incorporating the new requirements and breaking it down into manageable phases:

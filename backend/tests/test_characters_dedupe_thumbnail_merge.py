@@ -71,7 +71,8 @@ def test_listing_prefers_public_character_thumbnail_over_private_story_asset(
     def _fake_generate_image(prompt, style, size):
         return b"\x89PNG\r\n\x1a\nPUBLIC"
 
-    monkeypatch.setattr("backend.ai_services.generate_image", _fake_generate_image)
+    monkeypatch.setattr(
+        "backend.ai_services.generate_image", _fake_generate_image)
 
     create_res = client.post(
         "/api/v1/characters/",
@@ -82,7 +83,8 @@ def test_listing_prefers_public_character_thumbnail_over_private_story_asset(
     character = create_res.json()
     public_path = character["current_image"]["file_path"]
 
-    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    user = db_session.query(User).filter(
+        User.username == "user@example.com").one()
     blocked_path = f"images/user_{user.id}/story_99/references/fallback.png"
     crud.add_character_image(
         db_session,
@@ -99,7 +101,8 @@ def test_listing_prefers_public_character_thumbnail_over_private_story_asset(
     )
     assert res_list.status_code == 200, res_list.text
     items = res_list.json()["items"]
-    thumb_item = next((item for item in items if item["id"] == character["id"]), None)
+    thumb_item = next(
+        (item for item in items if item["id"] == character["id"]), None)
     assert thumb_item is not None
     assert thumb_item["thumbnail_path"] == public_path
 
@@ -117,7 +120,8 @@ def test_listing_omits_thumbnail_when_only_private_story_asset_exists(
     assert create_res.status_code == 201, create_res.text
     character = create_res.json()
 
-    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    user = db_session.query(User).filter(
+        User.username == "user@example.com").one()
     crud.add_character_image(
         db_session,
         user.id,
@@ -133,7 +137,8 @@ def test_listing_omits_thumbnail_when_only_private_story_asset_exists(
     )
     assert res_list.status_code == 200, res_list.text
     items = res_list.json()["items"]
-    thumb_item = next((item for item in items if item["id"] == character["id"]), None)
+    thumb_item = next(
+        (item for item in items if item["id"] == character["id"]), None)
     assert thumb_item is not None
     assert thumb_item["thumbnail_path"] is None
 
@@ -151,7 +156,8 @@ def test_backfill_thumbnails_repairs_public_thumbnail_from_story_asset(
     assert create_res.status_code == 201, create_res.text
     character = create_res.json()
 
-    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    user = db_session.query(User).filter(
+        User.username == "user@example.com").one()
     source_rel_path = (
         f"images/user_{user.id}/story_321/references/story-asset-only.png"
     )
@@ -175,7 +181,8 @@ def test_backfill_thumbnails_repairs_public_thumbnail_from_story_asset(
     )
     assert res_list.status_code == 200, res_list.text
     items = res_list.json()["items"]
-    thumb_item = next((item for item in items if item["id"] == character["id"]), None)
+    thumb_item = next(
+        (item for item in items if item["id"] == character["id"]), None)
     assert thumb_item is not None
     assert thumb_item["thumbnail_path"] is None
 
@@ -195,7 +202,8 @@ def test_backfill_thumbnails_repairs_public_thumbnail_from_story_asset(
     )
     assert refreshed_list.status_code == 200, refreshed_list.text
     refreshed_items = refreshed_list.json()["items"]
-    thumb_item = next((item for item in refreshed_items if item["id"] == character["id"]), None)
+    thumb_item = next(
+        (item for item in refreshed_items if item["id"] == character["id"]), None)
     assert thumb_item is not None
     thumbnail_path = thumb_item["thumbnail_path"]
     assert thumbnail_path is not None
@@ -204,17 +212,21 @@ def test_backfill_thumbnails_repairs_public_thumbnail_from_story_asset(
         f"images/user_{user.id}/characters/{character['id']}/"
     )
 
-    materialized_abs_path = os.path.join(get_settings().data_dir, thumbnail_path)
+    materialized_abs_path = os.path.join(
+        get_settings().data_dir, thumbnail_path)
     assert os.path.exists(materialized_abs_path)
     with open(materialized_abs_path, "rb") as materialized_file:
         assert materialized_file.read() == b"story asset thumbnail"
 
-    repaired_character = crud.get_character(db_session, user.id, character["id"])
+    repaired_character = crud.get_character(
+        db_session, user.id, character["id"])
     assert repaired_character is not None
     assert repaired_character.current_image is not None
     assert repaired_character.current_image.file_path == thumbnail_path
-    assert any(image.file_path == source_rel_path for image in repaired_character.images)
-    assert any(image.file_path == thumbnail_path for image in repaired_character.images)
+    assert any(image.file_path ==
+               source_rel_path for image in repaired_character.images)
+    assert any(image.file_path ==
+               thumbnail_path for image in repaired_character.images)
 
 
 def test_listing_leaves_thumbnail_null_when_story_asset_source_is_missing(
@@ -230,7 +242,8 @@ def test_listing_leaves_thumbnail_null_when_story_asset_source_is_missing(
     assert create_res.status_code == 201, create_res.text
     character = create_res.json()
 
-    user = db_session.query(User).filter(User.username == "user@example.com").one()
+    user = db_session.query(User).filter(
+        User.username == "user@example.com").one()
     missing_source_rel_path = (
         f"images/user_{user.id}/story_654/references/missing-story-asset.png"
     )
@@ -249,7 +262,8 @@ def test_listing_leaves_thumbnail_null_when_story_asset_source_is_missing(
     )
     assert res_list.status_code == 200, res_list.text
     items = res_list.json()["items"]
-    thumb_item = next((item for item in items if item["id"] == character["id"]), None)
+    thumb_item = next(
+        (item for item in items if item["id"] == character["id"]), None)
     assert thumb_item is not None
     assert thumb_item["thumbnail_path"] is None
 
@@ -262,7 +276,8 @@ def test_listing_leaves_thumbnail_null_when_story_asset_source_is_missing(
     assert payload["repaired"] == 0
     assert payload["missing_source"] == 1
 
-    repaired_character = crud.get_character(db_session, user.id, character["id"])
+    repaired_character = crud.get_character(
+        db_session, user.id, character["id"])
     assert repaired_character is not None
     assert repaired_character.current_image is not None
     assert repaired_character.current_image.file_path == missing_source_rel_path
@@ -306,7 +321,7 @@ def test_story_creation_merge_avoids_duplicate_names(
 
     monkeypatch.setattr(
         "backend.crud.create_story_generation_task",
-        lambda db, story_id, user_id: schemas.StoryGenerationTask(
+        lambda db, story_id, user_id, reservation_id=None: schemas.StoryGenerationTask(
             id=task_id,
             story_id=story_id,
             user_id=user_id,

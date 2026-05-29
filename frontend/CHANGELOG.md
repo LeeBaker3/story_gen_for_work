@@ -2,8 +2,15 @@
 
 ## Unreleased
 
+### Added
+- UI/UX review notes for the story preview and editor cleanup pass now live in `docs/reviews/UI_UX_review.md`.
+
 ### Changed
-- No user-visible frontend changes; documentation/config references updated to align with new OpenAI defaults and toggles.
+- Frontend shell and account flows now reflect the current branch posture:
+	legal/trust surfaces, entitlement/account messaging, billing entry points,
+	and cookie-based browser auth support.
+- Wizard, editor, and admin UI documentation references now align with the
+	shipped branch defaults and current OpenAI model/config defaults.
 
 ## [0.6.0](https://github.com/LeeBaker3/story_gen_for_work/compare/frontend-v0.5.0...frontend-v0.6.0) (2026-01-05)
 

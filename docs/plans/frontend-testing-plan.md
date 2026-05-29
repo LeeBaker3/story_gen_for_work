@@ -1,5 +1,12 @@
 # Frontend Testing Plan
 
+> Historical planning note
+>
+> This document is retained as planning history for the frontend test rollout.
+> It is not the current product contract. Use the repo-root README,
+> repo-root CONFIG guide, the PRD, and the current test/config files for the
+> shipped testing posture.
+
 Goal
 - Introduce unit and integration tests for the vanilla JS frontend to reduce regressions in the wizard, Characters library, and modal flows.
 

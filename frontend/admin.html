@@ -36,6 +36,8 @@
                 <h2>Navigation</h2>
                 <ul>
                     <li><a href="#" data-section="user-management">User Management</a></li>
+                    <li><a href="#" data-section="admin-broadcasts">Broadcasts</a></li>
+                    <li><a href="#" data-section="admin-analytics">Analytics</a></li>
                     <li><a href="#" data-section="dynamic-content">Dynamic Content</a></li>
                     <li><a href="#" data-section="admin-stats">Admin Stats</a></li>
                     <li><a href="#" data-section="content-moderation">Content Moderation</a></li>
@@ -51,8 +53,20 @@
         </div>
     </main>
 
-    <footer>
-        <p>&copy; 2025 Story Generator Admin</p>
+    <footer class="app-footer">
+        <div class="app-footer__content">
+            <p class="app-footer__brand">&copy; 2025 Story Generator Admin</p>
+            <nav class="app-footer__nav" aria-label="Legal, support, and trust links">
+                <a href="/legal/privacy-policy">Privacy</a>
+                <a href="/legal/terms-of-service">Terms</a>
+                <a href="/legal/acceptable-use-policy">Acceptable Use</a>
+                <a href="/legal/copyright-ip-policy">Copyright/IP</a>
+                <a href="/legal/support-policy">Support</a>
+                <a href="/legal/support-policy">Contact</a>
+                <a href="/legal/refund-policy">Refunds</a>
+                <a href="/legal/service-status">Status</a>
+            </nav>
+        </div>
     </footer>
     <!-- Global snackbar and toasts (consistent with main app) -->
     <div id="snackbar" class="snackbar" role="status" aria-live="polite" style="display:none;"></div>

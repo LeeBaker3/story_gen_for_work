@@ -1,0 +1,100 @@
+name: UI E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Install Playwright Chromium with system dependencies
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run UI E2E suite
+        env:
+          OPENAI_API_KEY: "dummy-ci-key"
+          PYTHONPATH: .
+          RUN_UI_E2E: "true"
+        run: |
+          mkdir -p backend/tests/e2e-artifacts
+          pytest -q backend/tests/e2e \
+            --browser chromium \
+            --tracing retain-on-failure \
+            --video retain-on-failure \
+            --screenshot only-on-failure \
+            --output backend/tests/e2e-artifacts/playwright \
+            --basetemp backend/tests/e2e-artifacts/pytest-temp \
+            --junitxml backend/tests/e2e-artifacts/junit.xml
+
+      - name: Upload UI E2E JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-e2e-junit-report
+          path: backend/tests/e2e-artifacts/junit.xml
+          if-no-files-found: ignore
+
+      - name: Upload UI E2E failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-e2e-failure-artifacts
+          path: |
+            backend/tests/e2e-artifacts/playwright/
+            backend/tests/e2e-artifacts/pytest-temp/
+          if-no-files-found: ignore
+
+  publish-legacy-status:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs:
+      - test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish legacy commit status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const state = '${{ needs.test.result }}' === 'success'
+              ? 'success'
+              : 'failure';
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state,
+              context: 'legacy/e2e-tests',
+              description:
+                state === 'success'
+                  ? 'Legacy UI E2E tests passed'
+                  : 'Legacy UI E2E tests failed',
+            });

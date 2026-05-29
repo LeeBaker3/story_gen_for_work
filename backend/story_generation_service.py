@@ -5,7 +5,7 @@ from datetime import datetime
 import time
 from sqlalchemy.orm import Session
 from tenacity import RetryError
-from . import crud, schemas, database, ai_services
+from . import crud, schemas, database, ai_services, entitlements
 from .settings import get_settings
 from .storage_paths import character_ref_paths, page_image_paths, story_images_abs, story_images_rel
 from .logging_config import app_logger, error_logger
@@ -16,8 +16,11 @@ from .metrics import (
 )
 
 
-def _text_position_guidance(text_position: str) -> str:
-    """Return prompt guidance to leave readable space for overlaid text."""
+def _text_position_guidance(
+    text_position: str,
+    layout_mode: str | None = None,
+) -> str:
+    """Return prompt guidance for readable text overlays by layout mode."""
 
     old_map = {
         "top": "top-center",
@@ -36,16 +39,102 @@ def _text_position_guidance(text_position: str) -> str:
     if horizontal not in {"left", "center", "right"}:
         horizontal = "center"
 
+    raw_layout_mode = layout_mode or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    if hasattr(raw_layout_mode, "value"):
+        raw_layout_mode = raw_layout_mode.value
+    normalized_layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        normalized_layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+
     if vertical == "middle" and horizontal == "center":
+        if is_full_page_overlay:
+            return (
+                "Keep the central area calmer, less visually busy, and "
+                "tonally supportive so story text can overlay clearly."
+            )
         return (
             "Keep the central area visually calm and uncluttered so story text "
             "can be placed there clearly."
         )
     area = f"{vertical} {horizontal}" if horizontal != "center" else vertical
+    if is_full_page_overlay:
+        return (
+            f"Keep the {area} area calmer, less visually busy, and tonally "
+            "supportive for overlaid story text."
+        )
     return (
         f"Leave clear, readable visual space in the {area} area of the "
         "composition for overlaid story text."
     )
+
+
+def _editor_preference_guidance(
+    editor_settings: dict,
+    page_number,
+) -> str:
+    """Return additional image prompt guidance for wizard layout preferences."""
+
+    guidance_parts = []
+
+    image_fit = str(editor_settings.get("image_fit") or "").strip().lower()
+    if image_fit == "fill page":
+        guidance_parts.append(
+            "Compose the artwork to fill the page edge-to-edge while keeping "
+            "important subjects away from crop-sensitive edges."
+        )
+    elif image_fit == "keep artwork contained":
+        guidance_parts.append(
+            "Keep the main action comfortably inset with safe margins so the "
+            "artwork can sit contained without awkward cropping."
+        )
+
+    readability_treatment = str(
+        editor_settings.get("readability_treatment") or ""
+    ).strip().lower()
+    raw_layout_mode = (
+        editor_settings.get("layout_mode")
+        or schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+    if hasattr(raw_layout_mode, "value"):
+        raw_layout_mode = raw_layout_mode.value
+    normalized_layout_mode = str(raw_layout_mode).strip().lower()
+    is_full_page_overlay = (
+        normalized_layout_mode == schemas.LayoutMode.FULL_PAGE_OVERLAY.value
+    )
+    if readability_treatment == "high-contrast box":
+        guidance_parts.append(
+            "Leave enough tonal separation behind the text area for a high-"
+            "contrast text box."
+        )
+    elif readability_treatment == "soft shadow":
+        guidance_parts.append(
+            "Keep moderate local contrast around the text area so a soft text "
+            "shadow remains readable."
+        )
+    elif readability_treatment == "subtle gradient band":
+        guidance_parts.append(
+            "Leave a gentle tonal transition behind the text area so a subtle "
+            "gradient band can improve readability."
+        )
+
+    is_title_page = str(page_number).strip().lower() == "title"
+    cover_title_placement = str(
+        editor_settings.get("cover_title_placement") or ""
+    ).strip().lower()
+    if is_title_page and cover_title_placement in {"top", "center", "bottom"}:
+        if is_full_page_overlay:
+            guidance_parts.append(
+                f"Keep the {cover_title_placement} area calmer and easier "
+                "to read for cover title placement."
+            )
+        else:
+            guidance_parts.append(
+                f"Reserve a cleaner {cover_title_placement} area for the "
+                "cover title placement."
+            )
+
+    return " ".join(guidance_parts)
 
 
 def _format_task_error_message(error: Exception) -> str:
@@ -73,11 +162,41 @@ def _restore_failed_story_shell(
         failed_story.pages = []
 
 
-async def generate_story_as_background_task(task_id: str, story_id: int, user_id: int, story_input: schemas.StoryCreate):
+def reconstruct_story_input_from_story(story) -> schemas.StoryCreate:
+    """Rebuild the generation payload from the persisted story shell."""
+
+    payload = {
+        'title': story.title,
+        'cover_subtitle': getattr(story, 'cover_subtitle', None),
+        'cover_author': getattr(story, 'cover_author', None),
+        'genre': story.genre,
+        'story_outline': story.story_outline,
+        'main_characters': list(story.main_characters or []),
+        'num_pages': story.num_pages,
+        'tone': getattr(story, 'tone', None),
+        'setting': getattr(story, 'setting', None),
+        'writing_style': getattr(story, 'writing_style', None),
+        'image_style': getattr(story, 'image_style', None),
+        'word_to_picture_ratio': getattr(story, 'word_to_picture_ratio', None),
+        'text_density': getattr(story, 'text_density', None),
+        'editor_settings': getattr(story, 'editor_settings', None),
+        'is_draft': getattr(story, 'is_draft', False),
+    }
+    return schemas.StoryCreate.model_validate(payload)
+
+
+async def generate_story_as_background_task(
+    task_id: str,
+    story_id: int,
+    user_id: int,
+    story_input: schemas.StoryCreate,
+    reservation_id: int | None = None,
+):
     db: Session = next(database.get_db())
     _settings = get_settings()
     telemetry_enabled = bool(getattr(_settings, 'enable_telemetry', False))
     start_time = time.perf_counter()
+    provider_spend_started = False
     try:
         app_logger.info(
             f"Starting background story generation for task_id: {task_id}")
@@ -116,6 +235,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             )
 
             # The service returns a dictionary of the (possibly updated) character's details
+            provider_spend_started = True
             char_details = await ai_services.generate_character_reference_image(
                 character_input, story_input, db, user_id, story_id,
                 image_save_path_on_disk=char_image_save_path_on_disk,
@@ -151,6 +271,7 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         story_content_input['main_characters'] = list(
             character_details_map.values())
 
+        provider_spend_started = True
         story_content = await asyncio.to_thread(
             ai_services.generate_story_from_chatgpt,
             story_content_input,
@@ -162,7 +283,8 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             f"Completed story content generation for task_id: {task_id}")
         editor_settings = story_content_input.get('editor_settings') or {}
         text_position_guidance = _text_position_guidance(
-            editor_settings.get('text_position', 'bottom')
+            editor_settings.get('text_position', 'bottom'),
+            editor_settings.get('layout_mode'),
         )
 
         # Step 3: Generate Page Images
@@ -215,12 +337,17 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                 backoff = max(0.1, float(
                     getattr(_settings, 'retry_backoff_base', 1.0)))
                 page_image_url = None
+                preference_guidance = _editor_preference_guidance(
+                    editor_settings,
+                    raw_page_num,
+                )
                 for attempt in range(attempts):
                     if attempt > 0:
                         if telemetry_enabled:
                             PAGE_IMAGE_RETRIES_TOTAL.inc()
                             retry_counts_by_page[str(page_num_int)] = (
-                                retry_counts_by_page.get(str(page_num_int), 0) + 1
+                                retry_counts_by_page.get(
+                                    str(page_num_int), 0) + 1
                             )
                             total_retries += 1
                             crud.update_story_generation_task(
@@ -230,8 +357,17 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
                                 total_retries=total_retries,
                                 failed_pages_count=failed_pages,
                             )
+                    provider_spend_started = True
                     page_image_url = await ai_services.generate_image_for_page(
-                        page_content=f"{image_description}. {text_position_guidance}",
+                        page_content=" ".join(
+                            part
+                            for part in [
+                                image_description,
+                                text_position_guidance,
+                                preference_guidance,
+                            ]
+                            if part
+                        ),
                         style_reference=image_style,
                         characters_in_scene=characters_in_scene,
                         db=db,
@@ -333,6 +469,16 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
         app_logger.info(
             f"Successfully completed story generation for task_id: {task_id}")
 
+        if reservation_id is not None:
+            if provider_spend_started:
+                entitlements.consume_credits(db, reservation_id)
+            else:
+                entitlements.release_credits(
+                    db,
+                    reservation_id,
+                    reason="story_generation_completed_without_provider_spend",
+                )
+
         observe_story_generation(
             status="completed",
             duration_seconds=time.perf_counter() - start_time,
@@ -352,6 +498,16 @@ async def generate_story_as_background_task(task_id: str, story_id: int, user_id
             )
 
         error_message = _format_task_error_message(e)
+
+        if reservation_id is not None:
+            if provider_spend_started:
+                entitlements.consume_credits(db, reservation_id)
+            else:
+                entitlements.release_credits(
+                    db,
+                    reservation_id,
+                    reason="story_generation_failed_before_provider_spend",
+                )
 
         try:
             crud.update_story_generation_task(

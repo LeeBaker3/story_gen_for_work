@@ -165,7 +165,8 @@ def test_get_current_user_missing_sub(db_session: Session) -> None:
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(auth.get_current_user(token=missing_sub_token, db=db_session))
+        asyncio.run(auth.get_current_user(
+            token=missing_sub_token, db=db_session))
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Could not validate credentials"
@@ -218,7 +219,62 @@ def test_get_current_admin_user_admin(db_session: Session) -> None:
         role="admin",
     )
 
-    current_user = asyncio.run(auth.get_current_admin_user(current_user=admin_user))
+    current_user = asyncio.run(
+        auth.get_current_admin_user(current_user=admin_user))
 
     assert current_user.id == admin_user.id
     assert current_user.role == "admin"
+
+
+def test_issue_password_reset_token_persists_hashed_token(
+    db_session: Session,
+) -> None:
+    """Issuing a reset token should persist only its hash and expiry."""
+
+    user = _create_test_user(
+        db_session,
+        username="resettable@example.com",
+        email="resettable@example.com",
+        password="initial-password",
+    )
+
+    token, expires_at = auth.issue_password_reset_token(db_session, user)
+    db_session.refresh(user)
+
+    assert token
+    assert user.password_reset_token_hash == auth.hash_password_reset_token(
+        token)
+    assert user.password_reset_token_hash != token
+    assert user.password_reset_token_expires_at is not None
+    stored_expires_at = user.password_reset_token_expires_at
+    if (
+        stored_expires_at.tzinfo is None
+        or stored_expires_at.tzinfo.utcoffset(stored_expires_at) is None
+    ):
+        stored_expires_at = stored_expires_at.replace(tzinfo=UTC)
+    assert stored_expires_at <= expires_at
+
+
+def test_get_valid_password_reset_user_rejects_expired_tokens(
+    db_session: Session,
+) -> None:
+    """Expired reset tokens should be rejected and cleared."""
+
+    user = _create_test_user(
+        db_session,
+        username="expired-reset@example.com",
+        email="expired-reset@example.com",
+        password="initial-password",
+    )
+    token, _ = auth.issue_password_reset_token(db_session, user)
+    user.password_reset_token_expires_at = datetime.now(
+        UTC) - timedelta(minutes=1)
+    db_session.commit()
+    db_session.refresh(user)
+
+    resolved_user = auth.get_valid_password_reset_user(db_session, token)
+    db_session.refresh(user)
+
+    assert resolved_user is None
+    assert user.password_reset_token_hash is None
+    assert user.password_reset_token_expires_at is None

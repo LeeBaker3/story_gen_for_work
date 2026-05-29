@@ -31,6 +31,8 @@ class MockPdfStory:
 
     id: int
     title: str
+    cover_subtitle: str | None = None
+    cover_author: str | None = None
     pages: list[MockPdfPage] = field(default_factory=list)
     editor_settings: dict | None = None
 
@@ -136,6 +138,41 @@ def test_export_pdf_filename_sanitization(client: TestClient, db_session, regula
         assert "AWeirdTitle.pdf" in cd or "story_" in cd
 
 
+def test_export_pdf_preview_uses_inline_disposition(
+    client: TestClient,
+    db_session,
+    regular_user_auth_headers,
+):
+    user = db_session.query(database.User).filter_by(
+        username="user@example.com").first()
+    story = database.Story(
+        title="Preview Story",
+        genre="fantasy",
+        story_outline="O",
+        main_characters=[],
+        num_pages=1,
+        owner_id=user.id,
+        is_draft=False,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(story)
+    db_session.commit()
+    db_session.refresh(story)
+
+    with patch("backend.pdf_generator.create_story_pdf", return_value=b"%PDF-1.4\n..."):
+        resp = client.get(
+            f"/api/v1/stories/{story.id}/pdf?disposition=inline",
+            headers=regular_user_auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("content-type") == "application/pdf"
+    assert resp.headers.get("content-disposition", "").startswith(
+        "inline; filename=Preview Story.pdf"
+    )
+
+
 def test_export_pdf_hides_internal_exception_message(
     client: TestClient,
     db_session,
@@ -160,7 +197,8 @@ def test_export_pdf_hides_internal_exception_message(
 
     with patch(
         "backend.pdf_generator.create_story_pdf",
-        side_effect=RuntimeError("internal renderer failure: /srv/private/template.ttf"),
+        side_effect=RuntimeError(
+            "internal renderer failure: /srv/private/template.ttf"),
     ):
         resp = client.get(
             f"/api/v1/stories/{story.id}/pdf",
@@ -199,6 +237,33 @@ def test_create_story_pdf_multi_page_story_returns_pdf_bytes(tmp_path) -> None:
     pdf_bytes = create_story_pdf(story)
 
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "multi-page-story.pdf")
+
+
+def test_create_story_pdf_sorts_pages_by_page_number_before_rendering() -> None:
+    story = MockPdfStory(
+        id=120,
+        title="Sorted Render",
+        pages=[
+            MockPdfPage(page_number=2, text="Second."),
+            MockPdfPage(page_number=0, text="Cover."),
+            MockPdfPage(page_number=1, text="First."),
+        ],
+    )
+    rendered_text = []
+
+    with patch("backend.pdf_generator._draw_placeholder_background"), patch(
+        "backend.pdf_generator._draw_image_cover"
+    ), patch(
+        "backend.pdf_generator._draw_title_page_overlay",
+        side_effect=lambda *_args, **_kwargs: rendered_text.append("Cover."),
+    ), patch(
+        "backend.pdf_generator._draw_text_overlay",
+        side_effect=lambda _pdf, text, *
+            _args, **_kwargs: rendered_text.append(text),
+    ):
+        create_story_pdf(story)
+
+    assert rendered_text == ["Cover.", "First.", "Second."]
 
 
 def test_create_story_pdf_missing_image_falls_back_to_placeholder(tmp_path) -> None:
@@ -276,6 +341,48 @@ def test_create_story_pdf_honors_font_family_override(tmp_path) -> None:
     _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "font-family-story.pdf")
 
 
+def test_create_story_pdf_uses_explicit_text_alignment(tmp_path) -> None:
+    story = MockPdfStory(
+        id=111,
+        title="Right Align Story",
+        pages=[MockPdfPage(page_number=1, text="Right aligned body text.")],
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "text_alignment": "right",
+        },
+    )
+
+    with patch(
+        "reportlab.pdfgen.canvas.Canvas.drawRightString",
+        autospec=True,
+    ) as draw_right_string:
+        pdf_bytes = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "text-alignment-story.pdf")
+    drawn_text = [call.args[3] for call in draw_right_string.call_args_list]
+    assert "Right aligned body text." in drawn_text
+
+
+def test_create_story_pdf_soft_shadow_treatment_draws_shadow_pass(tmp_path) -> None:
+    story = MockPdfStory(
+        id=112,
+        title="Shadow Story",
+        pages=[MockPdfPage(page_number=1, text="Shadowed body text.")],
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "text_alignment": "left",
+            "readability_treatment": "Soft shadow",
+        },
+    )
+
+    with patch("reportlab.pdfgen.canvas.Canvas.drawString", autospec=True) as draw_string:
+        pdf_bytes = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "soft-shadow-story.pdf")
+    drawn_text = [call.args[3] for call in draw_string.call_args_list]
+    assert drawn_text.count("Shadowed body text.") == 2
+
+
 def test_create_story_pdf_supports_split_layout_modes(tmp_path) -> None:
     story = MockPdfStory(
         id=109,
@@ -288,7 +395,8 @@ def test_create_story_pdf_supports_split_layout_modes(tmp_path) -> None:
     )
 
     horizontal_pdf = create_story_pdf(story)
-    _assert_valid_pdf_bytes(horizontal_pdf, tmp_path, "horizontal-split-story.pdf")
+    _assert_valid_pdf_bytes(horizontal_pdf, tmp_path,
+                            "horizontal-split-story.pdf")
 
     story.editor_settings = {
         **EDITOR_DEFAULTS,
@@ -319,6 +427,27 @@ def test_create_story_pdf_uses_configured_a4_page_size(tmp_path) -> None:
     assert height == pytest.approx(expected_height, abs=0.2)
 
 
+def test_create_story_pdf_renders_cover_subtitle_and_author(tmp_path) -> None:
+    story = MockPdfStory(
+        id=110,
+        title="Cover Metadata Story",
+        cover_subtitle="A quiet adventure under moonlight",
+        cover_author="Lee Baker",
+        pages=[MockPdfPage(page_number=0, text="Cover Metadata Story")],
+    )
+
+    with patch(
+        "reportlab.pdfgen.canvas.Canvas.drawCentredString",
+        autospec=True,
+    ) as draw_string:
+        pdf_bytes = create_story_pdf(story)
+
+    _assert_valid_pdf_bytes(pdf_bytes, tmp_path, "cover-metadata-story.pdf")
+    drawn_text = [call.args[3] for call in draw_string.call_args_list]
+    assert "A quiet adventure under moonlight" in drawn_text
+    assert "By Lee Baker" in drawn_text
+
+
 def test_resolve_page_size_defaults_to_letter_and_supports_square_storybook() -> None:
     default_story = MockPdfStory(id=107, title="Default Format")
     square_story = MockPdfStory(
@@ -331,7 +460,8 @@ def test_resolve_page_size_defaults_to_letter_and_supports_square_storybook() ->
     )
 
     assert _resolve_page_size(default_story) == PAGE_SIZE_MAP["letter"]
-    assert _resolve_page_size(square_story) == PAGE_SIZE_MAP["square-storybook"]
+    assert _resolve_page_size(
+        square_story) == PAGE_SIZE_MAP["square-storybook"]
 
 
 def test_effective_page_settings_prefers_page_font_family_override() -> None:
@@ -353,3 +483,25 @@ def test_effective_page_settings_prefers_page_font_family_override() -> None:
 
     assert settings["font_family"] == "handwritten"
     assert settings["layout_mode"] == "full-page-overlay"
+
+
+def test_effective_page_settings_prefers_page_alignment_and_opacity_override() -> None:
+    story = MockPdfStory(
+        id=113,
+        title="Per Page Alignment Story",
+        editor_settings={
+            **EDITOR_DEFAULTS,
+            "text_alignment": "right",
+            "text_box_opacity": 0.65,
+        },
+    )
+    page = MockPdfPage(
+        page_number=1,
+        text="Per-page alignment override.",
+        editor_state={"text_alignment": "left", "text_box_opacity": 0.3},
+    )
+
+    settings = _effective_page_settings(story, page)
+
+    assert settings["text_alignment"] == "left"
+    assert settings["text_box_opacity"] == 0.3

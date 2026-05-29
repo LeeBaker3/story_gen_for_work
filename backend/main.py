@@ -14,22 +14,22 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend import auth, crud, database, schemas, storage_paths
 from backend.admin_router import admin_router
+from backend.billing_router import billing_router
 from backend.characters_router import router as characters_router
 from backend.database import SessionLocal, get_db
 from backend.database_seeding import seed_database
 from backend.logging_config import app_logger, error_logger
+from backend.legal_docs import LEGAL_DOCS_DIR, router as legal_docs_router
 from backend.metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_TOTAL,
     normalize_http_path,
 )
-from backend.monitoring_router import monitoring_router
+from backend.monitoring_router import monitoring_router, ops_monitoring_router
 from backend.public_router import public_router
 from backend.rate_limiting import limiter
+from backend.runtime_alerting import send_high_severity_runtime_alert
 from backend.settings import get_settings
-
-
-database.create_db_and_tables()
 
 settings = get_settings()
 
@@ -49,8 +49,34 @@ class PublicStaticContentFiles(StaticFiles):
         return await super().get_response(normalized_path, scope)
 
 
+def mount_public_data_static(app: FastAPI, settings) -> bool:
+    """Mount local public data assets when filesystem storage is active."""
+
+    if not settings.mount_data_static:
+        return False
+
+    data_dir = settings.data_dir
+    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
+        app_logger.warning(
+            "Data directory '%s' not found. Static content will not be served.",
+            data_dir,
+        )
+        return False
+
+    app.mount(
+        "/static_content",
+        PublicStaticContentFiles(directory=data_dir),
+        name="static_content",
+    )
+    app_logger.info("Mounted static content from directory: %s", data_dir)
+    return True
+
+
 def _recover_stuck_generation_tasks(db: Session) -> int:
     """Mark generation tasks left mid-flight by a server restart as failed."""
+
+    if settings.story_generation_runtime_role != "combined":
+        return 0
 
     stuck_tasks = db.query(database.StoryGenerationTask).filter(
         database.StoryGenerationTask.status.in_(
@@ -85,6 +111,16 @@ def _assert_secure_secret_key() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app_logger.info("Application startup: Checking database for initial data.")
+    runtime_bootstrap_applied = database.create_db_and_tables()
+    if runtime_bootstrap_applied:
+        app_logger.info(
+            "Applied runtime schema bootstrap for %s environment.",
+            settings.run_env,
+        )
+    else:
+        app_logger.info(
+            "Skipping runtime schema bootstrap; expecting Alembic-managed schema posture."
+        )
     db = SessionLocal()
     try:
         seed_database(db)
@@ -113,6 +149,49 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def report_unhandled_runtime_errors(request, call_next):
+    """Send a best-effort alert for unhandled API exceptions."""
+
+    try:
+        return await call_next(request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        send_high_severity_runtime_alert(
+            source="api",
+            summary="Unhandled API exception",
+            details={
+                "method": request.method,
+                "path": str(request.url.path),
+                "exception_type": exc.__class__.__name__,
+                "message": str(exc),
+            },
+        )
+        raise
+
+
+@app.middleware("http")
+async def apply_security_headers(request, call_next):
+    """Apply a minimal browser hardening header set for app responses."""
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+    )
+    if settings.run_env == "prod":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
+
+@app.middleware("http")
 async def prometheus_http_metrics(request, call_next):
     """Record basic HTTP request metrics for Prometheus."""
 
@@ -124,7 +203,8 @@ async def prometheus_http_metrics(request, call_next):
     route_template = getattr(route, "path", None)
     path_label = normalize_http_path(
         raw_path=str(request.url.path),
-        route_template=route_template if isinstance(route_template, str) else None,
+        route_template=route_template if isinstance(
+            route_template, str) else None,
     )
 
     method = str(request.method)
@@ -145,6 +225,7 @@ async def prometheus_http_metrics(request, call_next):
 admin_prefix = f"{settings.api_prefix}/admin"
 app.include_router(admin_router, prefix=admin_prefix, tags=["admin"])
 app.include_router(public_router, prefix=settings.api_prefix, tags=["public"])
+app.include_router(billing_router, prefix=settings.api_prefix, tags=["billing"])
 app.include_router(
     characters_router,
     prefix=settings.api_prefix,
@@ -155,6 +236,12 @@ app.include_router(
     prefix=admin_prefix,
     tags=["admin-monitoring"],
 )
+app.include_router(
+    ops_monitoring_router,
+    prefix=settings.api_prefix,
+    tags=["ops-monitoring"],
+)
+app.include_router(legal_docs_router)
 
 
 if settings.mount_frontend_static:
@@ -175,22 +262,20 @@ if settings.mount_frontend_static:
             frontend_dir,
         )
 
-if settings.mount_data_static:
-    data_dir = settings.data_dir
-    if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
-        app_logger.warning(
-            "Data directory '%s' not found. Static content will not be served.",
-            data_dir,
-        )
-    else:
-        app.mount(
-            "/static_content",
-            PublicStaticContentFiles(directory=data_dir),
-            name="static_content",
-        )
-        app_logger.info("Mounted static content from directory: %s", data_dir)
+if LEGAL_DOCS_DIR.exists() and LEGAL_DOCS_DIR.is_dir():
+    app_logger.info(
+        "Serving legal documents from markdown directory: %s",
+        LEGAL_DOCS_DIR,
+    )
+else:
+    app_logger.warning(
+        "Legal docs directory '%s' not found. Legal docs will not be served.",
+        LEGAL_DOCS_DIR,
+    )
 
-if not settings.mount_frontend_static or not settings.mount_data_static:
+data_static_mounted = mount_public_data_static(app, settings)
+
+if not settings.mount_frontend_static or not data_static_mounted:
     app_logger.info(
         "Skipping one or more static mounts based on environment settings."
     )
@@ -296,7 +381,8 @@ async def update_story_draft_endpoint(
         },
     )
 
-    existing_draft = crud.get_story(db, story_id=story_id, user_id=current_user.id)
+    existing_draft = crud.get_story(
+        db, story_id=story_id, user_id=current_user.id)
     if (
         existing_draft is None
         or existing_draft.owner_id != current_user.id
@@ -360,7 +446,8 @@ async def read_story_draft(
 ):
     """Return one draft story owned by the current user."""
 
-    db_story_draft = crud.get_story_draft(db, story_id=story_id, user_id=current_user.id)
+    db_story_draft = crud.get_story_draft(
+        db, story_id=story_id, user_id=current_user.id)
     if db_story_draft is None:
         raise HTTPException(status_code=404, detail="Draft not found")
     return db_story_draft

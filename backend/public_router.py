@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, Body
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, Response, status, Body, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Literal
 import asyncio
 import io
 import os
 import shutil
 from datetime import timedelta
 
-from backend import crud, schemas, auth, database, pdf_generator, ai_services
+from backend import crud, schemas, auth, database, pdf_generator, ai_services, entitlements
 from backend.database import get_db
 from backend.logging_config import app_logger, error_logger
 from backend.rate_limiting import limiter
@@ -139,8 +139,12 @@ def _extract_reference_image_paths(db_story: database.Story) -> List[str]:
         if path:
             paths.append(path)
     return paths
+
+
 @public_router.post("/users/", response_model=schemas.User, tags=["authentication"])
+@limiter.limit(settings.signup_rate_limit)
 async def register_user(
+    request: Request,
     user: schemas.UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -155,10 +159,28 @@ async def register_user(
     return created
 
 
+@public_router.get(
+    "/users/me/entitlement",
+    response_model=schemas.EntitlementStatus,
+)
+async def read_my_entitlement(
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """Return the current user's effective entitlement and balances."""
+
+    return entitlements.resolve_effective_state(
+        db,
+        current_user.id,
+        provision_if_missing=True,
+    )
+
+
 @public_router.post("/token", response_model=schemas.Token, tags=["authentication"])
 @limiter.limit(settings.login_rate_limit)
 async def login_for_access_token(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -178,7 +200,96 @@ async def login_for_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
 
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=access_token,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        max_age=int(access_token_expires.total_seconds()),
+        path="/",
+    )
+
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@public_router.post(
+    "/logout",
+    response_model=schemas.MessageResponse,
+    tags=["authentication"],
+)
+async def logout(response: Response):
+    """Clear the browser auth cookie while leaving bearer-token clients alone."""
+
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+        path="/",
+    )
+    return schemas.MessageResponse(detail="Logout successful")
+
+
+@public_router.post(
+    "/password-reset/request",
+    response_model=schemas.ForgotPasswordResponse,
+    tags=["authentication"],
+)
+@limiter.limit(settings.password_reset_request_rate_limit)
+async def request_password_reset(
+    request: Request,
+    payload: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Issue a password reset token without revealing account existence."""
+
+    identifier = payload.identifier.strip()
+    generic_detail = (
+        "If an account matches the provided details, a password reset token "
+        "has been issued."
+    )
+
+    user = crud.get_user_by_email(db, email=identifier)
+    if user is None:
+        user = crud.get_user_by_username(db, username=identifier)
+
+    reset_token_preview: Optional[str] = None
+    if user is not None:
+        token, _ = auth.issue_password_reset_token(db, user)
+        if auth.should_expose_password_reset_token_preview():
+            reset_token_preview = token
+    elif auth.should_expose_password_reset_token_preview():
+        reset_token_preview = auth.issue_password_reset_token_preview()
+
+    return schemas.ForgotPasswordResponse(
+        detail=generic_detail,
+        reset_token_preview=reset_token_preview,
+    )
+
+
+@public_router.post(
+    "/password-reset/confirm",
+    response_model=schemas.MessageResponse,
+    tags=["authentication"],
+)
+@limiter.limit(settings.password_reset_confirm_rate_limit)
+async def confirm_password_reset(
+    request: Request,
+    payload: schemas.ResetPasswordConfirm,
+    db: Session = Depends(get_db),
+):
+    """Validate a password reset token and update the user's password."""
+
+    user = auth.get_valid_password_reset_user(db, payload.token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        )
+
+    auth.reset_user_password(db, user, payload.new_password)
+    return schemas.MessageResponse(detail="Password reset successful")
 
 
 @public_router.post("/stories/", response_model=schemas.StoryGenerationTask, status_code=status.HTTP_202_ACCEPTED)
@@ -215,27 +326,57 @@ async def create_new_story(
             detail="A story with this title already exists."
         )
 
-    initial_title = story_input.title or "[AI Title Pending...]"
-    db_story = crud.create_story_db_entry(
-        db, story_input, current_user.id, title=initial_title, is_draft=False)
-    if not db_story:
-        raise HTTPException(
-            status_code=500, detail="Could not create story shell.")
-
-    task = crud.create_story_generation_task(db, db_story.id, current_user.id)
-    if not task:
-        raise HTTPException(
-            status_code=500, detail="Could not create generation task.")
-
-    background_tasks.add_task(
-        story_generation_service.generate_story_as_background_task,
-        task.id,
-        db_story.id,
+    reservation = entitlements.reserve_credits(
+        db,
         current_user.id,
-        story_input,
+        schemas.BillableAction.INITIAL_STORY_GENERATION,
+        schemas.CreditBucket.STORY,
     )
 
-    return task
+    try:
+        initial_title = story_input.title or "[AI Title Pending...]"
+        db_story = crud.create_story_db_entry(
+            db, story_input, current_user.id, title=initial_title,
+            is_draft=False)
+        if not db_story:
+            raise HTTPException(
+                status_code=500, detail="Could not create story shell.")
+
+        task = crud.create_story_generation_task(
+            db,
+            db_story.id,
+            current_user.id,
+            reservation.id,
+        )
+        if not task:
+            raise HTTPException(
+                status_code=500, detail="Could not create generation task.")
+
+        if settings.story_generation_execute_in_api:
+            background_tasks.add_task(
+                story_generation_service.generate_story_as_background_task,
+                task.id,
+                db_story.id,
+                current_user.id,
+                story_input,
+                reservation.id,
+            )
+
+        return task
+    except HTTPException:
+        entitlements.release_credits(
+            db,
+            reservation.id,
+            reason="story_generation_aborted_before_provider_call",
+        )
+        raise
+    except Exception:
+        entitlements.release_credits(
+            db,
+            reservation.id,
+            reason="story_generation_failed_before_provider_call",
+        )
+        raise
 
 
 @public_router.get("/stories/generation-status/{task_id}", response_model=schemas.StoryGenerationTask)
@@ -366,7 +507,8 @@ async def read_story_page_image_api(
         )
         image_path = storage_paths.resolve_data_path(db_page.image_path)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Page image not found") from exc
+        raise HTTPException(
+            status_code=404, detail="Page image not found") from exc
 
     if not is_private_story_image or not os.path.isfile(image_path):
         raise HTTPException(status_code=404, detail="Page image not found")
@@ -480,7 +622,10 @@ async def regenerate_story_page_image_api(
     effective_settings = crud.get_effective_page_editor_settings(
         db_story, db_page)
     text_position = str(effective_settings.get("text_position") or "bottom")
-    guidance = story_generation_service._text_position_guidance(text_position)
+    guidance = story_generation_service._text_position_guidance(
+        text_position,
+        effective_settings.get("layout_mode"),
+    )
     style_reference = db_story.image_style or schemas.ImageStyle.DEFAULT.value
     base_prompt = db_page.image_description or db_page.text or db_story.title
     prompt_content = f"{base_prompt}. {guidance}"
@@ -491,26 +636,154 @@ async def regenerate_story_page_image_api(
         db_page.page_number,
     )
 
-    new_image_path = await ai_services.generate_image_for_page(
-        page_content=prompt_content,
-        style_reference=style_reference,
-        db=db,
-        user_id=current_user.id,
-        story_id=story_id,
-        page_number=db_page.page_number,
-        image_save_path_on_disk=image_save_path_on_disk,
-        image_path_for_db=image_path_for_db,
-        reference_image_paths=reference_paths or None,
+    reservation = entitlements.reserve_credits(
+        db,
+        current_user.id,
+        schemas.BillableAction.PAGE_IMAGE_REGENERATION,
+        schemas.CreditBucket.IMAGE,
     )
-    if new_image_path is None:
+    provider_spend_started = False
+
+    try:
+        provider_spend_started = True
+        new_image_path = await ai_services.generate_image_for_page(
+            page_content=prompt_content,
+            style_reference=style_reference,
+            db=db,
+            user_id=current_user.id,
+            story_id=story_id,
+            page_number=db_page.page_number,
+            image_save_path_on_disk=image_save_path_on_disk,
+            image_path_for_db=image_path_for_db,
+            reference_image_paths=reference_paths or None,
+        )
+        entitlements.consume_credits(db, reservation.id)
+        if new_image_path is None:
+            raise HTTPException(
+                status_code=502,
+                detail="Image generation did not return a new page image.",
+            )
+
+        state = crud.get_page_editor_state(db_page)
+        db_page.image_path = new_image_path
+        db_page.editor_state = state
+        db.commit()
+        db.refresh(db_page)
+        return db_page
+    except HTTPException:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="page_image_regeneration_aborted_before_provider_call",
+            )
+        raise
+    except Exception:
+        if not provider_spend_started:
+            entitlements.release_credits(
+                db,
+                reservation.id,
+                reason="page_image_regeneration_failed_before_provider_call",
+            )
+        else:
+            entitlements.consume_credits(db, reservation.id)
+        raise
+
+
+@public_router.post(
+    "/stories/{story_id}/pages/{page_id}/regenerate-text",
+    response_model=schemas.Page,
+)
+async def regenerate_story_page_text_api(
+    story_id: int,
+    page_id: int,
+    db: Session = Depends(get_db),
+    current_user: database.User = Depends(auth.get_current_active_user),
+):
+    """Regenerate a single content page's text without replacing the story."""
+
+    db_story = _get_story_or_404(
+        db,
+        story_id=story_id,
+        user_id=current_user.id,
+    )
+    db_page = _get_story_page_or_404(db_story, page_id)
+    if db_page.page_number == 0:
         raise HTTPException(
-            status_code=502,
-            detail="Image generation did not return a new page image.",
+            status_code=400,
+            detail="Cover page text cannot be regenerated independently.",
         )
 
-    state = crud.get_page_editor_state(db_page)
-    db_page.image_path = new_image_path
-    db_page.editor_state = state
+    ordered_pages = sorted(
+        db_story.pages or [],
+        key=lambda page: int(getattr(page, "page_number", 0)),
+    )
+    previous_page = next(
+        (
+            page for page in ordered_pages
+            if page.page_number == db_page.page_number - 1
+        ),
+        None,
+    )
+    next_page = next(
+        (
+            page for page in ordered_pages
+            if page.page_number == db_page.page_number + 1
+        ),
+        None,
+    )
+    regen_outline = (
+        f"{db_story.story_outline}\n\n"
+        f"Regenerate only page {db_page.page_number} of this existing story. "
+        "Keep the same characters, tone, and continuity. Return exactly one "
+        "content page plus the required title page JSON wrapper. "
+        f"Current page text: {db_page.text!r}. "
+        f"Previous page summary: {(previous_page.text if previous_page else '')!r}. "
+        f"Next page summary: {(next_page.text if next_page else '')!r}."
+    )
+    story_input = {
+        "title": db_story.title,
+        "genre": db_story.genre,
+        "story_outline": regen_outline,
+        "main_characters": db_story.main_characters or [],
+        "num_pages": 1,
+        "tone": db_story.tone,
+        "setting": db_story.setting,
+        "writing_style": db_story.writing_style,
+        "image_style": db_story.image_style,
+        "word_to_picture_ratio": db_story.word_to_picture_ratio,
+        "text_density": db_story.text_density,
+        "editor_settings": crud.get_story_editor_settings(db_story),
+    }
+    regenerated_story = await asyncio.to_thread(
+        ai_services.generate_story_from_chatgpt,
+        story_input,
+    )
+    if asyncio.iscoroutine(regenerated_story):
+        regenerated_story = await regenerated_story
+
+    regenerated_page = next(
+        (
+            page for page in regenerated_story.get("Pages", [])
+            if str(page.get("Page_number", "")).strip().lower() != "title"
+        ),
+        None,
+    )
+    regenerated_text = (
+        str(regenerated_page.get("Text", "")).strip()
+        if regenerated_page is not None
+        else ""
+    )
+    if not regenerated_text:
+        raise HTTPException(
+            status_code=502,
+            detail="Text generation did not return regenerated page text.",
+        )
+
+    db_page.text = regenerated_text
+    if regenerated_page.get("Image_description"):
+        db_page.image_description = regenerated_page["Image_description"]
+    db_page.editor_state = crud.get_page_editor_state(db_page)
     db.commit()
     db.refresh(db_page)
     return db_page
@@ -575,6 +848,46 @@ async def read_users_me(current_user: schemas.User = Depends(auth.get_current_ac
     return current_user
 
 
+@public_router.post(
+    "/users/me/privacy-requests",
+    response_model=schemas.PrivacyRequest,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_my_privacy_request(
+    payload: schemas.PrivacyRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """Create a manual account export or account delete request for the user."""
+
+    try:
+        return crud.create_privacy_request(
+            db,
+            user_id=current_user.id,
+            request_type=payload.request_type,
+        )
+    except ValueError as exc:
+        if str(exc) != "duplicate_open_request":
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An open privacy request of this type already exists.",
+        ) from exc
+
+
+@public_router.get(
+    "/users/me/privacy-requests",
+    response_model=List[schemas.PrivacyRequest],
+)
+async def list_my_privacy_requests(
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(auth.get_current_active_user),
+):
+    """List the current user's privacy requests from newest to oldest."""
+
+    return crud.get_privacy_requests_for_user(db, user_id=current_user.id)
+
+
 @public_router.get("/dynamic-lists/{list_name}/active-items", response_model=List[schemas.DynamicListItemPublic])
 def get_public_list_items(list_name: str, db: Session = Depends(get_db)):
     items = crud.get_active_dynamic_list_items(db, list_name=list_name)
@@ -594,6 +907,10 @@ def get_public_list_items(list_name: str, db: Session = Depends(get_db)):
 @public_router.get("/stories/{story_id}/pdf", status_code=status.HTTP_200_OK)
 async def export_story_as_pdf_api(
     story_id: int,
+    disposition: Literal["attachment", "inline"] = Query(
+        default="attachment",
+        description="Choose attachment for download or inline for preview.",
+    ),
     db: Session = Depends(get_db),
     current_user: database.User = Depends(auth.get_current_active_user)
 ):
@@ -621,8 +938,15 @@ async def export_story_as_pdf_api(
         if not safe_title:
             safe_title = f"story_{db_story.id}"
 
-        return StreamingResponse(io.BytesIO(pdf_content_bytes), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename={safe_title}.pdf"})
+        return StreamingResponse(
+            io.BytesIO(pdf_content_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f"{disposition}; filename={safe_title}.pdf"
+                )
+            },
+        )
     except Exception as e:
         error_logger.error(
             f"Failed to generate PDF for story {story_id}: {e}", exc_info=True)
