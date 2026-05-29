@@ -321,7 +321,7 @@ def test_story_creation_merge_avoids_duplicate_names(
 
     monkeypatch.setattr(
         "backend.crud.create_story_generation_task",
-        lambda db, story_id, user_id: schemas.StoryGenerationTask(
+        lambda db, story_id, user_id, reservation_id=None: schemas.StoryGenerationTask(
             id=task_id,
             story_id=story_id,
             user_id=user_id,

@@ -87,7 +87,9 @@ def test_non_admin_cannot_update_user_role(client, mock_normal_user):
     This test relies on the `get_current_admin_user` dependency to correctly
     raise a 403 Forbidden error for users without the 'admin' role.
     """
-    app.dependency_overrides[auth.get_current_user] = lambda: mock_normal_user
+    app.dependency_overrides[auth.get_current_active_user] = (
+        lambda: mock_normal_user
+    )
 
     response = client.put(
         f"/api/v1/admin/management/users/{mock_normal_user.id}",
@@ -98,7 +100,7 @@ def test_non_admin_cannot_update_user_role(client, mock_normal_user):
     assert response.json() == {"detail": "Admin access required"}
 
     # Clean up dependency override
-    del app.dependency_overrides[auth.get_current_user]
+    del app.dependency_overrides[auth.get_current_active_user]
 
 
 def test_cors_middleware_registered():

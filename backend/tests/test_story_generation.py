@@ -70,6 +70,17 @@ def mock_dependencies(db_session_mock, current_user_mock):
     app.dependency_overrides = {}
 
 
+@pytest.fixture(autouse=True)
+def mock_credit_reservation(monkeypatch):
+    """Keep story route tests focused on story behavior, not quota plumbing."""
+
+    monkeypatch.setattr(
+        entitlements,
+        "reserve_credits",
+        MagicMock(return_value=SimpleNamespace(id=321)),
+    )
+
+
 def test_create_story_generation_task_successfully(client, db_session_mock, story_create_input_mock, current_user_mock, monkeypatch):
     """
     Test that POST /stories/ successfully creates a generation task.

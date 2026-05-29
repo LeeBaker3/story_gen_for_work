@@ -325,7 +325,7 @@ def test_password_reset_request_preview_absent_outside_testing_without_opt_in(
     db_session: Session,
     monkeypatch,
 ):
-    """Reset token previews should stay off in prod-like environments by default."""
+    """Reset token previews should stay off whenever testing opt-in is absent."""
 
     recoverable_user = User(
         username="preview-hidden-user",
@@ -337,7 +337,7 @@ def test_password_reset_request_preview_absent_outside_testing_without_opt_in(
     db_session.add(recoverable_user)
     db_session.commit()
 
-    monkeypatch.setenv("RUN_ENV", "prod")
+    monkeypatch.setenv("RUN_ENV", "dev")
     monkeypatch.delenv("TESTING", raising=False)
     monkeypatch.delenv("EXPOSE_PASSWORD_RESET_TOKEN_PREVIEW", raising=False)
     settings_mod.reset_settings_cache()
